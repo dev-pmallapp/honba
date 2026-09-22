@@ -19,9 +19,10 @@ data/catalog/
 .env.local
 *.env
 
-# IDE
+# IDE / agent tooling
 .idea/
 .vscode/
+.opencode/
 *.swp
 *.swo
 

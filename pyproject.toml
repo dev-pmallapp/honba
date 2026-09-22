@@ -1,0 +1,145 @@
+[project]
+name = "honba"
+version = "0.1.0"
+description = "honba — systemic market research platform for Indian securities"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "LGPL-3.0-only" }
+authors = [
+    { name = "honba contributors" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+dependencies = [
+    # PINNED EXACTLY, DELIBERATELY. v2 is a release-candidate line with no GA
+    # date, landing 20-40 breaking changes per ~13-day rc (rc3 removed Cython;
+    # rc4 renamed configs + changed backtest leverage defaults; rc5 deleted
+    # ForwardPrice and PortfolioStatistic.calculate_from_orders; rc6 reworks
+    # the catalog API). Never float a range against this.
+    #
+    # v1 is not a refuge: develop_v1 receives critical security backports only,
+    # for ~3 months after the v2 cutover, and no feature or parity work.
+    #
+    # To bump: read MIGRATION_V2.md, then re-run the golden backtest
+    # (docs/research/build-vs-extend.md §10, week 3) before trusting anything.
+    "nautilus-trader==2.0.0rc5",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+    "httpx>=0.28",
+    "beautifulsoup4>=4.12",
+    "lxml>=5",
+    "pandas>=2",
+    "polars>=1",
+    "pydantic>=2",
+    "sqlalchemy>=2.0",
+    "asyncpg>=0.30",
+    "pyarrow>=17",
+    "scikit-learn>=1.6",
+    "xgboost>=2",
+    "lightgbm>=4",
+    "pypfopt>=1.5",
+    "hmmlearn>=0.3",
+    "statsmodels>=0.14",
+]
+
+[project.optional-dependencies]
+ml = [
+    "optuna>=4",
+    "catboost>=1",
+]
+jupyter = [
+    "jupyterlab>=4",
+    "ipykernel>=6",
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pre-commit>=4",
+    "ipdb>=0.13",
+    "import-linter>=2.1",
+]
+docs = [
+    "mkdocs-material>=9.5",
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "D", "UP", "B", "C4", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v --tb=short --strict-markers"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# ---------------------------------------------------------------------------
+# Architectural boundaries — enforced in CI, not by good intentions.
+#
+# NautilusTrader v2 breaks 20-40 things every fortnight. The cost of each bump
+# is proportional to how much of its surface we touch, so the research layer is
+# firewalled off from it entirely and speaks DataFrames instead. The Indian
+# dataset is likewise kept in our own Parquet schema, so it survives catalog
+# renames, a v3, or dropping Nautilus altogether.
+#
+# Run: lint-imports
+# See: docs/research/build-vs-extend.md §9
+# ---------------------------------------------------------------------------
+[tool.importlinter]
+root_package = "honba"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Research layer is engine-free (only _nautilus_adapter may import nautilus_trader)"
+type = "forbidden"
+source_modules = ["honba.research"]
+forbidden_modules = ["nautilus_trader"]
+ignore_imports = ["honba.research._nautilus_adapter -> nautilus_trader"]
+
+[[tool.importlinter.contracts]]
+name = "Data layer owns its Parquet schema (only _catalog_export may import nautilus_trader)"
+type = "forbidden"
+source_modules = ["honba.data"]
+forbidden_modules = ["nautilus_trader"]
+ignore_imports = ["honba.data._catalog_export -> nautilus_trader"]
+
+[[tool.importlinter.contracts]]
+name = "Research layer does not depend on other honba layers"
+type = "forbidden"
+source_modules = ["honba.research"]
+forbidden_modules = [
+    "honba.api",
+    "honba.cli",
+    "honba.data",
+    "honba.strategies",
+]

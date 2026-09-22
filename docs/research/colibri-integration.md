@@ -313,3 +313,64 @@ print(r.choices[0].message.content)
 
 # 5. Run honba with COLIBRI_BASE_URL=http://localhost:8000/v1
 ```
+
+### 12. Colibri as RD-Agent (Qlib) LLM Backend
+
+RD-Agent (microsoft/RD-Agent) is Microsoft's autonomous LLM agent for factor
+discovery and quantitative research — it proposes novel alpha signals, implements
+them as Python code, backtests with Qlib, and iterates on results. It is the
+flagship AI application in the Qlib ecosystem.
+
+**Can Colibri run RD-Agent? Yes.** RD-Agent uses LiteLLM as its backend, which
+speaks OpenAI-compatible API — the same protocol Colibri serves on
+`localhost:8000/v1`. The configuration is trivial:
+
+```bash
+# RD-Agent .env file
+CHAT_MODEL=qwen36
+OPENAI_API_BASE=http://localhost:8000/v1
+OPENAI_API_KEY=local
+
+# Embedding model (Colibri doesn't serve embeddings, use a separate provider)
+EMBEDDING_MODEL=litellm_proxy/BAAI/bge-large-en-v1.5
+LITELLM_PROXY_API_BASE=https://api.siliconflow.cn/v1
+```
+
+However, the question is really about **model capability**, not protocol
+compatibility. RD-Agent's factor discovery pipeline demands:
+
+| Capability | Why RD-Agent needs it |
+|---|---|
+| Strong Python code generation | The "Development" phase writes Pandas/NumPy factor code |
+| Financial domain reasoning | Proposes novel alpha factors, understands market microstructure |
+| JSON structured output | Factor proposals use strict JSON schemas |
+| Long context (64k+) | Development phase sends large codebases as context |
+| Reasoning chains | Research phase iterates: hypothesize → evaluate → refine |
+
+**Model recommendations for RD-Agent on Colibri:**
+
+| Model | Params | Verdict |
+|---|---|---|
+| **Qwen3.6-35B-A3B** | 35B (3B active) | **Best choice.** Strong code gen, good financial reasoning, fits 24GB RAM. Colibri measured 10 tok/s with CUDA tier. |
+| **Qwen2.5-Coder-14B** | 14B | **Good budget choice.** Top open-source coder, weaker on finance domain than Qwen3.6. |
+| **OLMoE 7B** | 7B (1B active) | **Insufficient for "Research" phase.** Can handle simple "Development" tasks (implementing already-specified factors) but cannot reliably propose novel financial hypotheses. |
+| **GLM-5.2** | 744B (40B active) | **Overkill.** Too slow on commodity hardware (0.5-2 tok/s). Impractical for the iterative agent loop that makes dozens of LLM calls. |
+| **DeepSeek V4 Flash** | 284B (13B active) | **Excellent if resources permit.** Strong code+reasoning. Colibri measured 0.93-1.24 tok/s on consumer NVMe. |
+
+**Bottom line:** Colibri can serve RD-Agent. The question is whether the model
+you run on Colibri is smart enough for factor discovery. Qwen3.6-35B-A3B on a
+24GB+ machine hits the sweet spot. OLMoE 7B is too small. For practical RD-Agent
+usage, you may want the embedding model from a cloud provider regardless (since
+Colibri is a chat-completion engine, not an embedding server).
+
+**Architecture:**
+```
+RD-Agent (microsoft/RD-Agent)
+  │  ChatCompletion calls (factor discovery)
+  ▼
+Colibri (Qwen3.6-35B-A3B on localhost:8000)
+  │  Embedding calls (semantic search)
+  ▼
+Cloud provider (SiliconFlow / OpenAI for embeddings only)
+```
+```

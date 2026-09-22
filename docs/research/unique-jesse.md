@@ -5,11 +5,11 @@ has **no equivalent** in Nautilus Trader, Backtrader, Zipline, or QuantConnect.
 Jesse is a smaller, retail-focused crypto backtesting framework, but it has
 made several product decisions — mostly around statistical rigor, ML
 integration, and developer ergonomics — that the bigger institutional
-frameworks never built. IndisNaut is standardizing on Nautilus Trader as its
+frameworks never built. honba is standardizing on Nautilus Trader as its
 core execution/backtest engine, but the research layer sitting on top of
 Nautilus should borrow deliberately from Jesse's playbook. This document
 exists to make that borrowing explicit: what's unique, why it matters, and how
-IndisNaut should build it on top of (not instead of) Nautilus.
+honba should build it on top of (not instead of) Nautilus.
 
 ---
 
@@ -286,29 +286,29 @@ workflows on the public roadmap.
 
 ---
 
-## Which Features Should IndisNaut Emulate?
+## Which Features Should honba Emulate?
 
 | Feature | Priority | Notes |
 |---|---|---|
 | Rule Significance Testing | **Must build** | High-value, cheap to implement: stationary bootstrap over per-signal forward returns, independent of Nautilus's execution engine. |
 | Two-Mode Monte Carlo | **Must build** | Mode 1 (trade shuffle) needs only the closed-trade report from a Nautilus backtest. Mode 2 (synthetic candles) needs a candle-perturbation module feeding `BacktestEngine` repeatedly. |
-| Research Dashboard (40+ metrics + synced charts) | **Must build** | IndisNaut's frontend/backtesting stack (see `frontend.md`, `backtesting.md`) already targets this; align metric set with Jesse's list. |
+| Research Dashboard (40+ metrics + synced charts) | **Must build** | honba's frontend/backtesting stack (see `frontend.md`, `backtesting.md`) already targets this; align metric set with Jesse's list. |
 | Minimal Strategy DSL ergonomics | **Must build** | Not literal Jesse DSL, but a thin Python wrapper around Nautilus `Strategy` for common patterns (SMA/EMA crossovers, signal+order helpers) to cut boilerplate for research users. |
 | Automated Feature Importance (5-method) | **Must build** | Needed once ML strategies exist; straightforward to bolt onto any scikit-learn training step regardless of execution engine. |
 | End-to-End ML Pipeline w/ single-source features | **Must build** | Core to avoiding train/deploy skew; design `features()` as one function called from both offline training and live Nautilus strategy `on_bar`. |
 | Built-in Optimization (Optuna + Ray) | **Must build** | Wrap Nautilus `BacktestEngine` in a Python objective function, drive with Optuna; Ray for parallel trials across cores. Nautilus provides no equivalent, so this is pure greenfield work on top of it. |
 | Automatic MTF Look-Ahead Prevention | **Must build** | Needs explicit design work in the research layer: gate higher-timeframe bar visibility until `ts_event` confirms close, mirroring Jesse's rule at the Nautilus data-subscription boundary. |
-| "Before You Backtest" Pipeline Philosophy | **Must build** | This is a workflow/UX decision, not code — bake the staged pipeline (significance → backtest → Monte Carlo → optimize → paper → live) into IndisNaut's CLI/dashboard flow. |
+| "Before You Backtest" Pipeline Philosophy | **Must build** | This is a workflow/UX decision, not code — bake the staged pipeline (significance → backtest → Monte Carlo → optimize → paper → live) into honba's CLI/dashboard flow. |
 | Portfolio vs. Route Separation | **Nice to have** | Nautilus already supports multi-instrument strategies programmatically; a declarative routing config on top improves UX but isn't blocking. |
-| MCP Server | **Nice to have** | High leverage for AI-assisted research workflows given IndisNaut's own AI-forward direction; can be added once core research layer is stable. |
+| MCP Server | **Nice to have** | High leverage for AI-assisted research workflows given honba's own AI-forward direction; can be added once core research layer is stable. |
 | Docker-First Full Dashboard | **Nice to have** | Valuable for onboarding/demo; sequence after core research features exist. |
-| Simple 6-Column CSV Import | **Nice to have** | Useful for ad-hoc data ingestion, but IndisNaut's primary data path is broker/vendor APIs (see `data-sources.md`), not manual CSV. |
+| Simple 6-Column CSV Import | **Nice to have** | Useful for ad-hoc data ingestion, but honba's primary data path is broker/vendor APIs (see `data-sources.md`), not manual CSV. |
 | Smart Order Auto-Selection | **Nice to have** | Ergonomic sugar over Nautilus's explicit order factory for the strategy-DSL wrapper; not a research-critical feature. |
-| 300+ Rust Indicators | **Already covered by Nautilus** | Nautilus's indicator set is smaller but extensible, and IndisNaut can add missing indicators (e.g., Ehlers family) as a thin library rather than reinventing Jesse's Rust core. |
+| 300+ Rust Indicators | **Already covered by Nautilus** | Nautilus's indicator set is smaller but extensible, and honba can add missing indicators (e.g., Ehlers family) as a thin library rather than reinventing Jesse's Rust core. |
 | Gapped/Session-Aware Data Handling | **Already covered by Nautilus** | Nautilus's bar aggregation already respects data availability; Indian market sessions (NSE 09:15–15:30 IST) need config, not a new engine. |
 | DEX Support & Futures-First Properties | **Already covered by Nautilus** | Nautilus has mature futures/derivatives instrument support; DEX connectivity is out of scope for an Indian-equities-focused platform. |
 
-**Bottom line:** the highest-leverage Jesse ideas for IndisNaut are the
+**Bottom line:** the highest-leverage Jesse ideas for honba are the
 statistical validation stack (significance testing, dual-mode Monte Carlo),
 the research dashboard, and the ML pipeline discipline (single-source
 features, automated importance) — none of which Nautilus provides natively,

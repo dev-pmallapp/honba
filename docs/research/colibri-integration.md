@@ -1,4 +1,4 @@
-# Colibri Integration — Local LLM Inference for IndisNaut Market Researcher
+# Colibri Integration — Local LLM Inference for honba
 
 ## 0. What Colibri Is (and Isn't)
 
@@ -10,13 +10,13 @@ run on consumer laptops with no GPU required. It exposes an **OpenAI-compatible 
 (`/v1/chat/completions`, `/v1/messages`) plus a **Brio mode** for closed-set scoring (give it
 options, get back probabilities + entropy).
 
-For IndisNaut, Colibri is the **local NLP backend**: it turns unstructured Indian-market text
+For honba, Colibri is the **local NLP backend**: it turns unstructured Indian-market text
 (news, concalls, annual reports, SEBI circulars) into structured signals without API costs or
 data leaving the machine. It does **not** replace Nautilus Trader (backtesting/execution) or any
 part of the quantitative pipeline — it's an enrichment service the ingestion pipeline and API
 layer call into.
 
-## 1. What Colibri Brings to IndisNaut
+## 1. What Colibri Brings to honba
 
 - **Zero marginal cost, zero data egress** — a frontier-class LLM running entirely on the
   research machine.
@@ -37,7 +37,7 @@ layer call into.
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                 IndisNaut Platform                    │
+│                 honba Platform                    │
 ├──────────────────────────────────────────────────────┤
 │  Frontend (HTMX + Lightweight Charts)                │
 │  FastAPI Backend                                     │
@@ -56,7 +56,7 @@ layer call into.
 └──────────────────────────────────────────────────────┘
 ```
 
-Colibri runs **out-of-process** as `coli serve`. IndisNaut never links against it or embeds it —
+Colibri runs **out-of-process** as `coli serve`. honba never links against it or embeds it —
 the FastAPI backend and the ingestion pipeline's NLP enrichment stage both talk to it purely over
 HTTP. This keeps Colibri upgrades/model swaps independent of application deploys.
 
@@ -65,11 +65,11 @@ HTTP. This keeps Colibri upgrades/model swaps independent of application deploys
 ### A. Installation & Setup
 
 - Colibri runs as a standalone process bound to `localhost:8000`.
-- IndisNaut talks to it via the `openai` Python client pointed at that base URL — no custom
+- honba talks to it via the `openai` Python client pointed at that base URL — no custom
   client needed.
 - Model choice by hardware:
   - **OLMoE (7B, int8, ~7GB)** — fully RAM-resident, 3–4 tok/s on 16GB machines. **Default for
-    IndisNaut.**
+    honba.**
   - **Qwen3.6-35B-A3B (int4, ~20GB)** — needs 24GB+ RAM, 3–10 tok/s. Better drafting quality,
     overkill for routine classification.
   - **GLM-5.2 (744B, int4, ~372GB)** — frontier quality, 0.1–2 tok/s. Reserve for deep,
@@ -126,7 +126,7 @@ result = httpx.post("http://localhost:8000/v1/brio", json={
 | 32GB+ RAM, 1TB+ NVMe | GLM-5.2 int4 (744B) | 372 GB | 16 GB min | 0.5–2 tok/s | Deep analysis, complex strategy research |
 | No local GPU | OLMoE (CPU-only) | 7 GB | 8 GB | 3–4 tok/s | Works on any laptop with 8GB+ RAM |
 
-**For IndisNaut's MVP (16-week target): start with OLMoE.** 7GB download, runs on any developer
+**For honba's MVP (16-week target): start with OLMoE.** 7GB download, runs on any developer
 laptop, sufficient for sentiment/news/fundamental extraction. GLM-5.2 is aspirational, reserved
 for research-report generation in Phase 6+.
 
@@ -206,7 +206,7 @@ services:
         reservations:
           memory: 12G
 
-  indisnaut:
+  honba:
     build: .
     environment:
       - COLIBRI_BASE_URL=http://colibri:8000/v1
@@ -247,7 +247,7 @@ services:
 **Recommendation:** use Colibri/OLMoE for standard NLP tasks (sentiment, classification,
 extraction) where privacy matters and quality requirements are moderate. Fall back to an
 API-based LLM for complex analysis reports where quality is paramount. Implement a configurable
-NLP backend switch in IndisNaut (`NLP_BACKEND=colibri|openai|...`) so this trade-off is a config
+NLP backend switch in honba (`NLP_BACKEND=colibri|openai|...`) so this trade-off is a config
 choice, not a rewrite.
 
 ## 10. Integration with the Nautilus CustomData Pipeline
@@ -289,7 +289,7 @@ This lets NLP-derived signals flow through the same event-driven bus as bars and
 strategies can condition on sentiment/regime events exactly like any other Nautilus data type —
 no separate side-channel needed.
 
-## 11. Quick-Start Guide for IndisNaut Developers
+## 11. Quick-Start Guide for honba Developers
 
 ```bash
 # 1. Install Colibri
@@ -311,5 +311,5 @@ r = c.chat.completions.create(model='olmoe',
 print(r.choices[0].message.content)
 "
 
-# 5. Run IndisNaut with COLIBRI_BASE_URL=http://localhost:8000/v1
+# 5. Run honba with COLIBRI_BASE_URL=http://localhost:8000/v1
 ```

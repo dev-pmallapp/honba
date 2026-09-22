@@ -1,6 +1,6 @@
-# UI/UX Design System — IndisNaut Market Researcher
+# UI/UX Design System — honba
 
-This document is the authoritative visual design specification for the IndisNaut Frontend UI
+This document is the authoritative visual design specification for the honba Frontend UI
 Layer (see `01-architecture-overview.md` §2). It codifies the tokens, components, and interaction
 rules that every screen must follow. The guiding brief is non-negotiable: **high data-density,
 clean, distraction-free typography; absolutely no gaudy, flashy, or over-animated modern web
@@ -48,7 +48,7 @@ components; dark-mode primary layout optimized for long research sessions.**
 - `--bg-primary: #FFFFFF`, `--bg-surface: #F6F8FA`, `--bg-elevated: #EAEEF2`
 - Text tokens flip to dark equivalents (`--text-primary: #1F2328`, etc.); up/down/warning hues
   stay identical for muscle-memory consistency across themes.
-- Toggle lives in the header bar, persisted to `localStorage` (`indisnaut:theme`), defaults to
+- Toggle lives in the header bar, persisted to `localStorage` (`honba:theme`), defaults to
   `dark` on first visit regardless of OS `prefers-color-scheme`.
 
 ### 2.3 Semantic usage rules

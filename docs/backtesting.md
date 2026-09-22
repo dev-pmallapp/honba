@@ -1,8 +1,8 @@
-# Backtesting & Research Flow — IndisNaut Market Researcher
+# Backtesting & Research Flow — honba
 
-## 1. The IndisNaut Research Philosophy
+## 1. The honba Research Philosophy
 
-IndisNaut adapts **Jesse AI's progressive validation chain** — the discipline of gating an idea
+honba adapts **Jesse AI's progressive validation chain** — the discipline of gating an idea
 through cheap statistical filters before ever paying for a full backtest, and gating a backtest
 through robustness checks before risking real capital. Jesse's original chain:
 
@@ -85,7 +85,7 @@ minutes at Stage 4-5, hours at Stage 6.
 
 ## 3. Rule Significance Testing (Stage 2)
 
-Before any backtest runs, IndisNaut bootstraps the factor's return association directly, following
+Before any backtest runs, honba bootstraps the factor's return association directly, following
 Jesse's "test before you backtest" principle:
 
 ```python

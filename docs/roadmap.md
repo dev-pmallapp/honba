@@ -1,6 +1,6 @@
-# Project Roadmap — IndisNaut Market Researcher
+# Project Roadmap — honba
 
-This document is the actionable, phased implementation plan for **IndisNaut Market Researcher**.
+This document is the actionable, phased implementation plan for **honba**.
 It sequences the architecture described in `01-architecture-overview.md` through
 `05-data-ingestion-pipeline.md` into a 24-week build plan, culminating in a usable MVP at Week 16
 and advanced research capabilities by Week 24.

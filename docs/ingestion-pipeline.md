@@ -1,4 +1,4 @@
-# Data Ingestion Pipeline — IndisNaut Market Researcher
+# Data Ingestion Pipeline — honba
 
 ## 1. Pipeline Architecture Overview
 

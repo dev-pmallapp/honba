@@ -1,6 +1,6 @@
-# System Specification & Agent Prompt: IndisNaut Market Researcher
+# honba — Systemic Market Research Platform for Indian Securities
 
-You are an expert systems architect and lead quantitative software engineer. Your task is to design, model, and prepare the foundational architecture for **IndisNaut Market Researcher**. 
+You are an expert systems architect and lead quantitative software engineer. Your task is to design, model, and prepare the foundational architecture for **honba** — a systemic market research platform for Indian securities. 
 
 This system acts as a systemic market research platform inspired by the quantitative philosophy of **Jesse AI**, but fully engineered on top of the **Nautilus Trader** institutional-grade backtesting engine. The system targets **Indian securities** (NSE/BSE) across all asset classes, leveraging web-mined fundamental metrics and macro data.
 

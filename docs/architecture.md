@@ -1,8 +1,8 @@
-# Architecture Overview — IndisNaut Market Researcher
+# Architecture Overview — honba
 
 ## 1. Project Vision & Purpose
 
-**IndisNaut Market Researcher** is a systemic, quantitative research platform purpose-built for
+**honba** is a systemic, quantitative research platform purpose-built for
 **Indian securities markets** (NSE/BSE). It fuses two lineages: the disciplined, backtest-first
 research philosophy popularized by **Jesse AI** (hypothesize → backtest → validate → paper-trade →
 live) and the institutional-grade, event-driven engineering rigor of **Nautilus Trader**, which
@@ -17,7 +17,7 @@ research. It targets:
 - **Commodities** (MCX)
 - **Crypto/Digital Assets** (lowest priority, included for architectural completeness only)
 
-IndisNaut solves three recurring problems in the Indian retail/prosumer quant space: (1) the
+honba solves three recurring problems in the Indian retail/prosumer quant space: (1) the
 absence of a unified, ISIN-aware instrument model spanning cash and derivatives; (2) the lack of
 tooling that blends fundamental/alternative data (Screener.in, Moneycontrol) with tick/bar-level
 backtesting; and (3) the prevalence of bloated, animation-heavy SPA dashboards that are poorly

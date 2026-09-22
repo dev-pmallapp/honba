@@ -1,6 +1,6 @@
 # Data Schema Reference
 
-Copy-paste-ready reference for every data schema used across IndisNaut: native
+Copy-paste-ready reference for every data schema used across honba: native
 Nautilus Trader types, custom `CustomData` classes for Indian fundamentals/news/
 corporate-actions, option chain parsing, backtest config/result models, and the
 PostgreSQL + Parquet storage schemas. All timestamps are UNIX nanoseconds UTC

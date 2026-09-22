@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This document surveys the significant machine learning and AI frameworks in the trading ecosystem that could be integrated into or inspire IndisNaut's AI pipeline. IndisNaut Market Researcher is built on [Nautilus Trader](https://github.com/nautechsystems/nautilus_trader) (36.9k stars, 2,438 commits, Apache 2.0) as its event-driven execution and backtesting core, targeting Indian equities on NSE/BSE. Because Nautilus itself does not ship an opinionated ML/AI layer, this survey evaluates the broader landscape of trading-specific ML frameworks, general-purpose ML libraries, commercial platforms, and LLM/transformer tooling — with a consistent eye toward two questions: **(1) how well does this framework fit Indian markets**, and **(2) how cleanly can it be layered on top of or alongside Nautilus Trader** without fighting its event-driven architecture.
+This document surveys the significant machine learning and AI frameworks in the trading ecosystem that could be integrated into or inspire honba's AI pipeline. honba is built on [Nautilus Trader](https://github.com/nautechsystems/nautilus_trader) (36.9k stars, 2,438 commits, Apache 2.0) as its event-driven execution and backtesting core, targeting Indian equities on NSE/BSE. Because Nautilus itself does not ship an opinionated ML/AI layer, this survey evaluates the broader landscape of trading-specific ML frameworks, general-purpose ML libraries, commercial platforms, and LLM/transformer tooling — with a consistent eye toward two questions: **(1) how well does this framework fit Indian markets**, and **(2) how cleanly can it be layered on top of or alongside Nautilus Trader** without fighting its event-driven architecture.
 
 The goal is not to pick a single "winner" but to establish a layered reference architecture — research, signal fusion, execution, and broker integration — where each framework is used for what it does best, feeding into Nautilus as the system of record for order management, risk, and live/backtest parity.
 
@@ -10,7 +10,7 @@ The goal is not to pick a single "winner" but to establish a layered reference a
 
 ## Executive Summary Table
 
-Priority-ranked by expected value to IndisNaut, with the recommended way to layer each framework onto Nautilus Trader.
+Priority-ranked by expected value to honba, with the recommended way to layer each framework onto Nautilus Trader.
 
 | Priority | Framework | Best Use | Nautilus Layering Strategy |
 |---|---|---|---|
@@ -171,8 +171,8 @@ Priority-ranked by expected value to IndisNaut, with the recommended way to laye
 
 ## Section C: Commercial/SaaS Trading ML Platforms
 
-- **QuantConnect / LEAN Engine** — Open-source (21.7k stars, Apache 2.0) event-driven backtesting/live-trading engine underlying the QuantConnect cloud platform. Supports equities, options, futures, forex, and crypto across many geographies, with built-in ML library support (scikit-learn, TensorFlow, PyTorch pre-installed in its cloud research environment). Relevant to IndisNaut primarily as an **independent benchmark engine** — strategies can be cross-validated by running equivalent logic on both LEAN and Nautilus to sanity-check backtest results, though LEAN has no native NSE/BSE data feed either.
-- **Numerai** — A crowdsourced hedge fund/data-science competition platform where participants submit ML models against obfuscated (anonymized) global equity features in exchange for staked-token rewards. Not directly integrable (data is deliberately obfuscated and US/global-market-centric), but its **meta-model ensembling methodology** (combining many independently trained models via a weighted meta-model) is a useful architectural pattern to study for combining multiple IndisNaut signal sources.
+- **QuantConnect / LEAN Engine** — Open-source (21.7k stars, Apache 2.0) event-driven backtesting/live-trading engine underlying the QuantConnect cloud platform. Supports equities, options, futures, forex, and crypto across many geographies, with built-in ML library support (scikit-learn, TensorFlow, PyTorch pre-installed in its cloud research environment). Relevant to honba primarily as an **independent benchmark engine** — strategies can be cross-validated by running equivalent logic on both LEAN and Nautilus to sanity-check backtest results, though LEAN has no native NSE/BSE data feed either.
+- **Numerai** — A crowdsourced hedge fund/data-science competition platform where participants submit ML models against obfuscated (anonymized) global equity features in exchange for staked-token rewards. Not directly integrable (data is deliberately obfuscated and US/global-market-centric), but its **meta-model ensembling methodology** (combining many independently trained models via a weighted meta-model) is a useful architectural pattern to study for combining multiple honba signal sources.
 - **Alpaca Markets** — A commission-free brokerage with a developer-first API, widely used as the default broker integration in FinRL, Lumibot, and Blankly examples above. US-equities/crypto only, with no relevance to NSE/BSE execution, but its API design (simple REST/WebSocket, paper-trading sandbox) is a useful reference for what a clean Indian-broker adapter (e.g., Zerodha Kite) should feel like.
 - **Quantopian (defunct)** — No longer operating, but its legacy lives on directly through the community-maintained Zipline-Reloaded, Alphalens, and Pyfolio projects (Section A8), which remain the most-cited open-source factor research toolchain despite the platform's shutdown.
 
@@ -181,9 +181,9 @@ Priority-ranked by expected value to IndisNaut, with the recommended way to laye
 ## Section D: LLM/Transformer-Based Trading Tools
 
 - **FinBERT / FinBERT-tone** — BERT-family models fine-tuned on financial text corpora for sentiment classification (positive/negative/neutral) of news headlines, earnings calls, and analyst reports. Open weights available; lightweight enough for CPU/small-GPU inference, making them a practical near-term option for sentiment scoring of Indian financial news (subject to fine-tuning on Indian-market text for best accuracy).
-- **BloombergGPT** — A 50B-parameter LLM trained by Bloomberg on a mixed corpus of proprietary financial data and general text; **proprietary and not publicly released** — relevant only as a benchmark/inspiration for what a large-scale financial LLM can achieve, not as something IndisNaut can directly use.
+- **BloombergGPT** — A 50B-parameter LLM trained by Bloomberg on a mixed corpus of proprietary financial data and general text; **proprietary and not publicly released** — relevant only as a benchmark/inspiration for what a large-scale financial LLM can achieve, not as something honba can directly use.
 - **Instruct-FinGPT** — An instruction-tuned variant within the FinGPT family (Section A4), fine-tuned specifically for financial sentiment/instruction-following tasks using LoRA, demonstrating the low-cost fine-tuning recipe pattern that could be replicated for Indian-market-specific instruction tuning.
-- **Local Deployment Options (Ollama, llama-cpp)** — For self-hosted, low-latency, and data-privacy-preserving LLM inference (important given Indian financial data residency considerations), **Ollama** and **llama-cpp** provide quantized local inference of open-weight models (Llama, Mistral, etc.) without external API calls. This is directly relevant to **IndisNaut's Colibri integration** — Colibri can route sentiment/reasoning tasks to a locally hosted quantized model via Ollama/llama-cpp instead of a cloud LLM API, keeping inference in-house and reducing per-call cost/latency for high-frequency sentiment scoring.
+- **Local Deployment Options (Ollama, llama-cpp)** — For self-hosted, low-latency, and data-privacy-preserving LLM inference (important given Indian financial data residency considerations), **Ollama** and **llama-cpp** provide quantized local inference of open-weight models (Llama, Mistral, etc.) without external API calls. This is directly relevant to **honba's Colibri integration** — Colibri can route sentiment/reasoning tasks to a locally hosted quantized model via Ollama/llama-cpp instead of a cloud LLM API, keeping inference in-house and reducing per-call cost/latency for high-frequency sentiment scoring.
 
 ---
 
@@ -217,7 +217,7 @@ Ratings: ✅ Good/Native, ⚠️ Partial/Requires Custom Work, ❌ Poor/Not Supp
 
 ---
 
-## Section G: Recommended Architecture for IndisNaut
+## Section G: Recommended Architecture for honba
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
@@ -247,9 +247,9 @@ Each layer above is deliberately decoupled: the **research layer** produces sign
 
 ---
 
-## Section H: What's Missing / Must Build for IndisNaut
+## Section H: What's Missing / Must Build for honba
 
-None of the frameworks surveyed above provide native Indian-market support. The following components have no existing open-source equivalent and must be built in-house for IndisNaut:
+None of the frameworks surveyed above provide native Indian-market support. The following components have no existing open-source equivalent and must be built in-house for honba:
 
 1. **NSE/BSE data ingestion pipeline** — bhavcopy (daily EOD), tick-level data, and corporate actions (splits/bonuses/dividends) ingestion, normalized into a form consumable by both the research layer and Nautilus.
 2. **Indian instrument mapping** — ISIN → Nautilus `Instrument` type mapping (equities, indices, F&O contracts) with correct tick sizes, lot sizes, and expiry conventions.

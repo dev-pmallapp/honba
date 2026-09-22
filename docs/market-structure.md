@@ -1,6 +1,6 @@
 # Indian Market Structure
 
-This document defines the canonical market structure reference for the IndisNaut platform. It covers exchange session timings, asset class specifications, instrument identifiers, the trading calendar, and the regulatory framework that governs system behavior. All timestamps are **IST (UTC+5:30)** unless otherwise noted.
+This document defines the canonical market structure reference for the honba platform. It covers exchange session timings, asset class specifications, instrument identifiers, the trading calendar, and the regulatory framework that governs system behavior. All timestamps are **IST (UTC+5:30)** unless otherwise noted.
 
 ---
 
@@ -269,7 +269,7 @@ SEBI is the statutory regulator (established 1988, statutory powers via SEBI Act
 | **Risk controls** | Mandatory pre-trade risk checks: price bands, quantity limits, self-trade prevention, kill-switch capability at broker/exchange level |
 | **Tagging** | Every algo order must carry an exchange-assigned algo ID for audit trail purposes |
 
-**System implication:** IndisNaut's execution/backtest layer should simulate OTR throttling and price-band rejections as first-class constraints, not just an afterthought — a strategy that would breach 50:1 in production should be flagged in backtest reports.
+**System implication:** honba's execution/backtest layer should simulate OTR throttling and price-band rejections as first-class constraints, not just an afterthought — a strategy that would breach 50:1 in production should be flagged in backtest reports.
 
 ### 6.3 Data Usage Regulations
 
@@ -280,7 +280,7 @@ SEBI is the statutory regulator (established 1988, statutory powers via SEBI Act
 | **Real-time market data (tick-by-tick, streaming)** | Requires a formal **Market Data License Agreement** with the exchange (or via an authorized data vendor/broker API) | Paid, tiered by usage (redistribution vs. internal use) |
 | **Level 2/3 order book depth** | Enhanced data license, typically restricted to registered market participants | Paid, premium tier |
 
-**Compliance implication for IndisNaut:** The scraping/ingestion pipeline (per README Step 2) should default to **bhavcopy + EOD sources** for historical backtesting (free, compliant) and clearly gate any **real-time streaming** feature behind a documented, licensed data provider integration (e.g., broker API with market data add-on) rather than direct exchange website scraping — real-time scraping of NSE/BSE live quotes outside a licensed API violates their terms of data usage.
+**Compliance implication for honba:** The scraping/ingestion pipeline (per README Step 2) should default to **bhavcopy + EOD sources** for historical backtesting (free, compliant) and clearly gate any **real-time streaming** feature behind a documented, licensed data provider integration (e.g., broker API with market data add-on) rather than direct exchange website scraping — real-time scraping of NSE/BSE live quotes outside a licensed API violates their terms of data usage.
 
 ### 6.4 Market Conduct Regulations
 

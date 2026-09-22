@@ -6,7 +6,7 @@ open-source or commercial trading framework. Each entry below was verified
 against the competing frameworks' documented capabilities; where a competitor
 has a partial or superficially similar feature, that is noted explicitly
 rather than glossed over. Taken together, these are the reasons to choose
-Nautilus as the core engine for IndisNaut rather than build on, or migrate
+Nautilus as the core engine for honba rather than build on, or migrate
 away from, a simpler Python-only backtester.
 
 ---
@@ -157,7 +157,7 @@ native support for options:
   price series across expiries.
 
 Jesse AI has **zero** option support of any kind. This is directly critical
-to IndisNaut, since NIFTY/BANKNIFTY weekly and monthly option chains are a
+to honba, since NIFTY/BANKNIFTY weekly and monthly option chains are a
 core data source and trading surface for the project.
 
 ---
@@ -396,16 +396,16 @@ AI-agent-assisted development.
 
 ---
 
-## Relevance to IndisNaut
+## Relevance to honba
 
-These features map directly onto IndisNaut's requirements as an Indian
+These features map directly onto honba's requirements as an Indian
 markets research and trading platform:
 
 - **Rust performance** is necessary to process and backtest across
   5,000+ NSE/BSE-listed stocks without the per-tick Python overhead that
   would make universe-wide research impractical.
 - **Full option chain + Greeks engine** (§6) is the single most important
-  feature for IndisNaut, since NIFTY and BANKNIFTY weekly/monthly option
+  feature for honba, since NIFTY and BANKNIFTY weekly/monthly option
   chains are a core trading surface — a capability Jesse and Backtrader
   simply do not have.
 - **Multi-venue architecture** (§7) maps naturally onto NSE (cash + F&O),
@@ -415,7 +415,7 @@ markets research and trading platform:
   Screener.in fundamentals, corporate actions, and other non-price data
   into the same pipeline as bars/quotes, instead of maintaining a parallel
   ad hoc data path.
-- **Event sourcing** (§10) gives IndisNaut research reproducibility:
+- **Event sourcing** (§10) gives honba research reproducibility:
   any backtest result can be traced back to the exact sequence of events
   that produced it, which matters when validating strategies before risking
   real capital.

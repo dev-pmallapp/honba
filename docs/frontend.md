@@ -1,6 +1,6 @@
 # Frontend Architecture Blueprint
 
-This document defines the frontend architecture for IndisNaut Market Researcher: routing model,
+This document defines the frontend architecture for honba: routing model,
 layout system, charting strategy, state management, and technology stack. It implements the
 UI/UX constraints in the root spec — high data-density, dark-mode-first, zero gaudy animation,
 and MPA-style routing that avoids SPA state bloat.

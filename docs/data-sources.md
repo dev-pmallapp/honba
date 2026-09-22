@@ -1,7 +1,7 @@
 # Data Sources Reference — Indian Financial Data
 
 This document is the comprehensive reference for every external Indian financial data source the
-IndisNaut Data Ingestion Layer interfaces with: what data each source exposes, how to access it,
+honba Data Ingestion Layer interfaces with: what data each source exposes, how to access it,
 known constraints, and how to reconcile identifiers across sources. All adapters built against
 this reference must live behind the isolation boundary described in
 `01-architecture-overview.md` §7.
@@ -134,7 +134,7 @@ for bulk downloads, though the same respectful-scraping discipline still applies
 
 ## 6. Cross-Reference Strategy
 
-Every instrument in IndisNaut's data model must be resolvable across three identifier spaces:
+Every instrument in honba's data model must be resolvable across three identifier spaces:
 
 - **NSE Symbol** (alphabetic, e.g., `TCS`)
 - **BSE Scrip Code** (numeric, e.g., `532540`)

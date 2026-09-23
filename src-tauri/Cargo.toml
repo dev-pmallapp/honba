@@ -1,0 +1,16 @@
+[package]
+name = "honba-desktop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+honba-core = { workspace = true }
+honba-dhan = { workspace = true }

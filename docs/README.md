@@ -50,3 +50,12 @@ Welcome to the documentation suite for **Honba** — an institutional-grade quan
 ### 6. [Roadmap & Directory Structure](file:///home/pmallapp/Devel/Finance/honba.git/docs/roadmap)
 * **[Project Milestones](file:///home/pmallapp/Devel/Finance/honba.git/docs/roadmap/project-milestones.md)**: Phased execution plan from Rust core engine to native Tauri 2.0 release.
 * **[Codebase Directory Structure](file:///home/pmallapp/Devel/Finance/honba.git/docs/roadmap/directory-structure.md)**: Monorepo crate and package layout.
+
+---
+
+### 7. [Data Architecture & Ingestion](file:///home/pmallapp/Devel/Finance/honba.git/docs/data)
+* **[Data Sources Reference](file:///home/pmallapp/Devel/Finance/honba.git/docs/data/data-sources.md)**: Screener.in, Moneycontrol, and exchange data ingestion points.
+* **[Ingestion Pipeline](file:///home/pmallapp/Devel/Finance/honba.git/docs/data/ingestion-pipeline.md)**: Normalization pipeline, Parquet storage, and corporate action adjustment rules.
+* **[Data Schema Reference](file:///home/pmallapp/Devel/Finance/honba.git/docs/data/schemas.md)**: Parquet, PostgreSQL, and CustomData schema specifications.
+* **[Nautilus Instrument Mapping](file:///home/pmallapp/Devel/Finance/honba.git/docs/data/nautilus-mapping.md)**: Mapping Indian equities, F&O derivatives, and synthetic indices to Nautilus data types.
+

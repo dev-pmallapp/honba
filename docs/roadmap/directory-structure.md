@@ -32,6 +32,11 @@ honba/
 │   │   ├── desktop-app.md
 │   │   ├── terminal-cli.md
 │   │   └── ai-agent-mcp.md
+│   ├── data/                           # Data ingestion & schema definitions
+│   │   ├── data-sources.md
+│   │   ├── ingestion-pipeline.md
+│   │   ├── schemas.md
+│   │   └── nautilus-mapping.md
 │   └── roadmap/                        # Phasing & codebase layout
 │       ├── project-milestones.md
 │       └── directory-structure.md

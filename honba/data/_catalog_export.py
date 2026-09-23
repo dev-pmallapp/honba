@@ -20,7 +20,7 @@ entirely.
 
 Contract
 --------
-In:   own-schema Parquet (documented in ``docs/schemas.md``)
+In:   own-schema Parquet (documented in ``docs/data/schemas.md``)
 Out:  a populated ``ParquetDataCatalog`` ready for a backtest run
 
 The reverse direction is not supported. The catalog is a derived

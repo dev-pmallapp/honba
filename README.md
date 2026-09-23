@@ -188,27 +188,20 @@ component naming rationale.
   expiry. BANKNIFTY weekly discontinued. Monthly expiry only for all other
   indices.
 
-## Quick Links
+## Documentation
 
-| Document | Content |
+See the master documentation index at **[`docs/README.md`](docs/README.md)**.
+
+| Category | Primary Documents |
 |---|---|
-| `docs/architecture.md` | Full 6-layer architecture, tech stack, asset prioritization |
-| `docs/nautilus-mapping.md` | Indian securities → Nautilus Instrument models (Python examples) |
-| `docs/market-structure.md` | NSE/BSE sessions, F&O specs, 2024 SEBI reforms, identifiers |
-| `docs/data-sources.md` | Screener.in, Moneycontrol, NSE, BSE data reference |
-| `docs/ingestion-pipeline.md` | Micro-engine design, normalization, Parquet catalog |
-| `docs/frontend.md` | MPA/HTMX architecture, three-panel layout, charting strategy |
-| `docs/design-system.md` | Shibui dark-mode palette, typography, component specs |
-| `docs/backtesting.md` | 8-stage progressive validation pipeline with Nautilus integration |
-| `docs/schemas.md` | CustomData, PostgreSQL, Parquet schema reference |
-| `docs/roadmap.md` | 8-phase, 24-week implementation plan |
-| `docs/research/component-naming.md` | Full naming schema — all 20 components with kanji/hangul |
-| `docs/research/unique-nautilus.md` | 18 features found ONLY in Nautilus Trader |
-| `docs/research/unique-jesse.md` | 17 features found ONLY in Jesse AI |
-| `docs/research/colibri-integration.md` | Local LLM inference integration guide |
-| `docs/research/ml-frameworks-survey.md` | 30+ trading ML frameworks evaluated |
+| **Architecture** | [`docs/architecture/system-design.md`](docs/architecture/system-design.md), [`rust-core.md`](docs/architecture/rust-core.md), [`execution-pipeline.md`](docs/architecture/execution-pipeline.md) |
+| **Indian Markets** | [`docs/market/microstructure.md`](docs/market/microstructure.md), [`instruments.md`](docs/market/instruments.md), [`taxation-and-fees.md`](docs/market/taxation-and-fees.md), [`dhan-api.md`](docs/market/dhan-api.md) |
+| **Methodology** | [`docs/methodology/anti-overfitting.md`](docs/methodology/anti-overfitting.md), [`cross-validation.md`](docs/methodology/cross-validation.md), [`stress-testing.md`](docs/methodology/stress-testing.md) |
+| **Interfaces** | [`docs/interfaces/web-ui.md`](docs/interfaces/web-ui.md), [`desktop-app.md`](docs/interfaces/desktop-app.md), [`terminal-cli.md`](docs/interfaces/terminal-cli.md), [`ai-agent-mcp.md`](docs/interfaces/ai-agent-mcp.md) |
+| **Data & Schemas** | [`docs/data/data-sources.md`](docs/data/data-sources.md), [`ingestion-pipeline.md`](docs/data/ingestion-pipeline.md), [`schemas.md`](docs/data/schemas.md), [`nautilus-mapping.md`](docs/data/nautilus-mapping.md) |
+| **Roadmap** | [`docs/roadmap/project-milestones.md`](docs/roadmap/project-milestones.md), [`directory-structure.md`](docs/roadmap/directory-structure.md) |
+| **Research** | [`docs/research/comparative-analysis.md`](docs/research/comparative-analysis.md), [`jesse-ai.md`](docs/research/jesse-ai.md), [`barter-rs.md`](docs/research/barter-rs.md), [`openalgo.md`](docs/research/openalgo.md), [`tickgrinder.md`](docs/research/tickgrinder.md) |
 
 ---
 
-**Status**: Architecture & research phase complete. Implementation begins at
-Phase 0 (project scaffolding). See `docs/roadmap.md` for the full build plan.
+**Status**: Core scaffolding complete. See [`docs/roadmap/project-milestones.md`](docs/roadmap/project-milestones.md) for current implementation phases.

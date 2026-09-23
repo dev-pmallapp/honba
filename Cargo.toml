@@ -1,0 +1,52 @@
+[workspace]
+members = [
+    "crates/honba-core",
+    "crates/honba-indicators",
+    "crates/honba-overfit",
+    "crates/honba-dhan",
+    "crates/honba-pyo3",
+    "src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Honba Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/marketcalls/honba"
+
+[workspace.dependencies]
+# Serialization & Numbers
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rust_decimal = { version = "1.36", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async & Concurrency
+tokio = { version = "1.40", features = ["full"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+futures-util = "0.3"
+async-trait = "0.1"
+crossbeam = "0.8"
+rayon = "1.10"
+
+# Networking & Web
+reqwest = { version = "0.12", features = ["json"] }
+axum = { version = "0.7", features = ["ws"] }
+
+# Security & Storage
+keyring = "3.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Error Handling & Utilities
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Internal workspace crates
+honba-core = { path = "crates/honba-core" }
+honba-indicators = { path = "crates/honba-indicators" }
+honba-overfit = { path = "crates/honba-overfit" }
+honba-dhan = { path = "crates/honba-dhan" }

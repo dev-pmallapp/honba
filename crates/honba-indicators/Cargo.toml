@@ -1,0 +1,12 @@
+[package]
+name = "honba-indicators"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+honba-core = { workspace = true }

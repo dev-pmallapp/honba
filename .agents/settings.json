@@ -1,0 +1,35 @@
+{
+  "securityPreset": "Turbo",
+  "permissions": {
+    "allow": [
+      "command(git)",
+      "command(gh)",
+      "command(cargo)",
+      "command(python)",
+      "command(python3)",
+      "command(pytest)",
+      "command(maturin)",
+      "command(ruff)",
+      "command(pip)",
+      "command(npm)",
+      "command(npx)",
+      "command(pnpm)",
+      "command(node)",
+      "command(ls)",
+      "command(cat)",
+      "command(mkdir)",
+      "command(cp)",
+      "command(mv)",
+      "command(rm)",
+      "command(find)",
+      "command(grep)",
+      "command(echo)",
+      "command(touch)",
+      "command(which)",
+      "command(pwd)",
+      "command(sync)",
+      "command(sed)",
+      "command(awk)"
+    ]
+  }
+}

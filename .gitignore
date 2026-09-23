@@ -42,3 +42,13 @@ poetry.lock
 
 # Nautilus
 .nautilus/
+
+# Rust
+/target/
+Cargo.lock
+
+# Node & Frontend
+node_modules/
+.vite/
+web/dist/
+src-tauri/target/

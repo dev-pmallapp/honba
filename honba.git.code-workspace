@@ -1,0 +1,62 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"workbench.colorTheme": "Ayu Mirage",
+		"permissions": {
+			"allow": [
+				"command(git)",
+				"command(git *)",
+				"command(cargo)",
+				"command(cargo *)",
+				"command(gh)",
+				"command(gh *)",
+				"command(python3)",
+				"command(python3 *)",
+				"command(python)",
+				"command(python *)",
+				"command(pytest)",
+				"command(pytest *)",
+				"command(maturin)",
+				"command(maturin *)",
+				"command(ruff)",
+				"command(ruff *)",
+				"command(npm)",
+				"command(npm *)",
+				"command(npx)",
+				"command(npx *)",
+				"command(node)",
+				"command(node *)",
+				"command(ls)",
+				"command(ls *)",
+				"command(cat)",
+				"command(cat *)",
+				"command(mkdir)",
+				"command(mkdir *)",
+				"command(cp)",
+				"command(cp *)",
+				"command(mv)",
+				"command(mv *)",
+				"command(rm)",
+				"command(rm *)",
+				"command(find)",
+				"command(find *)",
+				"command(grep)",
+				"command(grep *)",
+				"command(echo)",
+				"command(echo *)",
+				"command(touch)",
+				"command(touch *)",
+				"command(sed)",
+				"command(sed *)",
+				"command(awk)",
+				"command(awk *)",
+				"command(which)",
+				"command(which *)"
+			]
+		}
+	}
+}

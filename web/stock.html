@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Honba (相場) - Scrip Research & Fundamental Screening</title>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/index.css" />
+  </head>
+  <body class="bg-[#131722] text-[#d1d4dc] overflow-y-auto font-sans antialiased min-h-screen flex flex-col">
+    
+    <!-- 1. Universal Top Navigation Bar -->
+    <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
+      <div class="flex items-center space-x-3">
+        <!-- Logo -->
+        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-[#2a2e39] group">
+          <div class="w-6 h-6 rounded bg-[#2962ff] flex items-center justify-center font-bold text-white text-xs shadow-md">
+            相
+          </div>
+          <span class="font-bold text-sm tracking-wider text-white">HONBA</span>
+          <span class="text-[10px] text-[#787b86] font-mono tracking-widest uppercase">QUANT</span>
+        </a>
+
+        <!-- Symbol Dropdown -->
+        <div class="relative">
+          <select id="symbol-select" class="bg-[#2a2e39] hover:bg-[#363a45] text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-[#363a45] focus:outline-none focus:border-[#2962ff]">
+            <option value="NIFTY ALPHA 50">NIFTY ALPHA 50</option>
+            <option value="NIFTY 50">NIFTY 50</option>
+            <option value="BANKNIFTY">BANKNIFTY</option>
+            <option value="NIFTY200 A30">NIFTY200 A30</option>
+            <option value="RELIANCE">RELIANCE</option>
+            <option value="TCS">TCS</option>
+            <option value="HDFCBANK">HDFCBANK</option>
+          </select>
+        </div>
+
+        <!-- MPA Navigation Links -->
+        <nav class="flex items-center space-x-1 border-l border-[#2a2e39] pl-2 text-xs">
+          <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-xs transition">Workbench</a>
+          <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-xs transition">Algo Designer</a>
+          <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-xs transition">Simulator</a>
+          <a href="/stock.html" data-nav-page="stock" class="px-2.5 py-1 rounded text-xs transition">Scrip Research</a>
+          <a href="/options.html" data-nav-page="options" class="px-2.5 py-1 rounded text-xs transition">Options Chain</a>
+          <a href="/backtest.html" data-nav-page="backtest" class="px-2.5 py-1 rounded text-xs transition">Backtest & Audit</a>
+        </nav>
+      </div>
+
+      <!-- Right Header Actions -->
+      <div class="flex items-center space-x-3 text-xs">
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-[#131722] border border-[#2a2e39] font-mono text-[10px]">
+          <span class="w-2 h-2 rounded-full bg-[#089981] animate-pulse"></span>
+          <span id="ist-clock" class="text-[#d1d4dc]">NSE LIVE | 14:42:18 IST</span>
+        </div>
+        <div class="text-[#787b86] text-[11px]">Data Feed: <span class="text-white font-semibold">Screener.in & NSE Direct</span></div>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-4">
+      
+      <!-- Top Scrip Header Info Card -->
+      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 id="stock-page-symbol" class="text-xl font-bold text-white tracking-wide">NIFTY ALPHA 50</h1>
+            <span class="px-2 py-0.5 rounded bg-[#2962ff]/20 text-[#2962ff] text-xs font-semibold">FACTOR INDEX</span>
+            <span class="px-2 py-0.5 rounded bg-[#2a2e39] text-[#787b86] text-xs">ISIN: INF204KB18X4</span>
+          </div>
+          <p class="text-xs text-[#787b86] mt-1">Tracks top 50 high-alpha companies with NSE float-adjusted market cap and momentum screening.</p>
+        </div>
+
+        <div class="flex items-center space-x-6 font-mono">
+          <div>
+            <div class="text-[10px] text-[#787b86] uppercase">Index LTP</div>
+            <div class="text-xl font-bold text-white">₹8,124.60</div>
+            <div class="text-xs text-[#089981]">+96.40 (+1.20%)</div>
+          </div>
+          <div class="border-l border-[#2a2e39] pl-6">
+            <div class="text-[10px] text-[#787b86] uppercase">52W High / Low</div>
+            <div class="text-xs text-white">₹8,450.00 / ₹6,110.20</div>
+            <div class="text-[10px] text-[#787b86] mt-1">PE: 24.8 | PB: 4.12</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Key Quantitative & Fundamental Ratios Grid -->
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
+          <div class="text-[10px] text-[#787b86] uppercase">ROCE (5Y Avg)</div>
+          <div class="font-mono text-base font-bold text-[#089981]">26.4%</div>
+          <div class="text-[10px] text-[#787b86]">Top decile in NSE</div>
+        </div>
+        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
+          <div class="text-[10px] text-[#787b86] uppercase">ROE (Trailing)</div>
+          <div class="font-mono text-base font-bold text-white">21.8%</div>
+          <div class="text-[10px] text-[#787b86]">Capital efficiency</div>
+        </div>
+        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
+          <div class="text-[10px] text-[#787b86] uppercase">NSE Delivery %</div>
+          <div class="font-mono text-base font-bold text-[#089981]">58.4%</div>
+          <div class="text-[10px] text-[#787b86]">Strong institutional buy</div>
+        </div>
+        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
+          <div class="text-[10px] text-[#787b86] uppercase">Debt / Equity</div>
+          <div class="font-mono text-base font-bold text-white">0.14</div>
+          <div class="text-[10px] text-[#089981]">Clean balance sheet</div>
+        </div>
+        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
+          <div class="text-[10px] text-[#787b86] uppercase">Earnings Growth (YoY)</div>
+          <div class="font-mono text-base font-bold text-[#089981]">+24.6%</div>
+          <div class="text-[10px] text-[#787b86]">Quarterly Profit Up &gt;20%</div>
+        </div>
+        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
+          <div class="text-[10px] text-[#787b86] uppercase">FII + DII Holding</div>
+          <div class="font-mono text-base font-bold text-white">44.2%</div>
+          <div class="text-[10px] text-[#787b86]">+1.8% QoQ inflow</div>
+        </div>
+      </div>
+
+      <!-- Screener.in Style Financials & Order Book Tabs -->
+      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg overflow-hidden">
+        <div class="flex items-center border-b border-[#2a2e39] bg-[#181b24] text-xs">
+          <button data-stock-tab="quarterly" class="px-4 py-2.5 text-white border-b-2 border-[#2962ff] bg-[#2a2e39]/30 font-semibold transition">
+            Quarterly Results (₹ Cr)
+          </button>
+          <button data-stock-tab="depth" class="px-4 py-2.5 text-[#787b86] hover:text-white transition">
+            5-Depth LOB Market Depth
+          </button>
+          <button data-stock-tab="delivery" class="px-4 py-2.5 text-[#787b86] hover:text-white transition">
+            Historical Delivery Volume
+          </button>
+        </div>
+
+        <div class="p-4">
+          <!-- Panel 1: Quarterly Results -->
+          <div data-stock-panel="quarterly" class="overflow-x-auto">
+            <table class="w-full text-left font-mono text-xs">
+              <thead>
+                <tr class="text-[#787b86] uppercase text-[10px] border-b border-[#2a2e39] pb-2">
+                  <th class="py-2">Metric</th>
+                  <th class="py-2 text-right">Sep 2025</th>
+                  <th class="py-2 text-right">Dec 2025</th>
+                  <th class="py-2 text-right">Mar 2026</th>
+                  <th class="py-2 text-right">Jun 2026</th>
+                  <th class="py-2 text-right">Sep 2026 (Est)</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#2a2e39]/50">
+                <tr class="hover:bg-[#2a2e39]/30">
+                  <td class="py-2.5 font-sans font-semibold text-white">Sales / Revenue</td>
+                  <td class="py-2.5 text-right text-white">₹48,250</td>
+                  <td class="py-2.5 text-right text-white">₹51,400</td>
+                  <td class="py-2.5 text-right text-white">₹54,120</td>
+                  <td class="py-2.5 text-right text-white">₹57,890</td>
+                  <td class="py-2.5 text-right text-[#089981] font-bold">₹61,200 (+26.8%)</td>
+                </tr>
+                <tr class="hover:bg-[#2a2e39]/30">
+                  <td class="py-2.5 font-sans font-semibold text-white">Operating Profit (EBITDA)</td>
+                  <td class="py-2.5 text-right text-white">₹9,650</td>
+                  <td class="py-2.5 text-right text-white">₹10,500</td>
+                  <td class="py-2.5 text-right text-white">₹11,360</td>
+                  <td class="py-2.5 text-right text-white">₹12,450</td>
+                  <td class="py-2.5 text-right text-[#089981] font-bold">₹13,200</td>
+                </tr>
+                <tr class="hover:bg-[#2a2e39]/30">
+                  <td class="py-2.5 font-sans font-semibold text-white">OPM %</td>
+                  <td class="py-2.5 text-right text-[#787b86]">20.0%</td>
+                  <td class="py-2.5 text-right text-[#787b86]">20.4%</td>
+                  <td class="py-2.5 text-right text-[#787b86]">21.0%</td>
+                  <td class="py-2.5 text-right text-[#787b86]">21.5%</td>
+                  <td class="py-2.5 text-right text-white font-bold">21.6%</td>
+                </tr>
+                <tr class="hover:bg-[#2a2e39]/30">
+                  <td class="py-2.5 font-sans font-semibold text-white">Net Profit (PAT)</td>
+                  <td class="py-2.5 text-right text-white">₹6,800</td>
+                  <td class="py-2.5 text-right text-white">₹7,420</td>
+                  <td class="py-2.5 text-right text-white">₹8,100</td>
+                  <td class="py-2.5 text-right text-white">₹8,920</td>
+                  <td class="py-2.5 text-right text-[#089981] font-bold">₹9,450 (+39.0%)</td>
+                </tr>
+                <tr class="hover:bg-[#2a2e39]/30">
+                  <td class="py-2.5 font-sans font-semibold text-white">EPS in Rs</td>
+                  <td class="py-2.5 text-right text-white">₹14.20</td>
+                  <td class="py-2.5 text-right text-white">₹15.50</td>
+                  <td class="py-2.5 text-right text-white">₹16.90</td>
+                  <td class="py-2.5 text-right text-white">₹18.60</td>
+                  <td class="py-2.5 text-right text-[#089981] font-bold">₹19.80</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Panel 2: 5-Depth Market Depth -->
+          <div data-stock-panel="depth" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+            <div class="border border-[#2a2e39] rounded p-3 bg-[#131722]">
+              <div class="text-[#089981] font-semibold mb-2 flex justify-between font-sans">
+                <span>BUY ORDERS (BID)</span>
+                <span>TOTAL: 1,42,850 Qty</span>
+              </div>
+              <div class="space-y-1.5">
+                <div class="flex justify-between text-[#787b86] text-[10px]">
+                  <span>Orders</span>
+                  <span>Quantity</span>
+                  <span>Bid Price</span>
+                </div>
+                <div class="flex justify-between"><span class="text-[#787b86]">14</span><span>12,500</span><span class="text-[#089981]">₹8,124.60</span></div>
+                <div class="flex justify-between"><span class="text-[#787b86]">8</span><span>8,200</span><span class="text-[#089981]">₹8,124.00</span></div>
+                <div class="flex justify-between"><span class="text-[#787b86]">22</span><span>34,100</span><span class="text-[#089981]">₹8,123.50</span></div>
+                <div class="flex justify-between"><span class="text-[#787b86]">19</span><span>28,450</span><span class="text-[#089981]">₹8,122.00</span></div>
+                <div class="flex justify-between"><span class="text-[#787b86]">45</span><span>59,600</span><span class="text-[#089981]">₹8,120.00</span></div>
+              </div>
+            </div>
+
+            <div class="border border-[#2a2e39] rounded p-3 bg-[#131722]">
+              <div class="text-[#f23645] font-semibold mb-2 flex justify-between font-sans">
+                <span>SELL ORDERS (ASK)</span>
+                <span>TOTAL: 1,12,300 Qty</span>
+              </div>
+              <div class="space-y-1.5">
+                <div class="flex justify-between text-[#787b86] text-[10px]">
+                  <span>Ask Price</span>
+                  <span>Quantity</span>
+                  <span>Orders</span>
+                </div>
+                <div class="flex justify-between"><span class="text-[#f23645]">₹8,125.00</span><span>15,200</span><span class="text-[#787b86]">11</span></div>
+                <div class="flex justify-between"><span class="text-[#f23645]">₹8,125.50</span><span>21,400</span><span class="text-[#787b86]">18</span></div>
+                <div class="flex justify-between"><span class="text-[#f23645]">₹8,126.00</span><span>19,800</span><span class="text-[#787b86]">14</span></div>
+                <div class="flex justify-between"><span class="text-[#f23645]">₹8,127.50</span><span>24,100</span><span class="text-[#787b86]">26</span></div>
+                <div class="flex justify-between"><span class="text-[#f23645]">₹8,129.00</span><span>31,800</span><span class="text-[#787b86]">39</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel 3: Historical Delivery -->
+          <div data-stock-panel="delivery" class="hidden text-xs space-y-2">
+            <p class="text-[#787b86]">NSE High-Conviction Delivery Volume Trends (Past 5 Sessions):</p>
+            <div class="grid grid-cols-5 gap-2 font-mono text-center">
+              <div class="p-2 rounded bg-[#131722] border border-[#2a2e39]"><div class="text-[#787b86]">19 Sep</div><div class="text-white font-bold">54.2%</div></div>
+              <div class="p-2 rounded bg-[#131722] border border-[#2a2e39]"><div class="text-[#787b86]">20 Sep</div><div class="text-white font-bold">56.1%</div></div>
+              <div class="p-2 rounded bg-[#131722] border border-[#2a2e39]"><div class="text-[#787b86]">21 Sep</div><div class="text-white font-bold">52.8%</div></div>
+              <div class="p-2 rounded bg-[#131722] border border-[#2a2e39]"><div class="text-[#787b86]">22 Sep</div><div class="text-white font-bold">59.0%</div></div>
+              <div class="p-2 rounded bg-[#131722] border border-[#2a2e39]"><div class="text-[#089981]">23 Sep</div><div class="text-[#089981] font-bold">61.4%</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Page Script Entry -->
+    <script type="module">
+      import { initStockPage } from "/src/stock.ts";
+      initStockPage();
+    </script>
+  </body>
+</html>

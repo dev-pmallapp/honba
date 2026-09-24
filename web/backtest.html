@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Honba (相場) - Anti-Overfitting & Backtesting Audit Suite</title>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/index.css" />
+  </head>
+  <body class="bg-[#131722] text-[#d1d4dc] overflow-y-auto font-sans antialiased min-h-screen flex flex-col">
+    
+    <!-- 1. Universal Top Navigation Bar -->
+    <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
+      <div class="flex items-center space-x-3">
+        <!-- Logo -->
+        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-[#2a2e39] group">
+          <div class="w-6 h-6 rounded bg-[#2962ff] flex items-center justify-center font-bold text-white text-xs shadow-md">
+            相
+          </div>
+          <span class="font-bold text-sm tracking-wider text-white">HONBA</span>
+          <span class="text-[10px] text-[#787b86] font-mono tracking-widest uppercase">QUANT</span>
+        </a>
+
+        <!-- Symbol Dropdown -->
+        <div class="relative">
+          <select id="symbol-select" class="bg-[#2a2e39] hover:bg-[#363a45] text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-[#363a45] focus:outline-none focus:border-[#2962ff]">
+            <option value="NIFTY ALPHA 50">NIFTY ALPHA 50</option>
+            <option value="NIFTY 50">NIFTY 50</option>
+            <option value="BANKNIFTY">BANKNIFTY</option>
+          </select>
+        </div>
+
+        <!-- MPA Navigation Links -->
+        <nav class="flex items-center space-x-1 border-l border-[#2a2e39] pl-2 text-xs">
+          <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-xs transition">Workbench</a>
+          <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-xs transition">Algo Designer</a>
+          <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-xs transition">Simulator</a>
+          <a href="/stock.html" data-nav-page="stock" class="px-2.5 py-1 rounded text-xs transition">Scrip Research</a>
+          <a href="/options.html" data-nav-page="options" class="px-2.5 py-1 rounded text-xs transition">Options Chain</a>
+          <a href="/backtest.html" data-nav-page="backtest" class="px-2.5 py-1 rounded text-xs transition">Backtest & Audit</a>
+        </nav>
+      </div>
+
+      <!-- Right Header Actions -->
+      <div class="flex items-center space-x-3 text-xs">
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-[#131722] border border-[#2a2e39] font-mono text-[10px]">
+          <span class="w-2 h-2 rounded-full bg-[#089981] animate-pulse"></span>
+          <span id="ist-clock" class="text-[#d1d4dc]">NSE LIVE | 14:42:18 IST</span>
+        </div>
+        <div class="text-[#089981] font-semibold text-xs">Methodology: Bailey & López de Prado</div>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-4">
+      
+      <!-- Top Title Bar -->
+      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 class="text-xl font-bold text-white tracking-wide">Anti-Overfitting & Statistical Validation Suite</h1>
+          <p class="text-xs text-[#787b86] mt-1">Guarantees strategy robustness against selection bias, p-hacking, and execution slippage in Indian markets.</p>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <span class="px-3 py-1 rounded bg-[#089981]/20 text-[#089981] font-semibold text-xs border border-[#089981]/40">
+            AUDIT STATUS: PASSED FOR LIVE DEPLOYMENT
+          </span>
+        </div>
+      </div>
+
+      <!-- Metrics Triad -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#787b86] uppercase">Deflated Sharpe Ratio (DSR)</span>
+            <span class="px-2 py-0.5 rounded bg-[#089981]/20 text-[#089981] text-[10px] font-bold">PASS</span>
+          </div>
+          <div class="font-mono text-3xl font-bold text-[#089981]">0.97</div>
+          <p class="text-xs text-[#787b86]">Standard threshold &gt; 0.95. Accounts for non-Gaussian return distributions and sample length of 750 trading sessions.</p>
+        </div>
+
+        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#787b86] uppercase">Probability of Backtest Overfit (PBO)</span>
+            <span class="px-2 py-0.5 rounded bg-[#089981]/20 text-[#089981] text-[10px] font-bold">PASS</span>
+          </div>
+          <div class="font-mono text-3xl font-bold text-[#089981]">0.11</div>
+          <p class="text-xs text-[#787b86]">Calculated over 16 Combinatorial Purged Cross-Validation (CPCV) sub-matrices. Extremely low degradation probability.</p>
+        </div>
+
+        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#787b86] uppercase">Max Simulated Drawdown</span>
+            <span class="px-2 py-0.5 rounded bg-[#2962ff]/20 text-[#2962ff] text-[10px] font-bold">OPTIMAL</span>
+          </div>
+          <div class="font-mono text-3xl font-bold text-[#f23645]">-7.2%</div>
+          <p class="text-xs text-[#787b86]">Stress tested under Monte Carlo permutation with 2.5× spread widening during market open volatility (09:15–09:30 IST).</p>
+        </div>
+      </div>
+
+      <!-- CPCV Fan Chart -->
+      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-bold text-white">Combinatorial Purged Cross-Validation (CPCV) Distribution</h2>
+            <p class="text-xs text-[#787b86]">16 Purged paths eliminating lookahead bias and serial correlation</p>
+          </div>
+          <div class="flex items-center space-x-3 text-xs font-mono">
+            <span class="text-[#2962ff] font-bold">― Median In-Sample Path</span>
+            <span class="text-[#089981]/60">― 16 Out-of-Sample Slices</span>
+          </div>
+        </div>
+
+        <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+          <canvas id="cpcv-fan-canvas" width="1200" height="240" class="w-full h-60 block"></canvas>
+        </div>
+      </div>
+
+      <!-- Tax & Fee Realism Breakdown (Budget 2024 Rates) -->
+      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <h2 class="text-sm font-bold text-white">Indian Market Friction & Tax Realism Matrix</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+          <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+            <div class="text-[#787b86] text-[10px]">STT (Budget 2024)</div>
+            <div class="text-white font-bold mt-1">0.1% on Cash Delivery</div>
+            <div class="text-[10px] text-[#787b86]">0.02% Sell Side on Intraday</div>
+          </div>
+          <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+            <div class="text-[#787b86] text-[10px]">Exchange Turnover Charges</div>
+            <div class="text-white font-bold mt-1">NSE: 0.00297%</div>
+            <div class="text-[10px] text-[#787b86]">BSE: 0.00375%</div>
+          </div>
+          <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+            <div class="text-[#787b86] text-[10px]">GST & Stamp Duty</div>
+            <div class="text-white font-bold mt-1">18% on Brokerage & Txn</div>
+            <div class="text-[10px] text-[#787b86]">Stamp: 0.015% (Buy)</div>
+          </div>
+          <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+            <div class="text-[#787b86] text-[10px]">Slippage Multiplier</div>
+            <div class="text-[#089981] font-bold mt-1">1.5× to 3.0× Spread</div>
+            <div class="text-[10px] text-[#787b86]">Latency: 500-1500ms</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Page Script Entry -->
+    <script type="module">
+      import { initBacktestPage } from "/src/backtest.ts";
+      initBacktestPage();
+    </script>
+  </body>
+</html>

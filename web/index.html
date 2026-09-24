@@ -5,13 +5,446 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Honba (相場) - Quantitative Research & Trading Workbench</title>
-    <!-- Google Fonts: Inter (UI) & JetBrains Mono (Financial Numerics) -->
+    <!-- Google Fonts: Inter & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/index.css" />
   </head>
-  <body class="bg-[#131722] text-[#d1d4dc] overflow-hidden select-none font-sans antialiased">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body class="bg-[#131722] text-[#d1d4dc] overflow-hidden select-none font-sans antialiased h-screen w-screen flex flex-col">
+    
+    <!-- 1. Universal Top Navigation Bar -->
+    <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 z-30 select-none flex-shrink-0">
+      <div class="flex items-center space-x-3">
+        <!-- Logo -->
+        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-[#2a2e39] group">
+          <div class="w-6 h-6 rounded bg-[#2962ff] flex items-center justify-center font-bold text-white text-xs shadow-md">
+            相
+          </div>
+          <span class="font-bold text-sm tracking-wider text-white">HONBA</span>
+          <span class="text-[10px] text-[#787b86] font-mono tracking-widest uppercase">QUANT</span>
+        </a>
+
+        <!-- Symbol Dropdown -->
+        <div class="relative">
+          <select id="symbol-select" class="bg-[#2a2e39] hover:bg-[#363a45] text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-[#363a45] focus:outline-none focus:border-[#2962ff]">
+            <option value="NIFTY ALPHA 50">NIFTY ALPHA 50</option>
+            <option value="NIFTY 50">NIFTY 50</option>
+            <option value="BANKNIFTY">BANKNIFTY</option>
+            <option value="NIFTY200 A30">NIFTY200 A30</option>
+            <option value="RELIANCE">RELIANCE</option>
+            <option value="TCS">TCS</option>
+            <option value="HDFCBANK">HDFCBANK</option>
+          </select>
+        </div>
+
+        <!-- MPA Navigation Links -->
+        <nav class="flex items-center space-x-1 border-l border-[#2a2e39] pl-2 text-xs">
+          <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-xs transition">Workbench</a>
+          <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-xs transition">Algo Designer</a>
+          <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-xs transition">Simulator</a>
+          <a href="/stock.html" data-nav-page="stock" class="px-2.5 py-1 rounded text-xs transition">Scrip Research</a>
+          <a href="/options.html" data-nav-page="options" class="px-2.5 py-1 rounded text-xs transition">Options Chain</a>
+          <a href="/backtest.html" data-nav-page="backtest" class="px-2.5 py-1 rounded text-xs transition">Backtest & Audit</a>
+        </nav>
+
+        <!-- Timeframe Selectors -->
+        <div class="hidden lg:flex items-center bg-[#131722] rounded p-0.5 border border-[#2a2e39] text-xs">
+          <button data-tf="1s" class="px-2 py-0.5 rounded text-[#787b86] hover:text-white transition">1s</button>
+          <button data-tf="1m" class="px-2 py-0.5 rounded text-[#787b86] hover:text-white transition">1m</button>
+          <button data-tf="5m" class="px-2 py-0.5 rounded bg-[#2a2e39] text-white font-semibold transition">5m</button>
+          <button data-tf="15m" class="px-2 py-0.5 rounded text-[#787b86] hover:text-white transition">15m</button>
+          <button data-tf="1h" class="px-2 py-0.5 rounded text-[#787b86] hover:text-white transition">1h</button>
+          <button data-tf="1D" class="px-2 py-0.5 rounded text-[#787b86] hover:text-white transition">1D</button>
+        </div>
+
+        <!-- Indicators Dropdown -->
+        <div class="relative">
+          <button id="btn-indicators" class="flex items-center space-x-1 px-2.5 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] text-xs text-[#d1d4dc] transition">
+            <span>fx Indicators</span>
+            <span class="text-[10px]">▾</span>
+          </button>
+          <div id="dropdown-indicators" class="hidden absolute left-0 mt-1 w-48 bg-[#1e222d] border border-[#2a2e39] rounded shadow-xl py-1.5 z-50 text-xs">
+            <label class="flex items-center px-3 py-1.5 hover:bg-[#2a2e39] cursor-pointer">
+              <input type="checkbox" name="ema9" class="mr-2 accent-[#2962ff]" checked />
+              <span class="text-white">EMA 9</span>
+              <span class="ml-auto w-2.5 h-2.5 rounded-full bg-[#2962ff]"></span>
+            </label>
+            <label class="flex items-center px-3 py-1.5 hover:bg-[#2a2e39] cursor-pointer">
+              <input type="checkbox" name="ema21" class="mr-2 accent-[#f59e0b]" checked />
+              <span class="text-white">EMA 21</span>
+              <span class="ml-auto w-2.5 h-2.5 rounded-full bg-[#f59e0b]"></span>
+            </label>
+            <label class="flex items-center px-3 py-1.5 hover:bg-[#2a2e39] cursor-pointer">
+              <input type="checkbox" name="volume" class="mr-2 accent-[#3a4666]" checked />
+              <span class="text-white">Volume Histogram</span>
+            </label>
+            <label class="flex items-center px-3 py-1.5 hover:bg-[#2a2e39] cursor-pointer">
+              <input type="checkbox" name="supertrend" class="mr-2 accent-[#089981]" />
+              <span class="text-white">SuperTrend (10, 3)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Header Actions -->
+      <div class="flex items-center space-x-3 text-xs">
+        <div id="header-ltp" class="hidden md:block font-mono text-[11px] text-[#787b86]">
+          LTP: <span class="text-white font-semibold">₹8,124.60</span> <span class="text-[#089981]">+96.40 (+1.20%)</span>
+        </div>
+
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-[#131722] border border-[#2a2e39] font-mono text-[10px]">
+          <span class="w-2 h-2 rounded-full bg-[#089981] animate-pulse"></span>
+          <span id="ist-clock" class="text-[#d1d4dc]">NSE LIVE | 14:42:18 IST</span>
+        </div>
+
+        <div class="hidden xl:flex items-center space-x-1 text-[#787b86] text-[10px]">
+          <span>🔑 Keyring:</span>
+          <span class="text-[#089981] font-semibold">Active</span>
+        </div>
+
+        <button id="btn-run-backtest" class="flex items-center space-x-1.5 bg-[#2962ff] hover:bg-[#1e53e5] text-white px-3 py-1 rounded font-semibold transition shadow-sm cursor-pointer">
+          <span>▶</span>
+          <span>Run Backtest</span>
+        </button>
+
+        <button class="flex items-center space-x-1 bg-[#2a2e39] hover:bg-[#363a45] text-[#d1d4dc] hover:text-white px-2.5 py-1 rounded transition">
+          <span>✨ AI Quant</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 2. Main Workbench Body -->
+    <div class="flex flex-1 overflow-hidden relative">
+      
+      <!-- Left Drawing Tool Rail -->
+      <aside class="w-12 bg-[#1e222d] border-r border-[#2a2e39] flex flex-col items-center py-2 space-y-1.5 flex-shrink-0 z-20">
+        <button data-draw-tool="cursor" title="Cursor" class="w-8 h-8 rounded flex items-center justify-center bg-[#2962ff] text-white transition">
+          ↖
+        </button>
+        <button data-draw-tool="crosshair" title="Crosshair" class="w-8 h-8 rounded flex items-center justify-center text-[#787b86] hover:text-white hover:bg-[#2a2e39] transition">
+          ✛
+        </button>
+        <button data-draw-tool="trendline" title="Trendline" class="w-8 h-8 rounded flex items-center justify-center text-[#787b86] hover:text-white hover:bg-[#2a2e39] transition font-bold">
+          ╱
+        </button>
+        <button data-draw-tool="horizontal" title="Horizontal Ray" class="w-8 h-8 rounded flex items-center justify-center text-[#787b86] hover:text-white hover:bg-[#2a2e39] transition font-bold">
+          ―
+        </button>
+        <button data-draw-tool="fibonacci" title="Fibonacci Retracement" class="w-8 h-8 rounded flex items-center justify-center text-[#787b86] hover:text-white hover:bg-[#2a2e39] transition font-mono text-xs">
+          φ
+        </button>
+        <button data-draw-tool="measure" title="Measure Date & Price Range" class="w-8 h-8 rounded flex items-center justify-center text-[#787b86] hover:text-white hover:bg-[#2a2e39] transition">
+          📐
+        </button>
+        <div class="w-6 border-b border-[#2a2e39] my-1"></div>
+        <button title="Clear Drawings" class="w-8 h-8 rounded flex items-center justify-center text-[#787b86] hover:text-[#f23645] hover:bg-[#2a2e39] transition">
+          🗑
+        </button>
+      </aside>
+
+      <!-- Center Interactive Market Chart Area -->
+      <main class="flex-1 relative overflow-hidden bg-[#131722] flex flex-col">
+        <!-- Floating Chart Legend -->
+        <div class="absolute top-2 left-3 z-10 pointer-events-none flex items-center space-x-2 text-xs font-mono">
+          <span id="legend-symbol" class="font-bold text-white font-sans text-sm">NIFTY ALPHA 50</span>
+          <span class="text-[10px] px-1 rounded bg-[#2a2e39] text-[#787b86]">NSE</span>
+          <span class="text-[#787b86]">O:</span> <span id="legend-o" class="text-white">8045.09</span>
+          <span class="text-[#787b86]">H:</span> <span id="legend-h" class="text-white">8066.58</span>
+          <span class="text-[#787b86]">L:</span> <span id="legend-l" class="text-white">8037.26</span>
+          <span class="text-[#787b86]">C:</span> <span id="legend-c" class="text-white">8040.60</span>
+          <span id="legend-change" class="text-[#f23645]">-4.49 (-0.06%)</span>
+        </div>
+
+        <!-- OpenAlgo Canvas Container -->
+        <div id="chart-container" class="flex-1 w-full h-full relative"></div>
+      </main>
+
+      <!-- Right Multi-Tab Sidebar -->
+      <aside class="w-80 bg-[#1e222d] border-l border-[#2a2e39] flex flex-col flex-shrink-0 z-20">
+        <!-- Sidebar Navigation Tabs -->
+        <div class="flex items-center border-b border-[#2a2e39] bg-[#131722] text-xs">
+          <button data-side-tab="watchlist" class="flex-1 py-2 text-center text-white border-b-2 border-[#2962ff] bg-[#1e222d] font-semibold transition">
+            Watchlist
+          </button>
+          <button data-side-tab="orderticket" class="flex-1 py-2 text-center text-[#787b86] hover:text-white transition">
+            Order Ticket
+          </button>
+          <button data-side-tab="options" class="flex-1 py-2 text-center text-[#787b86] hover:text-white transition">
+            Options
+          </button>
+        </div>
+
+        <!-- Tab 1: Watchlist -->
+        <div data-tab-content="watchlist" class="flex-1 flex flex-col overflow-hidden">
+          <div class="p-2 border-b border-[#2a2e39]">
+            <input id="watchlist-search" type="text" placeholder="Search NSE/BSE symbol..." class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1 text-xs text-white placeholder-[#787b86] focus:outline-none focus:border-[#2962ff]" />
+          </div>
+          <div class="flex items-center justify-between px-3 py-1 bg-[#181b24] text-[10px] text-[#787b86] uppercase font-mono tracking-wider border-b border-[#2a2e39]">
+            <span>Symbol</span>
+            <span>Last Price / Chg</span>
+          </div>
+          <div id="watchlist-items" class="flex-1 overflow-y-auto divide-y divide-[#2a2e39]/30"></div>
+          <div class="p-2 bg-[#131722] border-t border-[#2a2e39] flex items-center justify-between text-[11px] text-[#787b86]">
+            <span>8 Instruments tracked</span>
+            <span class="text-[#089981] font-mono text-[10px]">Real-time Feed</span>
+          </div>
+        </div>
+
+        <!-- Tab 2: Order Ticket -->
+        <div data-tab-content="orderticket" class="hidden flex-1 p-3 flex flex-col overflow-y-auto space-y-3">
+          <div class="flex items-center space-x-2 bg-[#131722] p-1 rounded border border-[#2a2e39]">
+            <button id="ot-buy-btn" class="flex-1 py-1.5 text-xs font-semibold rounded bg-[#089981] text-white">BUY</button>
+            <button id="ot-sell-btn" class="flex-1 py-1.5 text-xs font-semibold rounded bg-[#2a2e39] text-[#787b86] hover:text-white">SELL</button>
+          </div>
+
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="text-[#787b86] w-16">Product:</span>
+            <button class="flex-1 py-1 rounded bg-[#2962ff] text-white text-xs font-medium">MIS (Intraday)</button>
+            <button class="flex-1 py-1 rounded bg-[#2a2e39] text-[#787b86] hover:text-white text-xs">CNC (Delivery)</button>
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[11px] text-[#787b86] flex justify-between">
+              <span>Quantity (Lots of 25)</span>
+              <span class="text-white font-mono">1 Lot = 25</span>
+            </label>
+            <input id="ot-qty" type="number" value="25" step="25" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-[#2962ff]" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="text-[11px] text-[#787b86] flex justify-between">
+              <span>Order Price</span>
+              <span class="text-[#2962ff] cursor-pointer">Set LTP</span>
+            </label>
+            <input id="ot-price" type="number" value="8124.60" step="0.05" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-[#2962ff]" />
+          </div>
+
+          <div class="bg-[#131722] p-2.5 rounded border border-[#2a2e39] space-y-1 text-xs">
+            <div class="flex justify-between text-[#787b86]">
+              <span>Required Margin:</span>
+              <span id="ot-est-margin" class="font-mono text-white">₹2,03,115.00</span>
+            </div>
+            <div class="flex justify-between text-[#787b86]">
+              <span>Estimated STT & Taxes:</span>
+              <span class="font-mono text-white">₹24.80</span>
+            </div>
+            <div class="flex justify-between text-[#787b86]">
+              <span>Broker Gateway:</span>
+              <span class="font-semibold text-[#089981]">Dhan / OpenAlgo API</span>
+            </div>
+          </div>
+
+          <button id="ot-submit-btn" class="w-full py-2.5 rounded font-semibold text-xs tracking-wide uppercase bg-[#089981] hover:bg-[#067a67] text-white transition shadow cursor-pointer">
+            Place Buy Order (NIFTY ALPHA 50)
+          </button>
+        </div>
+
+        <!-- Tab 3: Options Quick Chain -->
+        <div data-tab-content="options" class="hidden flex-1 flex flex-col overflow-hidden">
+          <div class="p-2 border-b border-[#2a2e39] flex items-center justify-between text-xs">
+            <span class="font-semibold text-white">NIFTY 26-SEP Weekly</span>
+            <a href="/options.html" class="text-[#2962ff] hover:underline text-[11px]">Full Chain →</a>
+          </div>
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-[#181b24] text-[10px] text-[#787b86] uppercase font-mono border-b border-[#2a2e39]">
+                <th class="p-1.5 text-right">Call LTP</th>
+                <th class="p-1.5 text-center bg-[#131722]">Strike</th>
+                <th class="p-1.5 text-left">Put LTP</th>
+              </tr>
+            </thead>
+            <tbody id="options-quick-tbody"></tbody>
+          </table>
+        </div>
+      </aside>
+    </div>
+
+    <!-- 3. Bottom Strategy Tester & Research Dock -->
+    <section id="strategy-dock" class="h-72 bg-[#1e222d] border-t border-[#2a2e39] transition-all duration-200 relative flex flex-col flex-shrink-0 z-30">
+      
+      <!-- Dock Header & Navigation Tabs -->
+      <div class="h-9 bg-[#181b24] border-b border-[#2a2e39] flex items-center justify-between px-3">
+        <div class="flex items-center space-x-1 text-xs">
+          <button data-dock-tab="tearsheet" class="px-3 py-1.5 text-white border-b-2 border-[#2962ff] bg-[#2a2e39]/40 font-semibold transition">
+            📈 Strategy Tearsheet
+          </button>
+          <button data-dock-tab="ledger" class="px-3 py-1.5 text-[#787b86] hover:text-white transition">
+            📋 Trade Ledger (128)
+          </button>
+          <button data-dock-tab="audit" class="px-3 py-1.5 text-[#787b86] hover:text-white transition">
+            🛡 Anti-Overfit Audit (PBO 0.11)
+          </button>
+          <button data-dock-tab="pipeline" class="px-3 py-1.5 text-[#787b86] hover:text-white transition">
+            ⚡ Event Pipeline (Barter-rs)
+          </button>
+        </div>
+
+        <!-- Collapse Toggle -->
+        <button id="dock-collapse-btn" title="Collapse Strategy Dock" class="p-1 rounded hover:bg-[#2a2e39] text-[#787b86] hover:text-white transition cursor-pointer text-xs">
+          ▼
+        </button>
+      </div>
+
+      <!-- Dock Interior Content -->
+      <div class="flex-1 overflow-y-auto p-3">
+        <!-- Panel 1: Strategy Tearsheet -->
+        <div data-dock-panel="tearsheet" class="space-y-3">
+          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Net Profit (Post Tax)</div>
+              <div id="metric-profit" class="font-mono text-sm font-bold text-[#089981]">₹3,42,500 <span class="text-[10px]">(+28.4%)</span></div>
+            </div>
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Profit Factor</div>
+              <div class="font-mono text-sm font-bold text-white">2.18</div>
+            </div>
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Sharpe (Ann.)</div>
+              <div class="font-mono text-sm font-bold text-white">2.14 <span class="text-[9px] text-[#089981]">HIGH</span></div>
+            </div>
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Sortino Ratio</div>
+              <div class="font-mono text-sm font-bold text-white">3.42</div>
+            </div>
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Max Drawdown</div>
+              <div class="font-mono text-sm font-bold text-[#f23645]">-7.2% <span class="text-[9px] text-[#089981]">LOW DD</span></div>
+            </div>
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Win Rate</div>
+              <div class="font-mono text-sm font-bold text-white">62.5%</div>
+            </div>
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Expectancy</div>
+              <div class="font-mono text-sm font-bold text-[#089981]">₹2,675.00</div>
+            </div>
+            <div class="bg-[#131722] p-2 rounded border border-[#2a2e39]">
+              <div class="text-[10px] text-[#787b86] uppercase">Closed Trades</div>
+              <div class="font-mono text-sm font-bold text-white">128</div>
+            </div>
+          </div>
+
+          <!-- Cumulative Equity Curve Canvas -->
+          <div class="bg-[#131722] p-2.5 rounded border border-[#2a2e39]">
+            <div class="flex items-center justify-between mb-1.5 text-xs">
+              <span class="font-semibold text-white flex items-center space-x-1.5">
+                <span class="w-2.5 h-2.5 rounded bg-[#089981]"></span>
+                <span>Cumulative Strategy Equity Curve vs Nifty 50 Benchmark</span>
+              </span>
+              <div class="flex items-center space-x-3 text-[11px] font-mono">
+                <span class="text-[#089981] font-semibold">● Strategy (+28.4%)</span>
+                <span class="text-[#787b86]">-- Nifty TR (+14.2%)</span>
+                <span class="text-[#2962ff] font-semibold">Alpha: +14.2%</span>
+              </div>
+            </div>
+            <canvas id="equity-curve-canvas" width="1200" height="90" class="w-full h-24 block"></canvas>
+          </div>
+        </div>
+
+        <!-- Panel 2: Trade Ledger -->
+        <div data-dock-panel="ledger" class="hidden overflow-x-auto">
+          <table class="w-full text-left text-xs font-mono">
+            <thead>
+              <tr class="bg-[#131722] text-[#787b86] uppercase text-[10px] border-b border-[#2a2e39]">
+                <th class="p-2">#ID</th>
+                <th class="p-2">Entry Time</th>
+                <th class="p-2">Symbol</th>
+                <th class="p-2">Side</th>
+                <th class="p-2">Entry Price</th>
+                <th class="p-2">Exit Price</th>
+                <th class="p-2">Qty</th>
+                <th class="p-2">Gross PnL</th>
+                <th class="p-2">STT & Taxes</th>
+                <th class="p-2">Net PnL</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#2a2e39]/50">
+              <tr class="hover:bg-[#2a2e39]/40">
+                <td class="p-2 text-[#787b86]">#TR-128</td>
+                <td class="p-2 text-white">2026-09-23 14:15</td>
+                <td class="p-2 text-white font-sans font-semibold">NIFTY ALPHA 50</td>
+                <td class="p-2 text-[#089981] font-bold">BUY</td>
+                <td class="p-2 text-white">₹7,972.95</td>
+                <td class="p-2 text-white">₹8,124.60</td>
+                <td class="p-2 text-white">50</td>
+                <td class="p-2 text-[#089981]">+₹7,582.50</td>
+                <td class="p-2 text-[#787b86]">₹124.20</td>
+                <td class="p-2 text-[#089981] font-bold">+₹7,458.30</td>
+              </tr>
+              <tr class="hover:bg-[#2a2e39]/40">
+                <td class="p-2 text-[#787b86]">#TR-127</td>
+                <td class="p-2 text-white">2026-09-22 10:30</td>
+                <td class="p-2 text-white font-sans font-semibold">NIFTY ALPHA 50</td>
+                <td class="p-2 text-[#089981] font-bold">BUY</td>
+                <td class="p-2 text-white">₹7,890.10</td>
+                <td class="p-2 text-white">₹7,945.00</td>
+                <td class="p-2 text-white">50</td>
+                <td class="p-2 text-[#089981]">+₹2,745.00</td>
+                <td class="p-2 text-[#787b86]">₹118.50</td>
+                <td class="p-2 text-[#089981] font-bold">+₹2,626.50</td>
+              </tr>
+              <tr class="hover:bg-[#2a2e39]/40">
+                <td class="p-2 text-[#787b86]">#TR-126</td>
+                <td class="p-2 text-white">2026-09-21 11:45</td>
+                <td class="p-2 text-white font-sans font-semibold">NIFTY ALPHA 50</td>
+                <td class="p-2 text-[#f23645] font-bold">SELL</td>
+                <td class="p-2 text-white">₹7,920.00</td>
+                <td class="p-2 text-white">₹7,955.50</td>
+                <td class="p-2 text-white">50</td>
+                <td class="p-2 text-[#f23645]">-₹1,775.00</td>
+                <td class="p-2 text-[#787b86]">₹119.00</td>
+                <td class="p-2 text-[#f23645] font-bold">-₹1,894.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Panel 3: Anti-Overfit Audit -->
+        <div data-dock-panel="audit" class="hidden grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="bg-[#131722] p-3 rounded border border-[#2a2e39] space-y-1.5">
+            <div class="text-xs font-semibold text-white">Deflated Sharpe Ratio (DSR)</div>
+            <div class="font-mono text-2xl font-bold text-[#089981]">0.97</div>
+            <p class="text-[11px] text-[#787b86]">Corrects for multiple testing bias and non-normal returns. Benchmark threshold &gt; 0.95.</p>
+            <div class="text-[10px] text-[#089981] font-semibold">✓ VERIFIED: STATISTICALLY SIGNIFICANT</div>
+          </div>
+          <div class="bg-[#131722] p-3 rounded border border-[#2a2e39] space-y-1.5">
+            <div class="text-xs font-semibold text-white">Probability of Backtest Overfitting (PBO)</div>
+            <div class="font-mono text-2xl font-bold text-[#089981]">0.11</div>
+            <p class="text-[11px] text-[#787b86]">16-slice Combinatorial Purged Cross-Validation (CPCV). Low risk threshold &lt; 0.25.</p>
+            <div class="text-[10px] text-[#089981] font-semibold">✓ VERIFIED: MINIMAL OVERFITTING RISK</div>
+          </div>
+          <div class="bg-[#131722] p-3 rounded border border-[#2a2e39] space-y-1.5">
+            <div class="text-xs font-semibold text-white">Execution Friction Stress Test</div>
+            <div class="font-mono text-2xl font-bold text-white">2.5× Spread</div>
+            <p class="text-[11px] text-[#787b86]">Simulated 1,500ms exchange latency + 2.5× slippage multiplier on market orders.</p>
+            <div class="text-[10px] text-[#089981] font-semibold">✓ PASSED: STABLE PROFIT MARGIN</div>
+          </div>
+        </div>
+
+        <!-- Panel 4: Event Pipeline -->
+        <div data-dock-panel="pipeline" class="hidden bg-[#131722] p-3 rounded border border-[#2a2e39] font-mono text-xs space-y-2">
+          <div class="text-white font-semibold font-sans">Barter-rs Event Pipeline Parity</div>
+          <div class="flex items-center space-x-2 text-[11px] overflow-x-auto pb-2">
+            <span class="px-2.5 py-1 rounded bg-[#2a2e39] text-[#2962ff]">MarketEvent (Tick/Bar)</span>
+            <span class="text-[#787b86]">➜</span>
+            <span class="px-2.5 py-1 rounded bg-[#2a2e39] text-white">Signal (Sakata Engine)</span>
+            <span class="text-[#787b86]">➜</span>
+            <span class="px-2.5 py-1 rounded bg-[#2a2e39] text-[#f59e0b]">RiskGuard (Kumo Layer)</span>
+            <span class="text-[#787b86]">➜</span>
+            <span class="px-2.5 py-1 rounded bg-[#2a2e39] text-white">OrderEvent</span>
+            <span class="text-[#787b86]">➜</span>
+            <span class="px-2.5 py-1 rounded bg-[#2a2e39] text-[#089981]">FillEvent (100% Parity)</span>
+          </div>
+          <div class="text-[11px] text-[#787b86]">Zero-allocation memory pipeline running on Rust Tokio event loop. Average latency: 42 microseconds.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Page Script Entry -->
+    <script type="module">
+      import { initWorkbench } from "/src/workbench.ts";
+      initWorkbench();
+    </script>
   </body>
 </html>

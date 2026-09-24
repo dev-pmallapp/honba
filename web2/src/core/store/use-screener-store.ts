@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 import { Instrument, CountryCode } from '../market-data';
 import { dataLayer } from '../data-layer';
-import { ALL_COLUMNS, ColumnDef } from '../../components/column-modal';
+import { ALL_COLUMNS, ColumnDef, TAB_COLUMN_PRESETS } from '../../components/column-modal';
 import { AdvancedFilterState, DEFAULT_ADVANCED_FILTERS } from '../../components/tradingview-filters-modal';
 
 export interface ScreenerState {
@@ -63,7 +63,7 @@ export interface ScreenerState {
 
 const getStoredColumns = (): ColumnDef[] => {
   try {
-    const raw = localStorage.getItem('honba_screener_columns_v2');
+    const raw = localStorage.getItem('honba_screener_columns_v3');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -94,7 +94,7 @@ export const useScreenerStore = create<ScreenerState>((set, get) => {
     currentPage: 1,
     pageSize: 100,
 
-    detailDrawerOpen: true,
+    detailDrawerOpen: false,
     activeDetailTab: 'overview',
     isFilterModalOpen: false,
     isColumnModalOpen: false,
@@ -134,7 +134,16 @@ export const useScreenerStore = create<ScreenerState>((set, get) => {
     },
 
     setActiveTab: (activeTab: string) => {
-      set({ activeTab });
+      const preset = TAB_COLUMN_PRESETS[activeTab];
+      if (preset) {
+        const updated = ALL_COLUMNS.map((c) => ({
+          ...c,
+          visible: preset.includes(c.id),
+        }));
+        set({ activeTab, columns: updated, currentPage: 1 });
+      } else {
+        set({ activeTab });
+      }
     },
 
     setQuickPreset: (quickPreset: string) => {

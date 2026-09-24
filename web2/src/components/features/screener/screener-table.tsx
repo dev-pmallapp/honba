@@ -1,21 +1,117 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Instrument } from '../../../core/market-data';
 import { useScreenerStore } from '../../../core/store/use-screener-store';
+import { useLayoutStore } from '../../../layouts/use-layout-store';
 import { dataLayer } from '../../../core/data-layer';
 import { Sparkline } from '../../ui/sparkline';
 import { RangeBar } from '../../ui/range-bar';
 import {
   ChevronUp,
   ChevronDown,
-  ChevronsUpDown,
   Plus,
   ChevronLeft,
   ChevronRight,
+  Search,
+  X,
 } from 'lucide-react';
 
 interface ScreenerTableProps {
   instruments: Instrument[];
 }
+
+// Brand Logo Palette & Icons for Top Instruments
+const BRAND_LOGOS: Record<string, { bg: string; color: string; label?: string }> = {
+  RELIANCE: { bg: '#0b2046', color: '#ffffff', label: 'R' },
+  BHARTIARTL: { bg: '#e40000', color: '#ffffff', label: 'a' },
+  HDFCBANK: { bg: '#004c8f', color: '#ed1c24', label: 'HD' },
+  ICICIBANK: { bg: '#b32219', color: '#ffffff', label: 'i' },
+  SBIN: { bg: '#00a3e0', color: '#ffffff', label: 'S' },
+  TCS: { bg: '#00539b', color: '#ffffff', label: 'TCS' },
+  BAJFINANCE: { bg: '#00629b', color: '#ffffff', label: 'B' },
+  LT: { bg: '#00205b', color: '#ffffff', label: 'LT' },
+  LICI: { bg: '#005aa9', color: '#ffcc00', label: 'LIC' },
+  HINDUNILVER: { bg: '#001a9c', color: '#ffffff', label: 'U' },
+  SUNPHARMA: { bg: '#ff9900', color: '#ffffff', label: 'SP' },
+  TITAN: { bg: '#008080', color: '#ffffff', label: 'T' },
+  ADANIPORTS: { bg: '#800080', color: '#ffffff', label: 'a' },
+  ADANIENT: { bg: '#800080', color: '#ffffff', label: 'a' },
+  ADANIPOWER: { bg: '#800080', color: '#ffffff', label: 'a' },
+  INFY: { bg: '#007cc3', color: '#ffffff', label: 'infy' },
+  KOTAKBANK: { bg: '#ed1b24', color: '#ffffff', label: 'K' },
+  AXISBANK: { bg: '#97144d', color: '#ffffff', label: 'A' },
+  MARUTI: { bg: '#172f85', color: '#ffffff', label: 'M' },
+  MM: { bg: '#ea1b26', color: '#ffffff', label: 'M' },
+  NTPC: { bg: '#005b94', color: '#ffffff', label: 'N' },
+  ONGC: { bg: '#e31b23', color: '#ffffff', label: 'O' },
+  COALINDIA: { bg: '#003366', color: '#ffffff', label: 'CIL' },
+  BAJAJFINSV: { bg: '#00629b', color: '#ffffff', label: 'B' },
+  ASIANPAINT: { bg: '#e31e24', color: '#ffffff', label: 'AP' },
+  POLICYBZR: { bg: '#2962ff', color: '#ffffff', label: 'PB' },
+  SSRETAIL: { bg: '#089981', color: '#ffffff', label: 'SS' },
+  HEROMOTOCO: { bg: '#ed1c24', color: '#ffffff', label: 'HM' },
+  HEROMOTORS: { bg: '#ed1c24', color: '#ffffff', label: 'HM' },
+  MFSL: { bg: '#1e293b', color: '#ffffff', label: 'M' },
+  OLAELEC: { bg: '#00c389', color: '#000000', label: 'O' },
+  KSCL: { bg: '#10b981', color: '#ffffff', label: 'K' },
+  MCX: { bg: '#0f172a', color: '#38bdf8', label: 'M' },
+  BSE: { bg: '#1e40af', color: '#ffffff', label: 'BSE' },
+};
+
+const KNOWN_SECTORS: Record<string, string> = {
+  RELIANCE: 'Energy minerals',
+  BHARTIARTL: 'Communications',
+  HDFCBANK: 'Finance',
+  ICICIBANK: 'Finance',
+  SBIN: 'Finance',
+  TCS: 'Technology services',
+  BAJFINANCE: 'Finance',
+  LT: 'Industrial services',
+  LICI: 'Finance',
+  HINDUNILVER: 'Consumer non-durables',
+  SUNPHARMA: 'Health technology',
+  TITAN: 'Consumer durables',
+  ADANIPORTS: 'Transportation',
+  ADANIENT: 'Distribution services',
+  ADANIPOWER: 'Utilities',
+  INFY: 'Technology services',
+  KOTAKBANK: 'Finance',
+  AXISBANK: 'Finance',
+  MARUTI: 'Consumer durables',
+  MM: 'Consumer durables',
+  NTPC: 'Utilities',
+  ONGC: 'Energy minerals',
+  COALINDIA: 'Energy minerals',
+  BAJAJFINSV: 'Finance',
+  ASIANPAINT: 'Process industries',
+  POLICYBZR: 'Technology services',
+  SSRETAIL: 'Retail trade',
+  HEROMOTOCO: 'Consumer durables',
+  HEROMOTORS: 'Consumer durables',
+  MFSL: 'Finance',
+  OLAELEC: 'Consumer durables',
+  KSCL: 'Non-energy minerals',
+  MCX: 'Finance',
+  BSE: 'Finance',
+  RAYMONDREL: 'Finance',
+  RAYMOND: 'Consumer non-durables',
+  LTF: 'Finance',
+  HDFCLIFE: 'Finance',
+  CUPID: 'Health technology',
+};
+
+const getLogoForSymbol = (symbol: string) => {
+  const cleanSymbol = symbol.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (BRAND_LOGOS[cleanSymbol]) {
+    return BRAND_LOGOS[cleanSymbol];
+  }
+  const colors = ['#2962ff', '#089981', '#7b1fa2', '#f57c00', '#0097a7', '#455a64', '#b71c1c'];
+  const hash = cleanSymbol.charCodeAt(0) + (cleanSymbol.charCodeAt(cleanSymbol.length - 1) || 0);
+  return {
+    bg: colors[hash % colors.length],
+    color: '#ffffff',
+    label: cleanSymbol.slice(0, 2),
+  };
+};
 
 export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => {
   const columns = useScreenerStore((state) => state.columns);
@@ -24,13 +120,15 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
   const setSort = useScreenerStore((state) => state.setSort);
   const activeSymbol = useScreenerStore((state) => state.activeSymbol);
   const setActiveSymbol = useScreenerStore((state) => state.setActiveSymbol);
-  const shortlistedSymbols = useScreenerStore((state) => state.shortlistedSymbols);
-  const toggleShortlist = useScreenerStore((state) => state.toggleShortlist);
   const currentPage = useScreenerStore((state) => state.currentPage);
   const setPage = useScreenerStore((state) => state.setPage);
   const pageSize = useScreenerStore((state) => state.pageSize);
   const setPageSize = useScreenerStore((state) => state.setPageSize);
   const setColumnModalOpen = useScreenerStore((state) => state.setColumnModalOpen);
+
+  const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+  const searchQuery = useScreenerStore((state) => state.searchQuery);
+  const setSearchQuery = useScreenerStore((state) => state.setSearchQuery);
 
   const market = dataLayer.getCurrentMarketInfo();
   const visibleColumns = useMemo(() => columns.filter((c) => c.visible), [columns]);
@@ -40,6 +138,21 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
     if (!sortField || !sortOrder) return instruments;
     const sorted = [...instruments];
     sorted.sort((a, b) => {
+      if (sortField === 'relVol') {
+        const rA = a.volume / (a.avgVolume30d || a.volume);
+        const rB = b.volume / (b.avgVolume30d || b.volume);
+        return sortOrder === 'asc' ? rA - rB : rB - rA;
+      }
+      if (sortField === 'epsGrowth') {
+        const gA = a.revenueGrowth ?? 0;
+        const gB = b.revenueGrowth ?? 0;
+        return sortOrder === 'asc' ? gA - gB : gB - gA;
+      }
+      if (sortField === 'analystRating') {
+        return sortOrder === 'asc'
+          ? a.technicalRating.localeCompare(b.technicalRating)
+          : b.technicalRating.localeCompare(a.technicalRating);
+      }
       if (sortField === 'range52') {
         const pctA = (a.price - a.low52) / (a.high52 - a.low52 || 1);
         const pctB = (b.price - b.low52) / (b.high52 - b.low52 || 1);
@@ -71,26 +184,6 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
     return sortedInstruments.slice(start, start + pageSize);
   }, [sortedInstruments, validPage, pageSize]);
 
-  // Master Checkbox
-  const allCurrentSymbols = useMemo(() => paginatedInstruments.map((i) => i.symbol), [paginatedInstruments]);
-  const isAllSelected =
-    allCurrentSymbols.length > 0 &&
-    allCurrentSymbols.every((s) => shortlistedSymbols.includes(s));
-  const isSomeSelected =
-    allCurrentSymbols.some((s) => shortlistedSymbols.includes(s)) && !isAllSelected;
-
-  const handleMasterCheckboxChange = () => {
-    if (isAllSelected) {
-      allCurrentSymbols.forEach((s) => {
-        if (shortlistedSymbols.includes(s)) toggleShortlist(s);
-      });
-    } else {
-      allCurrentSymbols.forEach((s) => {
-        if (!shortlistedSymbols.includes(s)) toggleShortlist(s);
-      });
-    }
-  };
-
   const formatNumber = (num: number, decimals: number = 2): string => {
     return num.toLocaleString('en-US', {
       minimumFractionDigits: decimals,
@@ -99,22 +192,29 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
   };
 
   const formatCompact = (num: number): string => {
-    if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
-    if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
-    if (num >= 1e7) return (num / 1e7).toFixed(2) + 'Cr';
-    if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
-    if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+    if (num >= 1e12) return (num / 1e12).toFixed(2) + ' T';
+    if (num >= 1e9) return (num / 1e9).toFixed(2) + ' B';
+    if (num >= 1e7) return (num / 1e7).toFixed(2) + ' Cr';
+    if (num >= 1e6) return (num / 1e6).toFixed(2) + ' M';
+    if (num >= 1e3) return (num / 1e3).toFixed(2) + ' K';
     return String(num);
   };
 
-  const renderSortIcon = (colId: string) => {
-    if (sortField !== colId) {
-      return <ChevronsUpDown size={11} className="sort-icon inactive" />;
+  const handleSortToggle = (colId: string) => {
+    if (sortField === colId) {
+      if (sortOrder === 'asc') setSort(colId); // will flip to desc
+      else if (sortOrder === 'desc') setSort(''); // reset
+    } else {
+      setSort(colId);
     }
+  };
+
+  const renderSortIndicator = (colId: string) => {
+    if (sortField !== colId) return null;
     return sortOrder === 'asc' ? (
-      <ChevronUp size={11} className="sort-icon active" />
+      <span style={{ marginLeft: 3, fontSize: 10, color: 'var(--text-primary)' }}>↑</span>
     ) : (
-      <ChevronDown size={11} className="sort-icon active" />
+      <span style={{ marginLeft: 3, fontSize: 10, color: 'var(--text-primary)' }}>↓</span>
     );
   };
 
@@ -124,57 +224,115 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
 
     switch (colId) {
       case 'symbol':
-        const avatarBg = ['#2962ff', '#089981', '#7b1fa2', '#f57c00', '#0097a7', '#455a64'][
-          inst.symbol.charCodeAt(0) % 6
-        ];
+        const logo = getLogoForSymbol(inst.symbol);
+        const hasDividend = inst.dividendYield && inst.dividendYield > 0;
         return (
-          <div className="symbol-cell-content">
-            <input
-              type="checkbox"
-              className="row-checkbox"
-              checked={shortlistedSymbols.includes(inst.symbol)}
-              onClick={(e) => e.stopPropagation()}
-              onChange={() => toggleShortlist(inst.symbol)}
-            />
-            <div className="company-avatar" style={{ backgroundColor: avatarBg }}>
-              {inst.symbol.slice(0, 2)}
+          <div className="tv-symbol-cell">
+            <div className="tv-symbol-logo" style={{ backgroundColor: logo.bg, color: logo.color }}>
+              {logo.label}
             </div>
-            <div className="symbol-text-group">
-              <div className="symbol-name-row">
-                <span className="symbol-ticker">{inst.symbol}</span>
-                <span className="symbol-exch-badge">{inst.exchange}</span>
-              </div>
-              <div className="company-fullname" title={inst.name}>
+            <div className="tv-symbol-details">
+              <span className="tv-symbol-ticker">{inst.symbol}</span>
+              <span className="tv-symbol-name" title={inst.name}>
                 {inst.name}
-              </div>
+              </span>
+              {hasDividend && (
+                <span className="tv-dividend-tag" title={`Dividend Yield: ${inst.dividendYield.toFixed(2)}%`}>
+                  D
+                </span>
+              )}
             </div>
           </div>
         );
 
       case 'price':
         return (
-          <div className="num-cell-wrapper">
-            <span className="currency-prefix">{market.currencySymbol}</span>
-            <span className="price-value">{formatNumber(inst.price)}</span>
+          <div>
+            <span className="tv-num-val">{formatNumber(inst.price)}</span>
+            <span className="tv-curr-unit">{market.currency}</span>
           </div>
         );
 
       case 'changePercent':
         return (
-          <span className={`badge-pill ${isUp ? 'pill-bullish' : 'pill-bearish'}`}>
+          <span className={isUp ? 'tv-change-up' : 'tv-change-down'}>
             {sign}{inst.changePercent.toFixed(2)}%
           </span>
         );
 
       case 'change':
         return (
-          <span className={`num-val ${isUp ? 'val-bullish' : 'val-bearish'}`}>
+          <span className={isUp ? 'tv-change-up' : 'tv-change-down'}>
             {sign}{formatNumber(inst.change)}
           </span>
         );
 
       case 'volume':
-        return <span className="num-val">{formatCompact(inst.volume)}</span>;
+        return <span className="tv-num-val">{formatCompact(inst.volume)}</span>;
+
+      case 'relVol':
+        const relVol = inst.volume / (inst.avgVolume30d || inst.volume);
+        return <span className="tv-num-val">{relVol.toFixed(2)}</span>;
+
+      case 'marketCap':
+        return (
+          <div>
+            <span className="tv-num-val">{formatCompact(inst.marketCap)}</span>
+            <span className="tv-curr-unit">{market.currency}</span>
+          </div>
+        );
+
+      case 'pe':
+        return <span className="tv-num-val">{inst.pe ? inst.pe.toFixed(2) : '—'}</span>;
+
+      case 'forwardPe':
+        return <span className="tv-num-val">{inst.forwardPe ? inst.forwardPe.toFixed(2) : '—'}</span>;
+
+      case 'eps':
+        return (
+          <div>
+            <span className="tv-num-val">{inst.eps ? inst.eps.toFixed(2) : '—'}</span>
+            <span className="tv-curr-unit">{market.currency}</span>
+          </div>
+        );
+
+      case 'epsGrowth':
+        const epsGrowth = inst.revenueGrowth ?? 0;
+        return (
+          <span className={epsGrowth >= 0 ? 'tv-change-up' : 'tv-change-down'}>
+            {epsGrowth >= 0 ? '+' : ''}{epsGrowth.toFixed(2)}%
+          </span>
+        );
+
+      case 'pb':
+        return <span className="tv-num-val">{inst.pb ? inst.pb.toFixed(2) : '—'}</span>;
+
+      case 'dividendYield':
+        return (
+          <span className="tv-num-val">
+            {inst.dividendYield ? inst.dividendYield.toFixed(2) + '%' : '0.00%'}
+          </span>
+        );
+
+      case 'sector':
+        const displaySector = KNOWN_SECTORS[inst.symbol] || inst.sector;
+        return <span className="tv-sector-text">{displaySector}</span>;
+
+      case 'analystRating':
+      case 'technicalRating':
+        const rating = inst.technicalRating;
+        const isBullish = rating.includes('Buy');
+        const isBearish = rating.includes('Sell');
+        const arrow = isBullish ? '⌃' : isBearish ? '⌄' : '—';
+        const ratingClass = isBullish ? 'rating-buy' : isBearish ? 'rating-sell' : 'rating-neutral';
+        const formattedRating =
+          rating === 'Strong Buy' ? 'Strong buy' : rating === 'Strong Sell' ? 'Strong sell' : rating;
+        return (
+          <span className={`tv-analyst-badge ${ratingClass}`}>
+            <span className="tv-rating-arrow">{arrow}</span>
+            <span>{formattedRating}</span>
+          </span>
+        );
 
       case 'sparkline':
         return (
@@ -185,123 +343,142 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
           />
         );
 
-      case 'technicalRating':
-        return (
-          <span className={`rating-pill rating-${inst.technicalRating.toLowerCase().replace(' ', '-')}`}>
-            {inst.technicalRating}
-          </span>
-        );
-
-      case 'marketCap':
-        return (
-          <span className="num-val">
-            {market.currencySymbol}{formatCompact(inst.marketCap)}
-          </span>
-        );
-
-      case 'pe':
-        return <span className="num-val">{inst.pe ? inst.pe.toFixed(2) : '-'}</span>;
-
-      case 'forwardPe':
-        return <span className="num-val">{inst.forwardPe ? inst.forwardPe.toFixed(2) : '-'}</span>;
-
-      case 'eps':
-        return <span className="num-val">{inst.eps ? market.currencySymbol + inst.eps.toFixed(2) : '-'}</span>;
-
-      case 'pb':
-        return <span className="num-val">{inst.pb ? inst.pb.toFixed(2) : '-'}</span>;
-
-      case 'dividendYield':
-        return (
-          <span className="num-val">
-            {inst.dividendYield ? inst.dividendYield.toFixed(2) + '%' : '0.00%'}
-          </span>
-        );
-
       case 'range52':
         return <RangeBar current={inst.price} low={inst.low52} high={inst.high52} />;
 
       case 'high52':
-        return <span className="num-val">{market.currencySymbol}{formatNumber(inst.high52)}</span>;
+        return (
+          <div>
+            <span className="tv-num-val">{formatNumber(inst.high52)}</span>
+            <span className="tv-curr-unit">{market.currency}</span>
+          </div>
+        );
 
       case 'low52':
-        return <span className="num-val">{market.currencySymbol}{formatNumber(inst.low52)}</span>;
+        return (
+          <div>
+            <span className="tv-num-val">{formatNumber(inst.low52)}</span>
+            <span className="tv-curr-unit">{market.currency}</span>
+          </div>
+        );
 
       case 'rsi14':
         return (
-          <span className={`num-val ${inst.rsi14 > 70 ? 'val-bearish' : inst.rsi14 < 35 ? 'val-bullish' : ''}`}>
+          <span className={`tv-num-val ${inst.rsi14 > 70 ? 'tv-change-down' : inst.rsi14 < 35 ? 'tv-change-up' : ''}`}>
             {inst.rsi14.toFixed(1)}
           </span>
         );
 
       case 'sma200':
-        return <span className="num-val">{market.currencySymbol}{formatNumber(inst.sma200)}</span>;
+        return (
+          <div>
+            <span className="tv-num-val">{formatNumber(inst.sma200)}</span>
+            <span className="tv-curr-unit">{market.currency}</span>
+          </div>
+        );
 
       case 'perf1W':
         return (
-          <span className={`num-val ${(inst.perf1W ?? 0) >= 0 ? 'val-bullish' : 'val-bearish'}`}>
+          <span className={(inst.perf1W ?? 0) >= 0 ? 'tv-change-up' : 'tv-change-down'}>
             {(inst.perf1W ?? 0) >= 0 ? '+' : ''}{(inst.perf1W ?? 0).toFixed(2)}%
           </span>
         );
 
       case 'perf1M':
         return (
-          <span className={`num-val ${(inst.perf1M ?? 0) >= 0 ? 'val-bullish' : 'val-bearish'}`}>
+          <span className={(inst.perf1M ?? 0) >= 0 ? 'tv-change-up' : 'tv-change-down'}>
             {(inst.perf1M ?? 0) >= 0 ? '+' : ''}{(inst.perf1M ?? 0).toFixed(2)}%
           </span>
         );
 
       case 'perf1Y':
         return (
-          <span className={`num-val ${(inst.perf1Y ?? 0) >= 0 ? 'val-bullish' : 'val-bearish'}`}>
+          <span className={(inst.perf1Y ?? 0) >= 0 ? 'tv-change-up' : 'tv-change-down'}>
             {(inst.perf1Y ?? 0) >= 0 ? '+' : ''}{(inst.perf1Y ?? 0).toFixed(2)}%
           </span>
         );
 
       case 'revenueGrowth':
         return (
-          <span className={`num-val ${(inst.revenueGrowth ?? 0) >= 0 ? 'val-bullish' : 'val-bearish'}`}>
+          <span className={(inst.revenueGrowth ?? 0) >= 0 ? 'tv-change-up' : 'tv-change-down'}>
             {(inst.revenueGrowth ?? 0) >= 0 ? '+' : ''}{(inst.revenueGrowth ?? 0).toFixed(1)}%
           </span>
         );
 
       case 'netMargin':
-        return <span className="num-val">{inst.netMargin ? inst.netMargin.toFixed(1) + '%' : '-'}</span>;
+        return <span className="tv-num-val">{inst.netMargin ? inst.netMargin.toFixed(1) + '%' : '—'}</span>;
 
       case 'roce':
-        return <span className="num-val">{inst.roce.toFixed(1)}%</span>;
+        return <span className="tv-num-val">{inst.roce ? inst.roce.toFixed(1) + '%' : '—'}</span>;
 
       case 'debtToEquity':
-        return <span className="num-val">{inst.debtToEquity.toFixed(2)}</span>;
+        return <span className="tv-num-val">{inst.debtToEquity ? inst.debtToEquity.toFixed(2) : '—'}</span>;
 
       default:
-        return <span>-</span>;
+        return <span>—</span>;
     }
   };
 
+  const handleRowClick = (inst: Instrument) => {
+    setActiveSymbol(inst.symbol);
+  };
+
   return (
-    <div className="screener-table-container" id="table-scroll-container">
+    <div className="tv-table-wrapper" id="table-scroll-container">
       <table className="tv-screener-table">
         <thead>
           <tr>
             {visibleColumns.map((col) => {
               if (col.id === 'symbol') {
                 return (
-                  <th key={col.id} className="sticky-col sortable" onClick={() => setSort('symbol')}>
-                    <div className="header-cell-inner">
-                      <input
-                        type="checkbox"
-                        checked={isAllSelected}
-                        ref={(el) => {
-                          if (el) el.indeterminate = isSomeSelected;
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={handleMasterCheckboxChange}
-                        style={{ marginRight: 8, cursor: 'pointer' }}
-                        title="Select All on Page"
-                      />
-                      <span>{col.label}</span>
-                      {renderSortIcon('symbol')}
+                  <th key={col.id} className="tv-th-symbol">
+                    <div className="tv-th-symbol-inner">
+                      <div className="tv-th-symbol-title-row">
+                        <button
+                          className="tv-th-search-btn"
+                          onClick={() => setHeaderSearchOpen(!headerSearchOpen)}
+                          title="Search ticker..."
+                        >
+                          <Search size={13} />
+                        </button>
+                        <span onClick={() => handleSortToggle('symbol')} style={{ cursor: 'pointer' }}>
+                          Symbol
+                        </span>
+                        {renderSortIndicator('symbol')}
+                      </div>
+
+                      {headerSearchOpen ? (
+                        <div style={{ display: 'flex', alignItems: 'center', marginTop: 2 }}>
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder="Type to filter..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 4px',
+                              borderRadius: 3,
+                              border: '1px solid var(--accent-primary)',
+                              background: 'var(--bg-surface-elevated)',
+                              color: 'var(--text-primary)',
+                              outline: 'none',
+                              width: '100%',
+                            }}
+                          />
+                          <button
+                            onClick={() => {
+                              setHeaderSearchOpen(false);
+                              setSearchQuery('');
+                            }}
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="tv-th-count-row">{totalItems.toLocaleString()}</div>
+                      )}
                     </div>
                   </th>
                 );
@@ -310,26 +487,25 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
               return (
                 <th
                   key={col.id}
-                  className={`sortable ${['price', 'changePercent', 'change', 'volume', 'marketCap', 'pe', 'rsi14', 'roce'].includes(col.id) ? 'num' : ''}`}
-                  onClick={() => setSort(col.id)}
+                  className="sortable"
+                  onClick={() => handleSortToggle(col.id)}
+                  title={`Sort by ${col.label}`}
                 >
-                  <div className="header-cell-inner">
+                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                    {renderSortIndicator(col.id)}
                     <span>{col.label}</span>
-                    {renderSortIcon(col.id)}
                   </div>
                 </th>
               );
             })}
 
-            {/* Trailing Column to add more */}
-            <th className="action-col" style={{ width: 44, textAlign: 'center' }}>
-              <button
-                className="nav-icon-btn table-add-col-btn"
-                onClick={() => setColumnModalOpen(true)}
-                title="Add / Remove Columns"
-              >
-                <Plus size={13} />
-              </button>
+            {/* Trailing Add Column (+) Header Button */}
+            <th
+              className="tv-th-add-col"
+              onClick={() => setColumnModalOpen(true)}
+              title="Add / Remove columns"
+            >
+              <Plus size={14} />
             </th>
           </tr>
         </thead>
@@ -337,31 +513,35 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
         <tbody>
           {paginatedInstruments.length === 0 ? (
             <tr>
-              <td colSpan={visibleColumns.length + 1} style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No matching instruments found</div>
-                <div style={{ fontSize: 13 }}>Try clearing some of your search queries or filter constraints.</div>
+              <td
+                colSpan={visibleColumns.length + 1}
+                style={{ textAlign: 'center', padding: '80px 0', color: 'var(--text-muted)' }}
+              >
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>
+                  No matching instruments found
+                </div>
+                <div style={{ fontSize: 13 }}>Try clearing some of your filter parameters or search query.</div>
               </td>
             </tr>
           ) : (
             paginatedInstruments.map((inst) => {
               const isSelected = activeSymbol === inst.symbol;
-              const isShortlisted = shortlistedSymbols.includes(inst.symbol);
 
               return (
                 <tr
                   key={inst.symbol}
-                  className={`table-row ${isSelected ? 'row-selected' : ''} ${isShortlisted ? 'row-shortlisted' : ''}`}
-                  onClick={() => setActiveSymbol(inst.symbol)}
+                  className={`tv-row ${isSelected ? 'row-selected' : ''}`}
+                  onClick={() => handleRowClick(inst)}
                 >
                   {visibleColumns.map((col) => (
                     <td
                       key={col.id}
-                      className={`${col.id === 'symbol' ? 'sticky-col' : ''} ${['price', 'changePercent', 'change', 'volume', 'marketCap', 'pe', 'forwardPe', 'eps', 'pb', 'dividendYield', 'high52', 'low52', 'rsi14', 'sma200', 'perf1W', 'perf1M', 'perf1Y', 'revenueGrowth', 'netMargin', 'roce', 'debtToEquity'].includes(col.id) ? 'num' : ''}`}
+                      className={col.id === 'symbol' ? 'tv-col-symbol' : ''}
                     >
                       {renderCellContent(col.id, inst)}
                     </td>
                   ))}
-                  <td className="action-col" />
+                  <td style={{ width: 38 }} />
                 </tr>
               );
             })
@@ -372,7 +552,7 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
       {/* Pagination Footer */}
       <div className="table-pagination-footer">
         <div className="pagination-info">
-          Page <strong>{validPage}</strong> of <strong>{maxPage}</strong> ({totalItems} total)
+          Page <strong>{validPage}</strong> of <strong>{maxPage}</strong> ({totalItems.toLocaleString()} stocks)
         </div>
 
         <div className="pagination-controls">

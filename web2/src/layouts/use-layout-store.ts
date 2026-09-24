@@ -23,11 +23,11 @@ const getStoredLayout = (): { preset: LayoutPreset; drawerWidth: number } => {
     const savedPreset = localStorage.getItem('honba_layout_preset_v2') as LayoutPreset | null;
     const savedWidth = localStorage.getItem('honba_drawer_width_v2');
     return {
-      preset: savedPreset && ['default', 'focus', 'split'].includes(savedPreset) ? savedPreset : 'default',
+      preset: savedPreset && ['default', 'focus', 'split'].includes(savedPreset) ? savedPreset : 'focus',
       drawerWidth: savedWidth ? Math.max(MIN_DRAWER_WIDTH, Math.min(MAX_DRAWER_WIDTH, Number(savedWidth))) : DEFAULT_DRAWER_WIDTH,
     };
   } catch {
-    return { preset: 'default', drawerWidth: DEFAULT_DRAWER_WIDTH };
+    return { preset: 'focus', drawerWidth: DEFAULT_DRAWER_WIDTH };
   }
 };
 

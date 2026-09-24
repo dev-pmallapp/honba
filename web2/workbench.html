@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="honba-dark" data-typography="inter-mono">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Honba (相場) WorkBench — Multi-Chart & Orderbook</title>
+</head>
+<body>
+  <div id="app">
+    <div id="app-nav-container"></div>
+    <div id="app-body-content" style="flex: 1; overflow-y: auto;"></div>
+  </div>
+  <script type="module">
+    import { initHonbaApp } from '/src/apps-common.ts';
+    initHonbaApp('workbench');
+  </script>
+</body>
+</html>

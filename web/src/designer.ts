@@ -169,7 +169,7 @@ class ${config.name.replace(/[^a-zA-Z0-9]/g, "")}(Strategy):
         return self.indicators.rsi(14)
 
     def should_long(self) -> bool:
-        # Sakata Engine Entry Rule
+        # Strategy Engine Entry Rule
         ema_cross = self.fast_ema > self.slow_ema and self.indicators.crossover(self.fast_ema, self.slow_ema)
         momentum_filter = self.rsi > self.rsi_threshold
         # Check Indian market trading session window (09:20 - 15:15 IST)
@@ -237,8 +237,8 @@ class ${config.name.replace(/[^a-zA-Z0-9]/g, "")}(Strategy):
     2
   );
 
-  // 3. Rust Nautilus Trader Kernel Bridge
-  const rustCode = `// Sakata Engine & Barter-rs Zero-Allocation Event Loop
+  // 3. Rust Quantitative Execution Kernel
+  const rustCode = `// Strategy Engine & High-Throughput Event Loop
 use honba_core::prelude::*;
 
 #[derive(Default)]

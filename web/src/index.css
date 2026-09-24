@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,19 +8,73 @@
   --tv-bg-primary: #131722;
   --tv-bg-secondary: #1e222d;
   --tv-bg-tertiary: #2a2e39;
+  --tv-bg-elevated: #363a45;
   --tv-border: #2a2e39;
   --tv-text: #d1d4dc;
   --tv-text-muted: #787b86;
   --tv-accent: #2962ff;
+  --tv-accent-hover: #1e53e5;
   --tv-bullish: #089981;
   --tv-bearish: #f23645;
 }
 
+/* 1. Global Uniform Typography */
+html, body, #root, *, *::before, *::after {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 2. Form Controls explicitly inherit font instead of browser agent default */
+input, select, button, textarea, optgroup {
+  font-family: inherit;
+  font-feature-settings: inherit;
+}
+
+/* 3. Universal Monospace for financial numerals, tick values, and timestamps */
+.font-mono,
+[class*="font-mono"],
+code,
+pre,
+kbd,
+samp {
+  font-family: 'JetBrains Mono', 'SF Mono', SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", monospace !important;
+  font-feature-settings: "tnum" 1, "lnum" 1, "zero" 1 !important;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
-  font-feature-settings: "tnum" on, "lnum" on;
   background-color: var(--tv-bg-primary);
   color: var(--tv-text);
   margin: 0;
   padding: 0;
+  overflow: hidden;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+/* Custom Sleek Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #131722;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2e39;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #363a45;
+}
+
+/* 4. Table alignment & data layout utilities */
+table {
+  font-variant-numeric: tabular-nums;
+}
+.table-fixed-layout {
+  table-layout: fixed;
+  width: 100%;
 }

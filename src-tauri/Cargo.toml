@@ -12,5 +12,8 @@ tauri-build = { version = "2.0", features = [] }
 tauri = { version = "2.0", features = [] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rust_decimal = { workspace = true }
 honba-core = { workspace = true }
 honba-dhan = { workspace = true }
+honba-indicators = { workspace = true }
+honba-overfit = { workspace = true }

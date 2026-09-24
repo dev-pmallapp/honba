@@ -5,7 +5,7 @@
 		}
 	],
 	"settings": {
-		"workbench.colorTheme": "Ayu Mirage",
+		"workbench.colorTheme": "Catppuccin Latte",
 		"permissions": {
 			"allow": [
 				"command(git)",

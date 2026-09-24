@@ -54,6 +54,10 @@
           <span class="w-2 h-2 rounded-full bg-[#089981] animate-pulse"></span>
           <span id="ist-clock" class="text-[#d1d4dc]">NSE LIVE | 14:42:18 IST</span>
         </div>
+        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-[#2a2e39] hover:bg-[#363a45] text-[#d1d4dc] hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
+          <span>🎛️</span>
+          <span>Widgets</span>
+        </button>
         <button id="btn-deploy-openalgo" class="bg-[#2962ff] hover:bg-[#1e53e5] text-white px-3 py-1 rounded font-semibold transition shadow-sm cursor-pointer">
           🚀 Deploy to OpenAlgo / Dhan
         </button>
@@ -67,7 +71,7 @@
       <div class="lg:col-span-7 space-y-4">
         
         <!-- Strategy Profile Card -->
-        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-profile" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <h1 class="text-sm font-bold text-white flex items-center space-x-2">
               <span class="w-2.5 h-2.5 rounded bg-[#2962ff]"></span>
@@ -97,7 +101,7 @@
         </div>
 
         <!-- Quantitative Indicator Settings -->
-        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-indicators" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
           <h2 class="text-sm font-bold text-white flex items-center space-x-2">
             <span class="w-2.5 h-2.5 rounded bg-[#f59e0b]"></span>
             <span>Indicator Inputs & Math Filters</span>
@@ -130,7 +134,7 @@
         </div>
 
         <!-- Rule Builder Cards (Jesse & OpenAlgo Inspired) -->
-        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-rules" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
           <h2 class="text-sm font-bold text-white flex items-center space-x-2">
             <span class="w-2.5 h-2.5 rounded bg-[#089981]"></span>
             <span>Entry & Exit Execution Conditions</span>
@@ -168,7 +172,7 @@
         </div>
 
         <!-- Position Sizing & Indian Market Risk Management -->
-        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-risk" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
           <h2 class="text-sm font-bold text-white flex items-center space-x-2">
             <span class="w-2.5 h-2.5 rounded bg-[#f23645]"></span>
             <span>Position Sizing & Risk Bracket Parameters</span>
@@ -203,7 +207,7 @@
       </div>
 
       <!-- Right Column: Live Code Generator & Testing Action (5 cols) -->
-      <div class="lg:col-span-5 flex flex-col space-y-4">
+      <div data-widget="widget-code-preview" class="lg:col-span-5 flex flex-col space-y-4">
         
         <!-- Live Generated Strategy Code Box -->
         <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg flex-1 flex flex-col overflow-hidden">

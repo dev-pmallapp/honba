@@ -1,3 +1,5 @@
+import { initWidgetCustomizer } from "./widgets/widget-customizer";
+
 export function initHeaderNavigation(
   activePage: "workbench" | "designer" | "simulator" | "stock" | "options" | "backtest"
 ) {
@@ -44,4 +46,7 @@ export function initHeaderNavigation(
       window.dispatchEvent(new CustomEvent("honba:symbol-change", { detail: target.value }));
     });
   }
+
+  // Initialize modular widget customization and saved views
+  initWidgetCustomizer(activePage);
 }

@@ -103,6 +103,11 @@
           <span class="text-[#089981] font-semibold">Active</span>
         </div>
 
+        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-[#2a2e39] hover:bg-[#363a45] text-[#d1d4dc] hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
+          <span>🎛️</span>
+          <span>Widgets</span>
+        </button>
+
         <button id="btn-run-backtest" class="flex items-center space-x-1.5 bg-[#2962ff] hover:bg-[#1e53e5] text-white px-3 py-1 rounded font-semibold transition shadow-sm cursor-pointer">
           <span>▶</span>
           <span>Run Backtest</span>
@@ -118,7 +123,7 @@
     <div class="flex flex-1 overflow-hidden relative">
       
       <!-- Left Drawing Tool Rail -->
-      <aside class="w-12 bg-[#1e222d] border-r border-[#2a2e39] flex flex-col items-center py-2 space-y-1.5 flex-shrink-0 z-20">
+      <aside data-widget="widget-drawing-toolbar" class="w-12 bg-[#1e222d] border-r border-[#2a2e39] flex flex-col items-center py-2 space-y-1.5 flex-shrink-0 z-20">
         <button data-draw-tool="cursor" title="Cursor" class="w-8 h-8 rounded flex items-center justify-center bg-[#2962ff] text-white transition">
           ↖
         </button>
@@ -144,7 +149,7 @@
       </aside>
 
       <!-- Center Interactive Market Chart Area -->
-      <main class="flex-1 relative overflow-hidden bg-[#131722] flex flex-col">
+      <main data-widget="widget-chart" class="flex-1 relative overflow-hidden bg-[#131722] flex flex-col">
         <!-- Floating Chart Legend -->
         <div class="absolute top-2 left-3 z-10 pointer-events-none flex items-center space-x-2 text-xs font-mono">
           <span id="legend-symbol" class="font-bold text-white font-sans text-sm">NIFTY ALPHA 50</span>
@@ -161,7 +166,7 @@
       </main>
 
       <!-- Right Multi-Tab Sidebar -->
-      <aside class="w-80 bg-[#1e222d] border-l border-[#2a2e39] flex flex-col flex-shrink-0 z-20">
+      <aside data-widget="widget-watchlist" class="w-80 bg-[#1e222d] border-l border-[#2a2e39] flex flex-col flex-shrink-0 z-20">
         <!-- Sidebar Navigation Tabs -->
         <div class="flex items-center border-b border-[#2a2e39] bg-[#131722] text-xs">
           <button data-side-tab="watchlist" class="flex-1 py-2 text-center text-white border-b-2 border-[#2962ff] bg-[#1e222d] font-semibold transition">
@@ -261,7 +266,7 @@
     </div>
 
     <!-- 3. Bottom Strategy Tester & Research Dock -->
-    <section id="strategy-dock" class="h-72 bg-[#1e222d] border-t border-[#2a2e39] transition-all duration-200 relative flex flex-col flex-shrink-0 z-30">
+    <section id="strategy-dock" data-widget="widget-strategy-dock" class="h-72 bg-[#1e222d] border-t border-[#2a2e39] transition-all duration-200 relative flex flex-col flex-shrink-0 z-30">
       
       <!-- Dock Header & Navigation Tabs -->
       <div class="h-9 bg-[#181b24] border-b border-[#2a2e39] flex items-center justify-between px-3">

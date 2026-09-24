@@ -55,15 +55,19 @@
           <span class="w-2 h-2 rounded-full bg-[#089981] animate-pulse"></span>
           <span id="ist-clock" class="text-[#d1d4dc]">NSE LIVE | 14:42:18 IST</span>
         </div>
+        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-[#2a2e39] hover:bg-[#363a45] text-[#d1d4dc] hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
+          <span>🎛️</span>
+          <span>Widgets</span>
+        </button>
         <div class="text-[#787b86] text-[11px]">Data Feed: <span class="text-white font-semibold">Screener.in & NSE Direct</span></div>
       </div>
     </header>
 
     <!-- Main Content Container -->
-    <main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-4">
+    <main class="flex-1 max-w-[1800px] w-full mx-auto p-4 space-y-4">
       
       <!-- Top Scrip Header Info Card -->
-      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div data-widget="widget-stock-header" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div class="flex items-center space-x-2">
             <h1 id="stock-page-symbol" class="text-xl font-bold text-white tracking-wide">NIFTY ALPHA 50</h1>
@@ -88,7 +92,7 @@
       </div>
 
       <!-- Key Quantitative & Fundamental Ratios Grid -->
-      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div data-widget="widget-stock-ratios" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
           <div class="text-[10px] text-[#787b86] uppercase">ROCE (5Y Avg)</div>
           <div class="font-mono text-base font-bold text-[#089981]">26.4%</div>
@@ -122,7 +126,7 @@
       </div>
 
       <!-- Screener.in Style Financials & Order Book Tabs -->
-      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg overflow-hidden">
+      <div data-widget="widget-stock-financials" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg overflow-hidden">
         <div class="flex items-center border-b border-[#2a2e39] bg-[#181b24] text-xs">
           <button data-stock-tab="quarterly" class="px-4 py-2.5 text-white border-b-2 border-[#2962ff] bg-[#2a2e39]/30 font-semibold transition">
             Quarterly Results (₹ Cr)

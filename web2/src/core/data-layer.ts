@@ -82,7 +82,7 @@ export interface DataLayerState {
 const STORAGE_KEY = 'honba_shared_state_v1';
 
 type Listener = (state: DataLayerState) => void;
-type TickListener = (tick: { symbol: string; price: number; change: number; changePercent: number }) => void;
+type TickListener = (tick: { symbol: string; price: number; change: number; changePercent: number; volume?: number; timestamp?: number }) => void;
 
 class CommonDataLayer {
   private instruments: Instrument[] = [...INSTRUMENTS_DATABASE];
@@ -304,6 +304,20 @@ class CommonDataLayer {
         changePercent: inst.changePercent,
       }));
     }, 2800);
+  }
+
+  public emitTick(tick: { symbol: string; price: number; change: number; changePercent: number; volume?: number; timestamp?: number }) {
+    const inst = this.getInstrument(tick.symbol);
+    if (inst) {
+      inst.price = tick.price;
+      inst.change = tick.change;
+      inst.changePercent = tick.changePercent;
+      if (tick.volume !== undefined) inst.volume = tick.volume;
+      if (inst.sparkline && inst.sparkline.length > 0) {
+        inst.sparkline[inst.sparkline.length - 1] = tick.price;
+      }
+    }
+    this.tickListeners.forEach((cb) => cb(tick));
   }
 
   public onTick(cb: TickListener): () => void {

@@ -1,31 +1,46 @@
 /**
- * Honba Column Customizer Modal
- * Allows showing/hiding table columns dynamically.
+ * TradingView Screener Column Customizer Modal
+ * Categorized metric selector for customizing table columns.
  */
 
 export interface ColumnDef {
   id: string;
   label: string;
-  category: 'overview' | 'valuation' | 'technicals' | 'fundamentals';
+  category: 'overview' | 'performance' | 'valuation' | 'technicals' | 'fundamentals';
   visible: boolean;
 }
 
 export const ALL_COLUMNS: ColumnDef[] = [
-  { id: 'symbol', label: 'Symbol & Company', category: 'overview', visible: true },
+  // Overview
+  { id: 'symbol', label: 'Symbol & Name', category: 'overview', visible: true },
   { id: 'price', label: 'Price', category: 'overview', visible: true },
   { id: 'changePercent', label: 'Change %', category: 'overview', visible: true },
+  { id: 'change', label: 'Change (Pts)', category: 'overview', visible: true },
   { id: 'volume', label: 'Volume', category: 'overview', visible: true },
   { id: 'sparkline', label: '7D Trend', category: 'overview', visible: true },
+  { id: 'technicalRating', label: 'Technical Rating', category: 'overview', visible: true },
+
+  // Valuation
   { id: 'marketCap', label: 'Market Cap', category: 'valuation', visible: true },
-  { id: 'pe', label: 'P/E', category: 'valuation', visible: true },
+  { id: 'pe', label: 'P/E (TTM)', category: 'valuation', visible: true },
   { id: 'forwardPe', label: 'Forward P/E', category: 'valuation', visible: false },
-  { id: 'pb', label: 'P/B', category: 'valuation', visible: false },
+  { id: 'eps', label: 'EPS (TTM)', category: 'valuation', visible: false },
+  { id: 'pb', label: 'Price to Book', category: 'valuation', visible: false },
   { id: 'dividendYield', label: 'Div Yield %', category: 'valuation', visible: true },
-  { id: 'high52', label: '52W High', category: 'technicals', visible: true },
+
+  // Technicals
+  { id: 'range52', label: '52W Range Bar', category: 'technicals', visible: true },
+  { id: 'high52', label: '52W High', category: 'technicals', visible: false },
   { id: 'low52', label: '52W Low', category: 'technicals', visible: false },
   { id: 'rsi14', label: 'RSI (14)', category: 'technicals', visible: true },
   { id: 'sma200', label: '200 SMA', category: 'technicals', visible: false },
-  { id: 'technicalRating', label: 'Tech Rating', category: 'technicals', visible: true },
+
+  // Performance
+  { id: 'perf1W', label: 'Perf 1W %', category: 'performance', visible: false },
+  { id: 'perf1M', label: 'Perf 1M %', category: 'performance', visible: false },
+  { id: 'perf1Y', label: 'Perf 1Y %', category: 'performance', visible: false },
+
+  // Fundamentals
   { id: 'revenueGrowth', label: 'Rev Growth %', category: 'fundamentals', visible: true },
   { id: 'netMargin', label: 'Net Margin %', category: 'fundamentals', visible: false },
   { id: 'roce', label: 'ROCE %', category: 'fundamentals', visible: true },
@@ -36,6 +51,7 @@ export class ColumnModal {
   private overlay: HTMLElement;
   private columns: ColumnDef[];
   private onUpdate: (columns: ColumnDef[]) => void;
+  private selectedCategory: string = 'all';
 
   constructor(onUpdate: (columns: ColumnDef[]) => void) {
     this.columns = this.loadColumns();
@@ -46,7 +62,7 @@ export class ColumnModal {
 
   private loadColumns(): ColumnDef[] {
     try {
-      const saved = localStorage.getItem('honba_visible_columns_v1');
+      const saved = localStorage.getItem('honba_tv_columns_v2');
       if (saved) {
         const savedIds: string[] = JSON.parse(saved);
         return ALL_COLUMNS.map((col) => ({
@@ -63,7 +79,7 @@ export class ColumnModal {
   private saveColumns() {
     try {
       const visibleIds = this.columns.filter((c) => c.visible).map((c) => c.id);
-      localStorage.setItem('honba_visible_columns_v1', JSON.stringify(visibleIds));
+      localStorage.setItem('honba_tv_columns_v2', JSON.stringify(visibleIds));
     } catch {
       // Ignore
     }
@@ -73,30 +89,47 @@ export class ColumnModal {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.id = 'column-customizer-modal';
+    return overlay;
+  }
 
-    overlay.innerHTML = `
-      <div class="modal-dialog">
+  private render() {
+    const filteredCols =
+      this.selectedCategory === 'all'
+        ? this.columns
+        : this.columns.filter((c) => c.category === this.selectedCategory);
+
+    this.overlay.innerHTML = `
+      <div class="modal-dialog" style="width: 580px;">
         <div class="modal-header">
-          <div class="modal-title">Customize Table Columns</div>
+          <div class="modal-title">Customize Screener Columns</div>
           <button class="nav-icon-btn modal-close-btn" style="border:none;">✕</button>
         </div>
+
+        <div style="padding: 10px 18px 0; display: flex; gap: 6px; overflow-x: auto; border-bottom: 1px solid var(--border-subtle);">
+          <button class="view-tab-btn ${this.selectedCategory === 'all' ? 'active' : ''}" data-cat="all">All (${this.columns.length})</button>
+          <button class="view-tab-btn ${this.selectedCategory === 'overview' ? 'active' : ''}" data-cat="overview">Overview</button>
+          <button class="view-tab-btn ${this.selectedCategory === 'valuation' ? 'active' : ''}" data-cat="valuation">Valuation</button>
+          <button class="view-tab-btn ${this.selectedCategory === 'technicals' ? 'active' : ''}" data-cat="technicals">Technicals</button>
+          <button class="view-tab-btn ${this.selectedCategory === 'performance' ? 'active' : ''}" data-cat="performance">Performance</button>
+          <button class="view-tab-btn ${this.selectedCategory === 'fundamentals' ? 'active' : ''}" data-cat="fundamentals">Fundamentals</button>
+        </div>
+
         <div class="modal-body">
-          <div style="font-size: 11px; color: var(--text-muted);">
-            Select which metrics and indicators to display in the screener table:
-          </div>
           <div class="columns-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
-            ${this.columns
+            ${filteredCols
               .map(
                 (col) => `
               <label class="checkbox-item">
                 <input type="checkbox" data-col-id="${col.id}" ${col.visible ? 'checked' : ''} ${col.id === 'symbol' ? 'disabled' : ''}/>
-                <span style="font-size: 12px;">${col.label}</span>
+                <span style="font-size: 12px; font-weight: 500;">${col.label}</span>
+                <span style="margin-left: auto; font-size: 10px; color: var(--text-muted); text-transform: uppercase;">${col.category}</span>
               </label>
             `
               )
               .join('')}
           </div>
         </div>
+
         <div class="modal-footer">
           <button class="nav-icon-btn reset-columns-btn">Reset Defaults</button>
           <button class="shortlist-btn shortlist-btn-primary apply-columns-btn">Apply Columns</button>
@@ -104,21 +137,34 @@ export class ColumnModal {
       </div>
     `;
 
-    // Listeners
-    overlay.querySelector('.modal-close-btn')?.addEventListener('click', () => this.close());
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) this.close();
+    this.attachListeners();
+  }
+
+  private attachListeners() {
+    this.overlay.querySelector('.modal-close-btn')?.addEventListener('click', () => this.close());
+    this.overlay.addEventListener('click', (e) => {
+      if (e.target === this.overlay) this.close();
     });
 
-    overlay.querySelector('.reset-columns-btn')?.addEventListener('click', () => {
+    this.overlay.querySelectorAll('.view-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const cat = btn.getAttribute('data-cat');
+        if (cat) {
+          this.selectedCategory = cat;
+          this.render();
+        }
+      });
+    });
+
+    this.overlay.querySelector('.reset-columns-btn')?.addEventListener('click', () => {
       this.columns = ALL_COLUMNS.map((c) => ({ ...c }));
-      this.refreshCheckboxes();
       this.saveColumns();
       this.onUpdate(this.columns);
+      this.render();
     });
 
-    overlay.querySelector('.apply-columns-btn')?.addEventListener('click', () => {
-      const inputs = overlay.querySelectorAll<HTMLInputElement>('input[data-col-id]');
+    this.overlay.querySelector('.apply-columns-btn')?.addEventListener('click', () => {
+      const inputs = this.overlay.querySelectorAll<HTMLInputElement>('input[data-col-id]');
       inputs.forEach((input) => {
         const id = input.getAttribute('data-col-id');
         const col = this.columns.find((c) => c.id === id);
@@ -130,19 +176,10 @@ export class ColumnModal {
       this.onUpdate(this.columns);
       this.close();
     });
-
-    return overlay;
-  }
-
-  private refreshCheckboxes() {
-    this.columns.forEach((c) => {
-      const el = this.overlay.querySelector<HTMLInputElement>(`input[data-col-id="${c.id}"]`);
-      if (el) el.checked = c.visible;
-    });
   }
 
   public open() {
-    this.refreshCheckboxes();
+    this.render();
     this.overlay.classList.add('open');
   }
 

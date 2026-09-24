@@ -1,16 +1,109 @@
 /**
- * Honba Design System Tokens
- * Understated elegance, high density financial UI with rich dark mode palettes.
+ * Honba & TradingView Design System Tokens
+ * Exact replica of TradingView UI aesthetics, with support for customizable themes.
  */
 
-:root {
-  /* Default: Honba Dark (Shibui Slate) */
+:root,
+[data-theme='tradingview-dark'] {
+  /* Default: TradingView Dark */
+  --bg-app: #131722;
+  --bg-surface: #1e222d;
+  --bg-surface-elevated: #2a2e39;
+  --bg-surface-hover: #242934;
+  --bg-surface-active: #2f3442;
+
+  --border-subtle: #2a2e39;
+  --border-medium: #363a45;
+  --border-strong: #434651;
+  --border-focus: #2962ff;
+
+  --text-primary: #d1d4dc;
+  --text-secondary: #787b86;
+  --text-muted: #5d606b;
+  --text-disabled: #434651;
+
+  --accent-primary: #2962ff;
+  --accent-primary-hover: #1e53e5;
+  --accent-subtle: rgba(41, 98, 255, 0.15);
+  --accent-gold: #f7a600;
+  --accent-gold-subtle: rgba(247, 166, 0, 0.15);
+
+  --bullish: #089981;
+  --bullish-hover: #07836f;
+  --bullish-subtle: rgba(8, 153, 129, 0.14);
+  --bullish-flash: rgba(8, 153, 129, 0.45);
+
+  --bearish: #f23645;
+  --bearish-hover: #cc2a37;
+  --bearish-subtle: rgba(242, 54, 69, 0.14);
+  --bearish-flash: rgba(242, 54, 69, 0.45);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px 0 rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px 0 rgba(0, 0, 0, 0.7);
+
+  --font-family-sans: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --header-height: 48px;
+  --filter-bar-height: 42px;
+  --bottom-bar-height: 34px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+  --transition-fast: 120ms ease;
+  --transition-normal: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* TradingView Authentic Clean Light */
+[data-theme='tradingview-light'] {
+  --bg-app: #ffffff;
+  --bg-surface: #f0f3fa;
+  --bg-surface-elevated: #ffffff;
+  --bg-surface-hover: #e8ecf4;
+  --bg-surface-active: #dfe3ee;
+
+  --border-subtle: #e0e3eb;
+  --border-medium: #d1d4dc;
+  --border-strong: #b2b5be;
+  --border-focus: #2962ff;
+
+  --text-primary: #131722;
+  --text-secondary: #787b86;
+  --text-muted: #9598a1;
+  --text-disabled: #b2b5be;
+
+  --accent-primary: #2962ff;
+  --accent-primary-hover: #1e53e5;
+  --accent-subtle: rgba(41, 98, 255, 0.1);
+  --accent-gold: #d97706;
+  --accent-gold-subtle: rgba(217, 119, 6, 0.12);
+
+  --bullish: #089981;
+  --bullish-hover: #07836f;
+  --bullish-subtle: rgba(8, 153, 129, 0.12);
+  --bullish-flash: rgba(8, 153, 129, 0.35);
+
+  --bearish: #f23645;
+  --bearish-hover: #cc2a37;
+  --bearish-subtle: rgba(242, 54, 69, 0.12);
+  --bearish-flash: rgba(242, 54, 69, 0.35);
+
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px 0 rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 25px -3px rgba(0, 0, 0, 0.15);
+}
+
+/* Honba Shibui Dark (Japanese Slate) */
+[data-theme='honba-dark'] {
   --bg-app: #090d14;
   --bg-surface: #101622;
   --bg-surface-elevated: #182030;
   --bg-surface-hover: #1f293d;
   --bg-surface-active: #27344d;
-  
+
   --border-subtle: #1e293b;
   --border-medium: #2e3d56;
   --border-strong: #3e5070;
@@ -23,65 +116,42 @@
 
   --accent-primary: #38bdf8;
   --accent-primary-hover: #0ea5e9;
-  --accent-subtle: rgba(56, 189, 248, 0.12);
-  --accent-gold: #f59e0b;
-  --accent-gold-subtle: rgba(245, 158, 11, 0.12);
+  --accent-subtle: rgba(56, 189, 248, 0.14);
 
   --bullish: #10b981;
-  --bullish-subtle: rgba(16, 185, 129, 0.12);
-  --bullish-flash: rgba(16, 185, 129, 0.35);
+  --bullish-subtle: rgba(16, 185, 129, 0.14);
   --bearish: #f43f5e;
-  --bearish-subtle: rgba(244, 63, 94, 0.12);
-  --bearish-flash: rgba(244, 63, 94, 0.35);
-
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 12px 0 rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 12px 32px 0 rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 20px rgba(56, 189, 248, 0.2);
-
-  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
-
-  --header-height: 52px;
-  --filter-bar-height: 48px;
-  --radius-xs: 3px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-full: 9999px;
-  --transition-fast: 120ms ease;
-  --transition-normal: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  --bearish-subtle: rgba(244, 63, 94, 0.14);
 }
 
-/* Theme: Tokyo Midnight (OLED High Contrast) */
+/* Tokyo Midnight (OLED Pitch Black) */
 [data-theme='tokyo-midnight'] {
-  --bg-app: #040608;
+  --bg-app: #000000;
   --bg-surface: #0a0e14;
   --bg-surface-elevated: #121822;
-  --bg-surface-hover: #192230;
+  --bg-surface-hover: #18212e;
   --bg-surface-active: #212c3e;
 
-  --border-subtle: #17202e;
-  --border-medium: #223044;
-  --border-strong: #334460;
+  --border-subtle: #1a2230;
+  --border-medium: #253347;
+  --border-strong: #354763;
   --border-focus: #00f2fe;
 
   --text-primary: #ffffff;
   --text-secondary: #8da4be;
   --text-muted: #576d88;
-  --text-disabled: #3d4f64;
 
   --accent-primary: #00f2fe;
   --accent-primary-hover: #4facfe;
-  --accent-subtle: rgba(0, 242, 254, 0.12);
+  --accent-subtle: rgba(0, 242, 254, 0.14);
 
   --bullish: #00e676;
-  --bullish-subtle: rgba(0, 230, 118, 0.12);
+  --bullish-subtle: rgba(0, 230, 118, 0.14);
   --bearish: #ff1744;
-  --bearish-subtle: rgba(255, 23, 68, 0.12);
+  --bearish-subtle: rgba(255, 23, 68, 0.14);
 }
 
-/* Theme: Kyoto Mist (Slate Blue Calm) */
+/* Kyoto Mist (Indigo Calm) */
 [data-theme='kyoto-mist'] {
   --bg-app: #0b1120;
   --bg-surface: #131c31;
@@ -106,43 +176,15 @@
   --bearish: #fb7185;
 }
 
-/* Theme: Washi Light (Clean Technical Light) */
-[data-theme='washi-light'] {
-  --bg-app: #f8fafc;
-  --bg-surface: #ffffff;
-  --bg-surface-elevated: #f1f5f9;
-  --bg-surface-hover: #e2e8f0;
-  --bg-surface-active: #cbd5e1;
-
-  --border-subtle: #e2e8f0;
-  --border-medium: #cbd5e1;
-  --border-strong: #94a3b8;
-  --border-focus: #0284c7;
-
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  --text-disabled: #94a3b8;
-
-  --accent-primary: #0284c7;
-  --accent-primary-hover: #0369a1;
-  --accent-subtle: rgba(2, 132, 199, 0.1);
-  --accent-gold: #d97706;
-
-  --bullish: #059669;
-  --bullish-subtle: rgba(5, 150, 105, 0.12);
-  --bearish: #e11d48;
-  --bearish-subtle: rgba(225, 29, 72, 0.12);
-
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+/* Typography presets */
+[data-typography='tradingview-sans'] {
+  --font-family-sans: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-/* Typography Presets */
 [data-typography='inter-mono'] {
   --font-family-sans: 'Inter', system-ui, sans-serif;
-  --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-family-mono: 'JetBrains Mono', monospace;
 }
 
 [data-typography='jakarta-fira'] {

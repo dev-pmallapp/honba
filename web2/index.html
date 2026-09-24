@@ -1,29 +1,32 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="honba-dark" data-typography="inter-mono" data-layout="default">
+<html lang="en" data-theme="tradingview-dark" data-typography="tradingview-sans" data-layout="default">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Honba (相場) Screener — Multi-Market Quantitative Stock Scanner with Indian Securities (NSE/BSE), US, Japan, and UK support, customizable TradingView look-and-feel, and live ticks." />
-  <title>Honba (相場) Screener — Multi-Market Quantitative Stock Scanner</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>相</text></svg>" />
+  <meta name="description" content="Honba Screener — TradingView-style Multi-Market Quantitative Stock Scanner with Indian Securities (NSE/BSE), US, Japan, and UK support, customizable TradingView look-and-feel, and live ticks." />
+  <title>Honba Screener — TradingView Quantitative Stock Scanner</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232962ff'/><text x='50' y='68' font-size='50' font-family='sans-serif' font-weight='900' fill='white' text-anchor='middle'>TV</text></svg>" />
 </head>
 <body>
   <div id="app">
-    <!-- Top Navigation with App Switcher & Market Selector -->
+    <!-- Top Navigation with TradingView App Launcher, Symbol Search, Screens & Market Selector -->
     <div id="app-nav-container"></div>
 
-    <!-- Main Workspace Container -->
-    <div class="app-content">
-      <!-- Filter Bar with Category Tabs, Search, and Knobs -->
-      <div id="filter-bar-container"></div>
+    <!-- Secondary Filter Bar with Category Tabs, Filters Modal trigger, Knobs, and Chips -->
+    <div id="filter-bar-container"></div>
 
-      <!-- Screener Table Full Workspace -->
-      <div class="workspace-container" id="workspace-container">
-        <div class="table-panel" id="table-panel">
-          <div class="screener-table-container" id="table-scroll-container"></div>
-        </div>
+    <!-- Main Workspace: Split View with Screener Table + TradingView Detail Preview Panel -->
+    <div class="workspace-wrapper" id="workspace-container">
+      <div class="table-panel" id="table-panel">
+        <div class="screener-table-container" id="table-scroll-container"></div>
       </div>
+
+      <!-- TradingView Quick Symbol Detail & Technicals Preview Drawer -->
+      <aside class="detail-drawer" id="detail-drawer"></aside>
     </div>
+
+    <!-- TradingView Signature Bottom Status & App Dock Bar -->
+    <footer id="bottom-bar-container" class="tradingview-bottom-bar"></footer>
 
     <!-- Floating Bulk Selection Action Bar -->
     <div id="floating-action-bar" class="shortlist-action-bar"></div>

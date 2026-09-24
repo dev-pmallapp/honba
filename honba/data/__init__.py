@@ -24,3 +24,9 @@ Conversion to the catalog happens only in ``_catalog_export.py``.
 
 See ``docs/research/build-vs-extend.md`` §6d.
 """
+from honba.data.bhavcopy import BhavcopyIngestion, update_bhavcopy_async
+
+__all__: list[str] = [
+    "BhavcopyIngestion",
+    "update_bhavcopy_async",
+]

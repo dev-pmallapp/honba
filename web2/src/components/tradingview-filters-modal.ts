@@ -53,6 +53,12 @@ export class TradingViewFiltersModal {
     this.onApply = onApply;
     this.overlay = this.createModalDOM();
     document.body.appendChild(this.overlay);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.overlay.classList.contains('open')) {
+        this.close();
+      }
+    });
   }
 
   public open(currentState?: AdvancedFilterState) {
@@ -132,10 +138,7 @@ export class TradingViewFiltersModal {
             <div class="modal-title">Filters</div>
             ${filterCount > 0 ? `<span class="tv-filter-count-badge">${filterCount} active</span>` : ''}
           </div>
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <button class="tv-text-btn reset-all-filters-btn" style="color: var(--text-muted); font-size: 11px;">Reset All</button>
-            <button class="nav-icon-btn modal-close-btn" style="border:none;">✕</button>
-          </div>
+          <button class="nav-icon-btn modal-close-btn" style="border:none;" title="Close" aria-label="Close">✕</button>
         </div>
 
         <!-- Filter Content Split Layout: Category Tabs on Left, Knobs on Right -->
@@ -170,11 +173,14 @@ export class TradingViewFiltersModal {
         </div>
 
         <!-- Modal Footer -->
-        <div class="modal-footer">
-          <button class="nav-icon-btn cancel-filters-btn">Cancel</button>
-          <button class="shortlist-btn shortlist-btn-primary apply-tv-filters-btn">
-            Apply Filters ${filterCount > 0 ? `(${filterCount})` : ''}
-          </button>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+          <button class="shortlist-btn reset-all-filters-btn" title="Reset all filters to default">Reset All</button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="nav-icon-btn cancel-filters-btn" title="Close dialog">Close</button>
+            <button class="shortlist-btn shortlist-btn-primary apply-tv-filters-btn">
+              Apply Filters ${filterCount > 0 ? `(${filterCount})` : ''}
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -357,6 +363,9 @@ export class TradingViewFiltersModal {
   private attachListeners() {
     this.overlay.querySelector('.modal-close-btn')?.addEventListener('click', () => this.close());
     this.overlay.querySelector('.cancel-filters-btn')?.addEventListener('click', () => this.close());
+    this.overlay.addEventListener('click', (e) => {
+      if (e.target === this.overlay) this.close();
+    });
 
     // Switch categories
     this.overlay.querySelectorAll('.tv-filter-cat-btn').forEach((btn) => {
@@ -382,9 +391,12 @@ export class TradingViewFiltersModal {
     });
 
     // Reset all
-    this.overlay.querySelector('.reset-all-filters-btn')?.addEventListener('click', () => {
-      this.state = { ...DEFAULT_ADVANCED_FILTERS };
-      this.render();
+    this.overlay.querySelectorAll('.reset-all-filters-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.state = { ...DEFAULT_ADVANCED_FILTERS };
+        this.onApply(this.state);
+        this.render();
+      });
     });
 
     // Market cap chips

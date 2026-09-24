@@ -901,6 +901,26 @@
   font-weight: 600;
 }
 
+.reset-all-filters-btn {
+  background: var(--bearish) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: var(--radius-full);
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-fast);
+}
+
+.reset-all-filters-btn:hover {
+  background: var(--bearish-hover) !important;
+  color: #ffffff !important;
+}
+
 /* ================= DROPDOWNS & COMMON POPUPS ================= */
 .dropdown-wrapper,
 .app-switcher-wrapper,

@@ -622,9 +622,17 @@
 }
 
 .chart-toggle-btn {
-  padding: 2px 6px;
-  font-size: 10px;
+  padding: 3px 6px;
+  font-size: 11px;
   border-radius: var(--radius-xs);
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: all var(--transition-fast);
+}
+
+.chart-toggle-btn:hover {
+  background: var(--bg-surface-hover);
 }
 
 .chart-toggle-btn.active {
@@ -638,19 +646,65 @@
 }
 
 .range-pill {
-  padding: 2px 6px;
-  font-size: 10px;
+  padding: 2px 7px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   border-radius: var(--radius-xs);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+}
+
+.range-pill:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
 }
 
 .range-pill.active {
   background: var(--accent-subtle);
   color: var(--accent-primary);
+  border-color: rgba(41, 98, 255, 0.25);
+}
+
+.drawer-action-top-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+
+.drawer-chart-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px;
+  font-size: 11px;
+}
+
+.drawer-chart-meta-left {
+  display: flex;
+  align-items: center;
+}
+
+.drawer-chart-meta-change {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-family-mono);
+}
+
+.drawer-chart-meta-scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-family-mono);
 }
 
 .drawer-chart-container {
+  position: relative;
   background: var(--bg-app);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -658,11 +712,30 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: crosshair;
+}
+
+.chart-tooltip-badge {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  pointer-events: none;
+  background: var(--bg-surface-elevated);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-family: var(--font-family-mono);
+  color: var(--text-primary);
+  display: none;
+  z-index: 10;
+  box-shadow: var(--shadow-sm);
 }
 
 .mini-chart-svg {
   width: 100%;
-  height: 120px;
+  height: 125px;
   overflow: visible;
 }
 

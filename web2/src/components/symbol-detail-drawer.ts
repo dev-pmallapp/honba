@@ -7,13 +7,16 @@
 import { Instrument, CandleData } from '../core/market-data';
 import { dataLayer } from '../core/data-layer';
 
+export type ChartRange = '1D' | '5D' | '1M' | '1Y';
+
 export class SymbolDetailDrawer {
   private container: HTMLElement;
   private currentInstrument: Instrument | null = null;
   private isCollapsed: boolean = false;
   private chartMode: 'area' | 'candles' = 'area';
-  private chartRange: '1D' | '5D' | '1M' | '3M' | '1Y' | 'ALL' = '1M';
+  private chartRange: ChartRange = '1D';
   private onToggleCollapse?: (collapsed: boolean) => void;
+  private rangeCandleCache: Map<string, CandleData[]> = new Map();
 
   constructor(container: HTMLElement, onToggleCollapse?: (collapsed: boolean) => void) {
     this.container = container;
@@ -47,6 +50,7 @@ export class SymbolDetailDrawer {
         this.currentInstrument.change = tick.change;
         this.currentInstrument.changePercent = tick.changePercent;
         this.updateLiveQuote();
+        this.updateChartOnTick(tick.price);
       }
     });
   }
@@ -65,6 +69,27 @@ export class SymbolDetailDrawer {
       const sign = isUp ? '+' : '';
       changeEl.textContent = `${sign}${this.formatNumber(this.currentInstrument.change)} (${sign}${this.currentInstrument.changePercent.toFixed(2)}%)`;
       changeEl.className = `drawer-quote-change ${isUp ? 'val-up' : 'val-down'}`;
+    }
+  }
+
+  private updateChartOnTick(newPrice: number) {
+    if (!this.currentInstrument) return;
+    const cacheKey = `${this.currentInstrument.symbol}_${this.chartRange}`;
+    const cached = this.rangeCandleCache.get(cacheKey);
+    if (cached && cached.length > 0) {
+      const last = cached[cached.length - 1];
+      last.close = newPrice;
+      last.high = Math.max(last.high, newPrice);
+      last.low = Math.min(last.low, newPrice);
+    }
+    const metaBox = this.container.querySelector('#drawer-chart-meta');
+    if (metaBox) {
+      metaBox.innerHTML = this.renderChartMeta(this.currentInstrument);
+    }
+    const chartBox = this.container.querySelector('#drawer-chart-box');
+    if (chartBox) {
+      chartBox.innerHTML = this.renderChartSvg(this.currentInstrument);
+      this.attachChartInteractions();
     }
   }
 
@@ -134,6 +159,22 @@ export class SymbolDetailDrawer {
 
         <!-- Scrollable Content Area -->
         <div class="drawer-scroll-body">
+          <!-- Primary Action Buttons (Top) -->
+          <div class="drawer-action-top-group">
+            <button class="shortlist-btn shortlist-btn-primary" id="drawer-btn-workbench" style="width: 100%; justify-content: center; padding: 7px 12px; font-size: 12px;">
+              <span>Open in WorkBench</span>
+              <span style="font-size: 11px;">↗</span>
+            </button>
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <button class="shortlist-btn shortlist-btn-secondary" id="drawer-btn-sim" style="flex: 1; justify-content: center; padding: 5px 8px;">
+                Simulate
+              </button>
+              <button class="shortlist-btn shortlist-btn-secondary" id="drawer-btn-algo" style="flex: 1; justify-content: center; padding: 5px 8px;">
+                Algo Test
+              </button>
+            </div>
+          </div>
+
           <!-- Mini Interactive Chart Preview -->
           <div class="drawer-section">
             <div class="drawer-section-header">
@@ -152,9 +193,14 @@ export class SymbolDetailDrawer {
               </div>
             </div>
 
+            <!-- Chart Range Performance Subtitle -->
+            <div class="drawer-chart-meta-row" id="drawer-chart-meta">
+              ${this.renderChartMeta(inst)}
+            </div>
+
             <!-- Chart Canvas / Visual Container -->
             <div class="drawer-chart-container" id="drawer-chart-box">
-              ${this.renderChartSvg(inst, isUp)}
+              ${this.renderChartSvg(inst)}
             </div>
           </div>
 
@@ -285,22 +331,6 @@ export class SymbolDetailDrawer {
               ${this.renderPerfRow('1 Year', inst.perf1Y)}
             </div>
           </div>
-
-          <!-- Bottom Action Buttons -->
-          <div class="drawer-action-footer">
-            <button class="shortlist-btn shortlist-btn-primary" id="drawer-btn-superchart" style="width: 100%; justify-content: center;">
-              <span>Open in Supercharts</span>
-              <span>↗</span>
-            </button>
-            <div style="display: flex; gap: 8px; width: 100%;">
-              <button class="shortlist-btn shortlist-btn-secondary" id="drawer-btn-sim" style="flex: 1; justify-content: center;">
-                Simulate
-              </button>
-              <button class="shortlist-btn shortlist-btn-secondary" id="drawer-btn-algo" style="flex: 1; justify-content: center;">
-                Algo Test
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     `;
@@ -308,75 +338,354 @@ export class SymbolDetailDrawer {
     this.attachEventListeners();
   }
 
-  private renderChartSvg(inst: Instrument, isUp: boolean): string {
-    const candles: CandleData[] = inst.history && inst.history.length > 0 ? inst.history : [];
-    if (candles.length === 0) {
-      return `<div style="height: 140px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 11px;">No historical candles available</div>`;
+  public setChartRange(range: ChartRange) {
+    this.chartRange = range;
+    this.container.querySelectorAll('.range-pill').forEach((btn) => {
+      if (btn.getAttribute('data-range') === range) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    if (this.currentInstrument) {
+      const metaBox = this.container.querySelector('#drawer-chart-meta');
+      if (metaBox) {
+        metaBox.innerHTML = this.renderChartMeta(this.currentInstrument);
+      }
+      const chartBox = this.container.querySelector('#drawer-chart-box');
+      if (chartBox) {
+        chartBox.innerHTML = this.renderChartSvg(this.currentInstrument);
+        this.attachChartInteractions();
+      }
+    }
+  }
+
+  public setChartMode(mode: 'area' | 'candles') {
+    this.chartMode = mode;
+    this.container.querySelectorAll('.chart-toggle-btn').forEach((btn) => {
+      if (btn.getAttribute('data-chart-mode') === mode) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    if (this.currentInstrument) {
+      const chartBox = this.container.querySelector('#drawer-chart-box');
+      if (chartBox) {
+        chartBox.innerHTML = this.renderChartSvg(this.currentInstrument);
+        this.attachChartInteractions();
+      }
+    }
+  }
+
+  private hashString(str: string): number {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+    }
+    return h >>> 0;
+  }
+
+  private createRng(seed: number): () => number {
+    let s = seed;
+    return function () {
+      s |= 0;
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  private getCandlesForRange(inst: Instrument, range: ChartRange): CandleData[] {
+    const cacheKey = `${inst.symbol}_${range}`;
+    let cached = this.rangeCandleCache.get(cacheKey);
+    if (cached && cached.length > 0) {
+      const last = cached[cached.length - 1];
+      last.close = inst.price;
+      last.high = Math.max(last.high, inst.price);
+      last.low = Math.min(last.low, inst.price);
+      return cached;
     }
 
-    const w = 310;
-    const h = 130;
-    const padding = 10;
-    const chartW = w - padding * 2;
-    const chartH = h - padding * 2;
+    const candles = this.generateRangeCandles(inst, range);
+    this.rangeCandleCache.set(cacheKey, candles);
+    return candles;
+  }
 
-    const prices = candles.map((c) => c.close);
+  private generateRangeCandles(inst: Instrument, range: ChartRange): CandleData[] {
+    const rng = this.createRng(this.hashString(`${inst.symbol}_${range}`));
+    const now = new Date();
+    const currentPrice = inst.price;
+    const candles: CandleData[] = [];
+
+    if (range === '1D') {
+      // 26 intraday bars (every 15 min from 09:15 to 15:30)
+      const count = 26;
+      const startPrice = inst.change !== undefined ? Number((currentPrice - inst.change).toFixed(2)) : currentPrice * 0.99;
+      const totalDelta = currentPrice - startPrice;
+
+      let prevClose = startPrice;
+      for (let i = 0; i < count; i++) {
+        const progress = i / (count - 1);
+        const totalMinutes = 9 * 60 + 15 + i * 15;
+        const hours = Math.floor(totalMinutes / 60);
+        const mins = totalMinutes % 60;
+        const timeStr = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+
+        const expected = startPrice + totalDelta * progress;
+        const noiseScale = currentPrice * 0.005 * (1 - Math.pow(progress - 0.5, 2));
+        const noise = (rng() - 0.49) * noiseScale;
+
+        const open = Number(prevClose.toFixed(2));
+        let close = i === count - 1 ? currentPrice : Number((expected + noise).toFixed(2));
+        if (close <= 0) close = open * 0.99;
+
+        const high = Number((Math.max(open, close) + rng() * currentPrice * 0.003).toFixed(2));
+        const low = Number((Math.min(open, close) - rng() * currentPrice * 0.003).toFixed(2));
+        const volume = Math.floor(15000 + rng() * 60000);
+
+        candles.push({ time: timeStr, open, high, low, close, volume });
+        prevClose = close;
+      }
+    } else if (range === '5D') {
+      // 5 trading days, 5 bars per day = 25 bars
+      const count = 25;
+      const pct = (inst.perf1W ?? inst.changePercent * 2) / 100;
+      const startPrice = Number((currentPrice / (1 + pct)).toFixed(2));
+      const totalDelta = currentPrice - startPrice;
+
+      let prevClose = startPrice;
+      for (let i = 0; i < count; i++) {
+        const progress = i / (count - 1);
+        const dayOffset = 4 - Math.floor(i / 5);
+        const d = new Date(now);
+        d.setDate(d.getDate() - dayOffset);
+        const sessionHour = 10 + (i % 5) * 1.2;
+        const hourInt = Math.floor(sessionHour);
+        const minInt = Math.floor((sessionHour - hourInt) * 60);
+        const timeStr = `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${String(hourInt).padStart(2, '0')}:${String(minInt).padStart(2, '0')}`;
+
+        const expected = startPrice + totalDelta * progress;
+        const noise = (rng() - 0.49) * (currentPrice * 0.012) * Math.sin(progress * Math.PI);
+        const open = Number(prevClose.toFixed(2));
+        let close = i === count - 1 ? currentPrice : Number((expected + noise).toFixed(2));
+        if (close <= 0) close = open * 0.98;
+
+        const high = Number((Math.max(open, close) + rng() * currentPrice * 0.007).toFixed(2));
+        const low = Number((Math.min(open, close) - rng() * currentPrice * 0.007).toFixed(2));
+        const volume = Math.floor(40000 + rng() * 120000);
+
+        candles.push({ time: timeStr, open, high, low, close, volume });
+        prevClose = close;
+      }
+    } else if (range === '1M') {
+      // 22 daily bars
+      const count = 22;
+      const pct = (inst.perf1M ?? inst.changePercent * 4) / 100;
+      const startPrice = Number((currentPrice / (1 + pct)).toFixed(2));
+      const totalDelta = currentPrice - startPrice;
+
+      let prevClose = startPrice;
+      for (let i = 0; i < count; i++) {
+        const progress = i / (count - 1);
+        const d = new Date(now);
+        d.setDate(d.getDate() - Math.floor((count - 1 - i) * 1.35));
+        const timeStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+        const expected = startPrice + totalDelta * progress;
+        const noise = (rng() - 0.48) * (currentPrice * 0.02) * Math.sin(progress * Math.PI);
+        const open = Number(prevClose.toFixed(2));
+        let close = i === count - 1 ? currentPrice : Number((expected + noise).toFixed(2));
+        if (close <= 0) close = open * 0.97;
+
+        const high = Number((Math.max(open, close) + rng() * currentPrice * 0.012).toFixed(2));
+        const low = Number((Math.min(open, close) - rng() * currentPrice * 0.012).toFixed(2));
+        const volume = Math.floor(100000 + rng() * 350000);
+
+        candles.push({ time: timeStr, open, high, low, close, volume });
+        prevClose = close;
+      }
+    } else {
+      // '1Y' -> 36 weekly bars
+      const count = 36;
+      const pct = (inst.perf1Y ?? ((inst.high52 - inst.low52) / (inst.low52 || 1)) * 50) / 100;
+      const startPrice = Number((currentPrice / (1 + pct)).toFixed(2));
+      const totalDelta = currentPrice - startPrice;
+
+      let prevClose = startPrice;
+      for (let i = 0; i < count; i++) {
+        const progress = i / (count - 1);
+        const d = new Date(now);
+        d.setDate(d.getDate() - (count - 1 - i) * 7);
+        const timeStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+
+        const expected = startPrice + totalDelta * progress;
+        const swing = Math.sin(progress * Math.PI * 1.5) * (inst.high52 - inst.low52) * 0.15;
+        const noise = (rng() - 0.5) * (currentPrice * 0.035);
+        const open = Number(prevClose.toFixed(2));
+        let close = i === count - 1 ? currentPrice : Number((expected + swing + noise).toFixed(2));
+
+        close = Math.max(inst.low52 * 0.98, Math.min(inst.high52 * 1.02, close));
+        const high = Number((Math.max(open, close) + rng() * currentPrice * 0.018).toFixed(2));
+        const low = Number((Math.min(open, close) - rng() * currentPrice * 0.018).toFixed(2));
+        const volume = Math.floor(250000 + rng() * 800000);
+
+        candles.push({ time: timeStr, open, high, low, close, volume });
+        prevClose = close;
+      }
+    }
+
+    return candles;
+  }
+
+  private getRangePerformance(inst: Instrument, range: ChartRange): {
+    changePct: number;
+    changeVal: number;
+    isUp: boolean;
+    low: number;
+    high: number;
+  } {
+    const candles = this.getCandlesForRange(inst, range);
+    const low = Math.min(...candles.map((c) => c.low));
+    const high = Math.max(...candles.map((c) => c.high));
+
+    let changePct: number;
+    let changeVal: number;
+
+    if (range === '1D') {
+      changePct = inst.changePercent;
+      changeVal = inst.change;
+    } else if (range === '5D') {
+      changePct = inst.perf1W ?? 0;
+      const startPrice = inst.price / (1 + changePct / 100);
+      changeVal = inst.price - startPrice;
+    } else if (range === '1M') {
+      changePct = inst.perf1M ?? 0;
+      const startPrice = inst.price / (1 + changePct / 100);
+      changeVal = inst.price - startPrice;
+    } else {
+      changePct = inst.perf1Y ?? 0;
+      const startPrice = inst.price / (1 + changePct / 100);
+      changeVal = inst.price - startPrice;
+    }
+
+    return {
+      changePct,
+      changeVal,
+      isUp: changePct >= 0,
+      low,
+      high,
+    };
+  }
+
+  private renderChartMeta(inst: Instrument): string {
+    const market = dataLayer.getCurrentMarketInfo();
+    const perf = this.getRangePerformance(inst, this.chartRange);
+    const sign = perf.changePct >= 0 ? '+' : '';
+
+    return `
+      <div class="drawer-chart-meta-left">
+        <span class="drawer-chart-meta-change ${perf.isUp ? 'val-up' : 'val-down'}">
+          ${sign}${this.formatNumber(perf.changeVal)} (${sign}${perf.changePct.toFixed(2)}%)
+        </span>
+      </div>
+      <div class="drawer-chart-meta-scale">
+        <span>L: ${market.currencySymbol}${this.formatNumber(perf.low)}</span>
+        <span>H: ${market.currencySymbol}${this.formatNumber(perf.high)}</span>
+      </div>
+    `;
+  }
+
+  private renderChartSvg(inst: Instrument): string {
+    const candles = this.getCandlesForRange(inst, this.chartRange);
+    if (!candles || candles.length === 0) {
+      return `<div style="height: 125px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 11px;">No historical candles available</div>`;
+    }
+
+    const market = dataLayer.getCurrentMarketInfo();
+    const perf = this.getRangePerformance(inst, this.chartRange);
+    const isUp = perf.isUp;
+    const color = isUp ? 'var(--bullish)' : 'var(--bearish)';
+    const gradId = `chartGrad_${inst.symbol}_${this.chartRange}`;
+
+    const w = 310;
+    const h = 125;
+    const paddingX = 10;
+    const paddingY = 12;
+    const chartW = w - paddingX * 2;
+    const chartH = h - paddingY * 2;
+
     const min = Math.min(...candles.map((c) => c.low));
     const max = Math.max(...candles.map((c) => c.high));
     const range = max - min || 1;
+    const prices = candles.map((c) => c.close);
+
+    let chartContent = '';
 
     if (this.chartMode === 'candles') {
-      const candleWidth = Math.max(2, Math.floor(chartW / candles.length) - 2);
+      const candleWidth = Math.max(2, Math.min(8, Math.floor(chartW / candles.length) - 2));
       const elements: string[] = [];
 
       candles.forEach((c, i) => {
-        const x = padding + (i / (candles.length - 1)) * chartW;
-        const yOpen = padding + chartH - ((c.open - min) / range) * chartH;
-        const yClose = padding + chartH - ((c.close - min) / range) * chartH;
-        const yHigh = padding + chartH - ((c.high - min) / range) * chartH;
-        const yLow = padding + chartH - ((c.low - min) / range) * chartH;
+        const x = paddingX + (i / (candles.length - 1)) * chartW;
+        const yOpen = paddingY + chartH - ((c.open - min) / range) * chartH;
+        const yClose = paddingY + chartH - ((c.close - min) / range) * chartH;
+        const yHigh = paddingY + chartH - ((c.high - min) / range) * chartH;
+        const yLow = paddingY + chartH - ((c.low - min) / range) * chartH;
         const candleIsUp = c.close >= c.open;
-        const color = candleIsUp ? 'var(--bullish)' : 'var(--bearish)';
+        const candleColor = candleIsUp ? 'var(--bullish)' : 'var(--bearish)';
 
         // Wick
-        elements.push(`<line x1="${x}" y1="${yHigh}" x2="${x}" y2="${yLow}" stroke="${color}" stroke-width="1"/>`);
+        elements.push(`<line x1="${x.toFixed(1)}" y1="${yHigh.toFixed(1)}" x2="${x.toFixed(1)}" y2="${yLow.toFixed(1)}" stroke="${candleColor}" stroke-width="1"/>`);
         // Body
         const top = Math.min(yOpen, yClose);
         const height = Math.max(2, Math.abs(yClose - yOpen));
-        elements.push(`<rect x="${x - candleWidth / 2}" y="${top}" width="${candleWidth}" height="${height}" fill="${color}" rx="1"/>`);
+        elements.push(`<rect x="${(x - candleWidth / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${candleWidth}" height="${height.toFixed(1)}" fill="${candleColor}" rx="1"/>`);
       });
 
-      return `
-        <svg viewBox="0 0 ${w} ${h}" class="mini-chart-svg">
-          <line x1="${padding}" y1="${padding + chartH / 2}" x2="${w - padding}" y2="${padding + chartH / 2}" stroke="var(--border-subtle)" stroke-dasharray="3,3"/>
-          ${elements.join('')}
-        </svg>
-      `;
-    }
+      chartContent = elements.join('');
+    } else {
+      // Area Chart mode
+      const pathPoints = prices.map((p, idx) => {
+        const x = paddingX + (idx / (prices.length - 1)) * chartW;
+        const y = paddingY + chartH - ((p - min) / range) * chartH;
+        return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      });
 
-    // Area Chart mode
-    const pathPoints = prices.map((p, idx) => {
-      const x = padding + (idx / (prices.length - 1)) * chartW;
-      const y = padding + chartH - ((p - min) / range) * chartH;
-      return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    });
+      const linePath = pathPoints.join(' ');
+      const areaPath = `${linePath} L ${(paddingX + chartW).toFixed(1)} ${(h - paddingY).toFixed(1)} L ${paddingX} ${(h - paddingY).toFixed(1)} Z`;
 
-    const linePath = pathPoints.join(' ');
-    const areaPath = `${linePath} L ${w - padding} ${h - padding} L ${padding} ${h - padding} Z`;
-    const color = isUp ? 'var(--bullish)' : 'var(--bearish)';
-    const gradId = `chartGrad_${inst.symbol}`;
-
-    return `
-      <svg viewBox="0 0 ${w} ${h}" class="mini-chart-svg">
+      chartContent = `
         <defs>
           <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
+            <stop offset="0%" stop-color="${color}" stop-opacity="0.32"/>
             <stop offset="100%" stop-color="${color}" stop-opacity="0.0"/>
           </linearGradient>
         </defs>
-        <line x1="${padding}" y1="${padding + chartH / 2}" x2="${w - padding}" y2="${padding + chartH / 2}" stroke="var(--border-subtle)" stroke-dasharray="3,3"/>
         <path d="${areaPath}" fill="url(#${gradId})"/>
-        <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>
+        <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      `;
+    }
+
+    return `
+      <div id="chart-tooltip-badge" class="chart-tooltip-badge"></div>
+      <svg viewBox="0 0 ${w} ${h}" class="mini-chart-svg">
+        <!-- Midline guide -->
+        <line x1="${paddingX}" y1="${paddingY + chartH / 2}" x2="${w - paddingX}" y2="${paddingY + chartH / 2}" stroke="var(--border-subtle)" stroke-dasharray="3,3" opacity="0.6"/>
+        
+        <!-- High and Low Labels -->
+        <text x="${w - paddingX}" y="${paddingY + 8}" text-anchor="end" fill="var(--text-muted)" font-size="8.5" font-family="var(--font-family-mono)" opacity="0.8">${market.currencySymbol}${this.formatNumber(max)}</text>
+        <text x="${w - paddingX}" y="${h - paddingY - 2}" text-anchor="end" fill="var(--text-muted)" font-size="8.5" font-family="var(--font-family-mono)" opacity="0.8">${market.currencySymbol}${this.formatNumber(min)}</text>
+
+        <!-- Chart visual -->
+        ${chartContent}
+
+        <!-- Interactive Crosshair -->
+        <line id="svg-crosshair-line" x1="0" y1="${paddingY}" x2="0" y2="${h - paddingY}" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="2,2" style="display: none; pointer-events: none;" />
+        <circle id="svg-crosshair-dot" cx="0" cy="0" r="3.5" fill="${color}" stroke="#ffffff" stroke-width="1.5" style="display: none; pointer-events: none;" />
       </svg>
     `;
   }
@@ -436,6 +745,63 @@ export class SymbolDetailDrawer {
     }
   }
 
+  private attachChartInteractions() {
+    const box = this.container.querySelector('#drawer-chart-box') as HTMLElement;
+    if (!box || !this.currentInstrument) return;
+
+    const crosshairLine = box.querySelector('#svg-crosshair-line') as SVGLineElement;
+    const crosshairDot = box.querySelector('#svg-crosshair-dot') as SVGCircleElement;
+    const tooltip = box.querySelector('#chart-tooltip-badge') as HTMLElement;
+    const svg = box.querySelector('.mini-chart-svg') as SVGSVGElement;
+
+    if (!crosshairLine || !crosshairDot || !tooltip || !svg) return;
+
+    const candles = this.getCandlesForRange(this.currentInstrument, this.chartRange);
+    if (!candles || candles.length === 0) return;
+
+    const market = dataLayer.getCurrentMarketInfo();
+    const w = 310;
+    const h = 125;
+    const paddingX = 10;
+    const paddingY = 12;
+    const chartW = w - paddingX * 2;
+    const chartH = h - paddingY * 2;
+    const min = Math.min(...candles.map((c) => c.low));
+    const max = Math.max(...candles.map((c) => c.high));
+    const range = max - min || 1;
+
+    box.onmousemove = (e: MouseEvent) => {
+      const rect = svg.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const normalizedX = (mouseX / rect.width) * w;
+
+      const ratio = Math.max(0, Math.min(1, (normalizedX - paddingX) / chartW));
+      const idx = Math.round(ratio * (candles.length - 1));
+      const c = candles[idx];
+      if (!c) return;
+
+      const candleX = paddingX + (idx / (candles.length - 1)) * chartW;
+      const candleY = paddingY + chartH - ((c.close - min) / range) * chartH;
+
+      crosshairLine.setAttribute('x1', candleX.toFixed(1));
+      crosshairLine.setAttribute('x2', candleX.toFixed(1));
+      crosshairLine.style.display = 'block';
+
+      crosshairDot.setAttribute('cx', candleX.toFixed(1));
+      crosshairDot.setAttribute('cy', candleY.toFixed(1));
+      crosshairDot.style.display = 'block';
+
+      tooltip.style.display = 'block';
+      tooltip.textContent = `${c.time} • ${market.currencySymbol}${this.formatNumber(c.close)}`;
+    };
+
+    box.onmouseleave = () => {
+      crosshairLine.style.display = 'none';
+      crosshairDot.style.display = 'none';
+      tooltip.style.display = 'none';
+    };
+  }
+
   private attachEventListeners() {
     // Star Watchlist button
     this.container.querySelector('#drawer-star-btn')?.addEventListener('click', () => {
@@ -452,34 +818,34 @@ export class SymbolDetailDrawer {
 
     // Chart mode toggle
     this.container.querySelectorAll('.chart-toggle-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const mode = btn.getAttribute('data-chart-mode') as 'area' | 'candles';
-        if (mode) {
-          this.chartMode = mode;
-          this.render();
+        if (mode && mode !== this.chartMode) {
+          this.setChartMode(mode);
         }
       });
     });
 
     // Chart range pills
     this.container.querySelectorAll('.range-pill').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const range = btn.getAttribute('data-range') as typeof this.chartRange;
-        if (range) {
-          this.chartRange = range;
-          this.render();
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const range = btn.getAttribute('data-range') as ChartRange;
+        if (range && range !== this.chartRange) {
+          this.setChartRange(range);
         }
       });
     });
 
-    // WorkBench Navigation
+    // WorkBench Navigation (Header button & Main action button)
     this.container.querySelector('#drawer-workbench-btn')?.addEventListener('click', () => {
       if (this.currentInstrument) {
         window.location.href = `/workbench.html?symbol=${encodeURIComponent(this.currentInstrument.symbol)}`;
       }
     });
 
-    this.container.querySelector('#drawer-btn-superchart')?.addEventListener('click', () => {
+    this.container.querySelector('#drawer-btn-workbench')?.addEventListener('click', () => {
       if (this.currentInstrument) {
         window.location.href = `/workbench.html?symbol=${encodeURIComponent(this.currentInstrument.symbol)}`;
       }
@@ -496,6 +862,9 @@ export class SymbolDetailDrawer {
         window.location.href = `/algodesigner.html?symbol=${encodeURIComponent(this.currentInstrument.symbol)}`;
       }
     });
+
+    // Attach interactive chart crosshairs
+    this.attachChartInteractions();
   }
 
   private formatNumber(val: number): string {

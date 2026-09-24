@@ -101,7 +101,25 @@ class CommonDataLayer {
   constructor() {
     this.restoreFromStorage();
     this.initBroadcastChannel();
+    this.loadLiveInstruments(this.currentMarket);
     // Live tick simulation is NOT started by default (screener need not be live by default)
+  }
+
+  public async loadLiveInstruments(country: CountryCode = 'IN') {
+    if (country !== 'IN') return;
+    try {
+      const res = await fetch(`/api/instruments?country=${country}&limit=3500`);
+      if (res.ok) {
+        const liveData: Instrument[] = await res.json();
+        if (Array.isArray(liveData) && liveData.length > 0) {
+          const nonIn = this.instruments.filter((i) => i.country !== 'IN');
+          this.instruments = [...liveData, ...nonIn];
+          this.notify();
+        }
+      }
+    } catch {
+      // Backend offline: silently keep bundled offline instruments
+    }
   }
 
   private initBroadcastChannel() {
@@ -185,6 +203,7 @@ class CommonDataLayer {
   public setMarket(country: CountryCode) {
     if (this.currentMarket !== country) {
       this.currentMarket = country;
+      this.loadLiveInstruments(country);
       const firstInMarket = this.instruments.find((i) => i.country === country);
       if (firstInMarket) {
         this.activeSymbol = firstInMarket.symbol;

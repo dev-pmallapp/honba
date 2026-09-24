@@ -46,10 +46,12 @@ export class FilterBar {
   private totalCount: number = 0;
   private filteredCount: number = 0;
 
-  // Auto-refresh control state
+  // Auto-refresh control state (default to false: screener need not be live by default)
   private autoRefreshInterval: number | null = null;
   private autoRefreshSeconds: number = 10;
-  private isAutoRefreshActive: boolean = true;
+  private isAutoRefreshActive: boolean = false;
+  private handleDocClick: ((e: MouseEvent) => void) | null = null;
+  private handleKeydown: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(
     container: HTMLElement,
@@ -68,7 +70,10 @@ export class FilterBar {
 
     this.render();
     this.setupListeners();
-    this.startAutoRefresh();
+    this.setupGlobalListeners();
+    if (this.isAutoRefreshActive) {
+      this.startAutoRefresh();
+    }
   }
 
   public setCounts(filtered: number, total: number) {
@@ -140,7 +145,7 @@ export class FilterBar {
             <div class="tv-screen-heading-wrapper">
               <div class="tv-screen-breadcrumb">STOCK SCREENER</div>
               <div class="dropdown-wrapper" id="screener-preset-dropdown-container">
-                <button class="tv-screen-main-btn" id="screener-preset-btn" title="Saved Screens & Popular Presets">
+                <button class="tv-screen-main-btn" id="screener-preset-btn" type="button" title="Saved Screens & Popular Presets">
                   <span class="preset-icon" style="font-size: 13px;">${currentScreen.icon}</span>
                   <span id="active-screen-label">${currentScreen.name}</span>
                   <span class="app-caret" style="font-size: 8px;">▼</span>
@@ -190,7 +195,7 @@ export class FilterBar {
             <div class="tv-toolbar-divider"></div>
 
             <!-- Real-Time Auto-Refresh Control -->
-            <div class="tv-refresh-control" id="screener-refresh-control" title="Toggle Auto-Refresh (Click to toggle live feed / manual refresh)">
+            <div class="tv-refresh-control" id="screener-refresh-control" title="${this.isAutoRefreshActive ? 'Live auto-refresh enabled. Click to pause.' : 'Auto-refresh paused. Click to enable real-time feed'}">
               <span class="status-dot ${this.isAutoRefreshActive ? '' : 'paused'}"></span>
               <span id="screener-refresh-label" style="font-size: 11px; font-weight: 500;">
                 ${this.isAutoRefreshActive ? `Live (${this.autoRefreshSeconds}s)` : 'Manual'}
@@ -375,13 +380,16 @@ export class FilterBar {
   private setupListeners() {
     // Screen Presets dropdown in Screener Header
     const presetContainer = this.container.querySelector('#screener-preset-dropdown-container');
-    this.container.querySelector('#screener-preset-btn')?.addEventListener('click', (e) => {
+    const presetBtn = this.container.querySelector('#screener-preset-btn');
+    presetBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       presetContainer?.classList.toggle('open');
     });
 
     this.container.querySelectorAll('#screener-preset-menu .market-item[data-screen-id]').forEach((el) => {
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
         const id = el.getAttribute('data-screen-id');
         if (id) {
           presetContainer?.classList.remove('open');
@@ -395,14 +403,22 @@ export class FilterBar {
       this.isAutoRefreshActive = !this.isAutoRefreshActive;
       const label = this.container.querySelector('#screener-refresh-label');
       const dot = this.container.querySelector('#screener-refresh-control .status-dot');
+      const control = this.container.querySelector<HTMLElement>('#screener-refresh-control');
       if (this.isAutoRefreshActive) {
         if (label) label.textContent = `Live (${this.autoRefreshSeconds}s)`;
         dot?.classList.remove('paused');
+        if (control) control.title = 'Live auto-refresh enabled. Click to pause.';
         this.startAutoRefresh();
+        dataLayer.startLiveTickSimulation();
       } else {
         if (label) label.textContent = 'Manual';
         dot?.classList.add('paused');
-        if (this.autoRefreshInterval) clearInterval(this.autoRefreshInterval);
+        if (control) control.title = 'Auto-refresh paused. Click to enable real-time feed';
+        if (this.autoRefreshInterval) {
+          clearInterval(this.autoRefreshInterval);
+          this.autoRefreshInterval = null;
+        }
+        dataLayer.stopLiveTickSimulation();
       }
     });
 
@@ -462,14 +478,6 @@ export class FilterBar {
         searchClear.style.display = this.criteria.search ? 'block' : 'none';
       }
       this.onFilterChange(this.criteria);
-    });
-
-    // Shortcut '/' for search
-    document.addEventListener('keydown', (e) => {
-      if (e.key === '/' && document.activeElement !== searchInput) {
-        e.preventDefault();
-        searchInput?.focus();
-      }
     });
 
     searchClear?.addEventListener('click', () => {
@@ -554,14 +562,26 @@ export class FilterBar {
       this.setupListeners();
       this.onFilterChange(this.criteria);
     });
+  }
 
-    // Global click outside to close dropdowns
-    document.addEventListener('click', (e) => {
+  private setupGlobalListeners() {
+    this.handleDocClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!presetContainer?.contains(target)) {
-        presetContainer?.classList.remove('open');
+      const presetContainer = this.container.querySelector('#screener-preset-dropdown-container');
+      if (presetContainer && !presetContainer.contains(target)) {
+        presetContainer.classList.remove('open');
       }
-    });
+    };
+    document.addEventListener('click', this.handleDocClick);
+
+    this.handleKeydown = (e: KeyboardEvent) => {
+      const searchInput = this.container.querySelector<HTMLInputElement>('#screener-inline-search');
+      if (e.key === '/' && document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput?.focus();
+      }
+    };
+    document.addEventListener('keydown', this.handleKeydown);
   }
 
   private startAutoRefresh() {
@@ -569,6 +589,7 @@ export class FilterBar {
     if (!this.isAutoRefreshActive) return;
 
     this.autoRefreshInterval = window.setInterval(() => {
+      if (!this.isAutoRefreshActive) return;
       // Simulate real-time tick injection via dataLayer
       const instruments = dataLayer.getInstruments();
       if (instruments.length > 0) {
@@ -587,10 +608,12 @@ export class FilterBar {
           timestamp: Date.now(),
         });
       }
-    }, 1500);
+    }, 10000);
   }
 
   public destroy() {
     if (this.autoRefreshInterval) clearInterval(this.autoRefreshInterval);
+    if (this.handleDocClick) document.removeEventListener('click', this.handleDocClick);
+    if (this.handleKeydown) document.removeEventListener('keydown', this.handleKeydown);
   }
 }

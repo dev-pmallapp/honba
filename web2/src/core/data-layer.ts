@@ -101,7 +101,7 @@ class CommonDataLayer {
   constructor() {
     this.restoreFromStorage();
     this.initBroadcastChannel();
-    this.startLiveTickSimulation();
+    // Live tick simulation is NOT started by default (screener need not be live by default)
   }
 
   private initBroadcastChannel() {
@@ -271,8 +271,8 @@ class CommonDataLayer {
     this.notify();
   }
 
-  // Live simulation ticks
-  private startLiveTickSimulation() {
+  // Live simulation ticks (started only when user enables live stream)
+  public startLiveTickSimulation() {
     if (this.tickInterval) return;
     this.tickInterval = window.setInterval(() => {
       // Pick 1-2 random stocks in current market to tick
@@ -304,6 +304,17 @@ class CommonDataLayer {
         changePercent: inst.changePercent,
       }));
     }, 2800);
+  }
+
+  public stopLiveTickSimulation() {
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
+    }
+  }
+
+  public isLiveSimulationActive(): boolean {
+    return this.tickInterval !== null;
   }
 
   public emitTick(tick: { symbol: string; price: number; change: number; changePercent: number; volume?: number; timestamp?: number }) {

@@ -303,6 +303,8 @@
   gap: 8px;
   user-select: none;
   flex-shrink: 0;
+  position: relative;
+  z-index: 50;
 }
 
 /* Row 1: Screener Header Toolbar */
@@ -886,6 +888,12 @@
 }
 
 /* ================= DROPDOWNS & COMMON POPUPS ================= */
+.dropdown-wrapper,
+.app-switcher-wrapper,
+.market-selector-wrapper {
+  position: relative;
+}
+
 .honba-dropdown-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -900,6 +908,11 @@
   flex-direction: column;
   gap: 2px;
   z-index: 1100;
+}
+
+#screener-preset-menu {
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .app-switcher-wrapper.open .honba-dropdown-menu,

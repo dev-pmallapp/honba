@@ -19,6 +19,8 @@ export class ScreenerTable {
   private columns: ColumnDef[] = [];
   private sortField: SortField = 'marketCap';
   private sortOrder: SortOrder = 'desc';
+  private currentPage: number = 1;
+  private pageSize: number = 100;
   private onSelectSymbol: (symbol: string) => void;
   private unsubscribeTick: (() => void) | null = null;
 
@@ -49,6 +51,8 @@ export class ScreenerTable {
   public setData(instruments: Instrument[]) {
     this.instruments = [...instruments];
     this.sortData();
+    const maxPage = this.pageSize === 0 ? 1 : Math.max(1, Math.ceil(this.instruments.length / this.pageSize));
+    if (this.currentPage > maxPage) this.currentPage = maxPage;
     this.render();
     this.updateFloatingActionBar();
   }
@@ -128,9 +132,16 @@ export class ScreenerTable {
       return;
     }
 
+    const totalItems = this.instruments.length;
+    const totalPages = this.pageSize === 0 ? 1 : Math.max(1, Math.ceil(totalItems / this.pageSize));
+    if (this.currentPage > totalPages) this.currentPage = totalPages;
+    const startIdx = this.pageSize === 0 ? 0 : (this.currentPage - 1) * this.pageSize;
+    const endIdx = this.pageSize === 0 ? totalItems : Math.min(startIdx + this.pageSize, totalItems);
+    const displayedInstruments = this.instruments.slice(startIdx, endIdx);
+
     const allSelected =
-      this.instruments.length > 0 &&
-      this.instruments.every((i) => activeState.shortlistedSymbols.includes(i.symbol));
+      displayedInstruments.length > 0 &&
+      displayedInstruments.every((i) => activeState.shortlistedSymbols.includes(i.symbol));
 
     let html = `
       <table class="screener-table tv-screener-table">
@@ -177,7 +188,7 @@ export class ScreenerTable {
     <tbody>
     `;
 
-    this.instruments.forEach((inst, index) => {
+    displayedInstruments.forEach((inst, index) => {
       const isSelected = activeState.shortlistedSymbols.includes(inst.symbol);
       const isWatchlisted = activeState.watchlist.includes(inst.symbol);
       const isActive = activeState.activeSymbol === inst.symbol;
@@ -221,7 +232,28 @@ export class ScreenerTable {
       `;
     });
 
-    html += `</tbody></table>`;
+    html += `</tbody></table>
+      <div class="screener-pagination-bar">
+        <div class="pagination-info">
+          Showing <span class="highlight">${totalItems > 0 ? startIdx + 1 : 0} – ${endIdx}</span> of <span class="highlight">${totalItems.toLocaleString()}</span> symbols
+        </div>
+        <div class="pagination-controls">
+          <button class="pagination-btn prev-page-btn" ${this.currentPage <= 1 ? 'disabled' : ''}>‹ Previous</button>
+          <span class="pagination-page-indicator">Page <span class="highlight">${this.currentPage}</span> of <span class="highlight">${totalPages}</span></span>
+          <button class="pagination-btn next-page-btn" ${this.currentPage >= totalPages ? 'disabled' : ''}>Next ›</button>
+        </div>
+        <div class="pagination-size-select">
+          <span>Per Page:</span>
+          <select class="page-size-dropdown">
+            <option value="50" ${this.pageSize === 50 ? 'selected' : ''}>50</option>
+            <option value="100" ${this.pageSize === 100 ? 'selected' : ''}>100</option>
+            <option value="250" ${this.pageSize === 250 ? 'selected' : ''}>250</option>
+            <option value="500" ${this.pageSize === 500 ? 'selected' : ''}>500</option>
+            <option value="0" ${this.pageSize === 0 ? 'selected' : ''}>All (${totalItems.toLocaleString()})</option>
+          </select>
+        </div>
+      </div>
+    `;
     this.container.innerHTML = html;
 
     this.attachTableListeners();
@@ -380,6 +412,32 @@ export class ScreenerTable {
     this.container.querySelector('#table-add-col-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.onOpenColumnsModal?.();
+    });
+
+    // Pagination handlers
+    this.container.querySelector('.prev-page-btn')?.addEventListener('click', () => {
+      if (this.currentPage > 1) {
+        this.currentPage--;
+        this.render();
+        this.container.scrollTop = 0;
+      }
+    });
+
+    this.container.querySelector('.next-page-btn')?.addEventListener('click', () => {
+      const maxPage = this.pageSize === 0 ? 1 : Math.ceil(this.instruments.length / this.pageSize);
+      if (this.currentPage < maxPage) {
+        this.currentPage++;
+        this.render();
+        this.container.scrollTop = 0;
+      }
+    });
+
+    this.container.querySelector<HTMLSelectElement>('.page-size-dropdown')?.addEventListener('change', (e) => {
+      const val = parseInt((e.target as HTMLSelectElement).value, 10);
+      this.pageSize = val;
+      this.currentPage = 1;
+      this.render();
+      this.container.scrollTop = 0;
     });
 
     // Row selection checkbox

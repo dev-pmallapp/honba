@@ -1,5 +1,5 @@
 import React from 'react';
-import { useScreenerStore } from '../../core/store/use-screener-store';
+import { useScreenerStore } from '../core/store/use-screener-store';
 import { ExternalLink, Play, Trash2 } from 'lucide-react';
 
 export const FloatingActionBar: React.FC = () => {

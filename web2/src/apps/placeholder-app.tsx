@@ -7,8 +7,7 @@ import '../styles/components.css';
 
 import { themeEngine } from '../core/theme-engine';
 import { AppId, HONBA_APPS } from '../core/data-layer';
-import { AppNav } from '../components/layout/app-nav';
-import { BottomBar } from '../components/layout/bottom-bar';
+import { AppShell } from '../layouts/app-shell';
 import { ArrowLeft, Sparkles } from 'lucide-react';
 
 interface PlaceholderProps {
@@ -23,10 +22,8 @@ export const PlaceholderApp: React.FC<PlaceholderProps> = ({ appId }) => {
   const appMeta = HONBA_APPS.find((a) => a.id === appId) || HONBA_APPS[0];
 
   return (
-    <div id="app" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <AppNav currentAppId={appId} />
-
-      <main style={{ flex: 1, padding: '40px 24px', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
+    <AppShell currentAppId={appId}>
+      <main style={{ flex: 1, padding: '40px 24px', maxWidth: 1100, margin: '0 auto', width: '100%', overflowY: 'auto' }}>
         <div
           style={{
             display: 'flex',
@@ -114,9 +111,7 @@ export const PlaceholderApp: React.FC<PlaceholderProps> = ({ appId }) => {
           </div>
         </div>
       </main>
-
-      <BottomBar />
-    </div>
+    </AppShell>
   );
 };
 

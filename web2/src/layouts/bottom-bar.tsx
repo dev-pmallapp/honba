@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useScreenerStore } from '../../core/store/use-screener-store';
-import { dataLayer } from '../../core/data-layer';
+import { useScreenerStore } from '../core/store/use-screener-store';
+import { dataLayer } from '../core/data-layer';
 import { SlidersHorizontal, Code2, PlayCircle, BarChart3 } from 'lucide-react';
 
 export const BottomBar: React.FC = () => {

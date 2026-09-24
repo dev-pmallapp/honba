@@ -9,9 +9,8 @@ import '../styles/screener.css';
 import { themeEngine } from '../core/theme-engine';
 import { useScreenerStore } from '../core/store/use-screener-store';
 import { Instrument } from '../core/market-data';
-import { AppNav } from '../components/layout/app-nav';
-import { BottomBar } from '../components/layout/bottom-bar';
-import { FloatingActionBar } from '../components/layout/floating-action-bar';
+import { AppShell } from '../layouts/app-shell';
+import { DockableWorkspace } from '../layouts/dockable-workspace';
 import { FilterBar } from '../components/features/screener/filter-bar';
 import { ScreenerTable } from '../components/features/screener/screener-table';
 import { SymbolDetailDrawer } from '../components/features/screener/symbol-detail-drawer';
@@ -118,10 +117,7 @@ export const ScreenerApp: React.FC = () => {
   };
 
   return (
-    <div id="app">
-      {/* Global Top Nav */}
-      <AppNav currentAppId="screener" />
-
+    <AppShell currentAppId="screener">
       {/* Filter Bar with Presets, Categories, Search, Filters Modal Trigger */}
       <FilterBar
         totalCount={instruments.length}
@@ -129,25 +125,16 @@ export const ScreenerApp: React.FC = () => {
         onExportCSV={handleExportCSV}
       />
 
-      {/* Main Workspace: Split View with Screener Table & Symbol Detail Drawer */}
-      <div className="workspace-wrapper" id="workspace-container">
-        <div className="table-panel" id="table-panel">
-          <ScreenerTable instruments={filteredInstruments} />
-        </div>
-
-        <SymbolDetailDrawer />
-      </div>
-
-      {/* Bottom Telemetry & Dock Bar */}
-      <BottomBar />
-
-      {/* Floating Action Bar for batch selection */}
-      <FloatingActionBar />
+      {/* Main Dockable Workspace: Resizable Split View with Screener Table & Symbol Detail Drawer */}
+      <DockableWorkspace
+        primaryContent={<ScreenerTable instruments={filteredInstruments} />}
+        secondaryContent={<SymbolDetailDrawer />}
+      />
 
       {/* Modals */}
       <ColumnModal />
       <FiltersModal />
-    </div>
+    </AppShell>
   );
 };
 

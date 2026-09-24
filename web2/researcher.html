@@ -6,13 +6,7 @@
   <title>Honba (相場) Researcher — Hypothesis & Robustness Lab</title>
 </head>
 <body>
-  <div id="app">
-    <div id="app-nav-container"></div>
-    <div id="app-body-content" style="flex: 1; overflow-y: auto;"></div>
-  </div>
-  <script type="module">
-    import { initHonbaApp } from '/src/apps-common.ts';
-    initHonbaApp('researcher');
-  </script>
+  <div id="root"></div>
+  <script type="module" src="/src/apps/researcher-app.tsx"></script>
 </body>
 </html>

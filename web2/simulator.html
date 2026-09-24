@@ -6,13 +6,7 @@
   <title>Honba (相場) Simulator — Event-driven Tick Backtester</title>
 </head>
 <body>
-  <div id="app">
-    <div id="app-nav-container"></div>
-    <div id="app-body-content" style="flex: 1; overflow-y: auto;"></div>
-  </div>
-  <script type="module">
-    import { initHonbaApp } from '/src/apps-common.ts';
-    initHonbaApp('simulator');
-  </script>
+  <div id="root"></div>
+  <script type="module" src="/src/apps/simulator-app.tsx"></script>
 </body>
 </html>

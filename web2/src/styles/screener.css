@@ -152,7 +152,7 @@
   font-size: 12px;
 }
 
-/* Sticky Header: labels centered in the first row */
+/* Sticky Header: labels right justified */
 .screener-table th {
   position: sticky;
   top: 0;
@@ -167,7 +167,7 @@
   color: var(--text-secondary);
   white-space: nowrap;
   user-select: none;
-  text-align: center;
+  text-align: right;
 }
 
 .screener-table th.sortable {
@@ -182,9 +182,9 @@
 .th-content {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 4px;
-  text-align: center;
+  text-align: right;
 }
 
 .th-sort-icon {
@@ -203,11 +203,11 @@
   left: 0;
   z-index: 30; /* Higher than other sticky headers */
   background: var(--bg-surface);
-  text-align: center;
+  text-align: left;
 }
 
 .screener-table th.col-symbol .th-content {
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .screener-table td.col-symbol {

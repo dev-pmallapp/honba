@@ -7,29 +7,39 @@
 export interface AdvancedFilterState {
   sector: string;
   marketCapTier: string;
+  exchange: string;
+  minPrice: number | null;
+  maxPrice: number | null;
   peMin: number | null;
   peMax: number | null;
+  minDividendYield: number | null;
+  minRoce: number | null;
+  minNetMargin: number | null;
+  technicalRating: string;
   rsiMin: number | null;
   rsiMax: number | null;
-  technicalRating: string;
-  minDividendYield: number | null;
   priceAbove200Sma: boolean;
+  priceAbove50Sma: boolean;
   near52WeekHigh: boolean;
-  minRoce: number | null;
 }
 
 export const DEFAULT_ADVANCED_FILTERS: AdvancedFilterState = {
   sector: 'all',
   marketCapTier: 'all',
+  exchange: 'all',
+  minPrice: null,
+  maxPrice: null,
   peMin: null,
   peMax: null,
+  minDividendYield: null,
+  minRoce: null,
+  minNetMargin: null,
+  technicalRating: 'all',
   rsiMin: null,
   rsiMax: null,
-  technicalRating: 'all',
-  minDividendYield: null,
   priceAbove200Sma: false,
+  priceAbove50Sma: false,
   near52WeekHigh: false,
-  minRoce: null,
 };
 
 export class TradingViewFiltersModal {
@@ -57,18 +67,45 @@ export class TradingViewFiltersModal {
     this.overlay.classList.remove('open');
   }
 
+  public getCatTotal(cat: 'descriptive' | 'financials' | 'technicals'): number {
+    switch (cat) {
+      case 'descriptive':
+        return 4;
+      case 'financials':
+        return 4;
+      case 'technicals':
+        return 5;
+    }
+  }
+
+  public getCatActiveCount(cat: 'descriptive' | 'financials' | 'technicals'): number {
+    let c = 0;
+    if (cat === 'descriptive') {
+      if (this.state.sector !== 'all') c++;
+      if (this.state.marketCapTier !== 'all') c++;
+      if (this.state.exchange !== 'all') c++;
+      if (this.state.minPrice !== null || this.state.maxPrice !== null) c++;
+    } else if (cat === 'financials') {
+      if (this.state.peMin !== null || this.state.peMax !== null) c++;
+      if (this.state.minDividendYield !== null) c++;
+      if (this.state.minRoce !== null) c++;
+      if (this.state.minNetMargin !== null) c++;
+    } else if (cat === 'technicals') {
+      if (this.state.rsiMin !== null || this.state.rsiMax !== null) c++;
+      if (this.state.technicalRating !== 'all') c++;
+      if (this.state.priceAbove200Sma) c++;
+      if (this.state.priceAbove50Sma) c++;
+      if (this.state.near52WeekHigh) c++;
+    }
+    return c;
+  }
+
   public getActiveFilterCount(): number {
-    let count = 0;
-    if (this.state.sector !== 'all') count++;
-    if (this.state.marketCapTier !== 'all') count++;
-    if (this.state.peMin !== null || this.state.peMax !== null) count++;
-    if (this.state.rsiMin !== null || this.state.rsiMax !== null) count++;
-    if (this.state.technicalRating !== 'all') count++;
-    if (this.state.minDividendYield !== null) count++;
-    if (this.state.priceAbove200Sma) count++;
-    if (this.state.near52WeekHigh) count++;
-    if (this.state.minRoce !== null) count++;
-    return count;
+    return (
+      this.getCatActiveCount('descriptive') +
+      this.getCatActiveCount('financials') +
+      this.getCatActiveCount('technicals')
+    );
   }
 
   private createModalDOM(): HTMLElement {
@@ -80,6 +117,12 @@ export class TradingViewFiltersModal {
 
   private render() {
     const filterCount = this.getActiveFilterCount();
+    const activeDesc = this.getCatActiveCount('descriptive');
+    const totalDesc = this.getCatTotal('descriptive');
+    const activeFin = this.getCatActiveCount('financials');
+    const totalFin = this.getCatTotal('financials');
+    const activeTech = this.getCatActiveCount('technicals');
+    const totalTech = this.getCatTotal('technicals');
 
     this.overlay.innerHTML = `
       <div class="modal-dialog tv-filters-dialog">
@@ -100,15 +143,24 @@ export class TradingViewFiltersModal {
           <aside class="tv-filters-sidebar">
             <button class="tv-filter-cat-btn ${this.activeCategory === 'descriptive' ? 'active' : ''}" data-cat="descriptive">
               <span>Descriptive</span>
-              <span class="cat-pill">${this.getCatCount('descriptive')}</span>
+              <div class="cat-badges-group">
+                ${activeDesc > 0 ? `<span class="cat-pill active">${activeDesc} active</span>` : ''}
+                <span class="cat-pill">${totalDesc}</span>
+              </div>
             </button>
             <button class="tv-filter-cat-btn ${this.activeCategory === 'financials' ? 'active' : ''}" data-cat="financials">
               <span>Financials & Valuation</span>
-              <span class="cat-pill">${this.getCatCount('financials')}</span>
+              <div class="cat-badges-group">
+                ${activeFin > 0 ? `<span class="cat-pill active">${activeFin} active</span>` : ''}
+                <span class="cat-pill">${totalFin}</span>
+              </div>
             </button>
             <button class="tv-filter-cat-btn ${this.activeCategory === 'technicals' ? 'active' : ''}" data-cat="technicals">
               <span>Technicals & Momentum</span>
-              <span class="cat-pill">${this.getCatCount('technicals')}</span>
+              <div class="cat-badges-group">
+                ${activeTech > 0 ? `<span class="cat-pill active">${activeTech} active</span>` : ''}
+                <span class="cat-pill">${totalTech}</span>
+              </div>
             </button>
           </aside>
 
@@ -130,22 +182,42 @@ export class TradingViewFiltersModal {
     this.attachListeners();
   }
 
-  private getCatCount(cat: 'descriptive' | 'financials' | 'technicals'): number {
-    let c = 0;
-    if (cat === 'descriptive') {
-      if (this.state.sector !== 'all') c++;
-      if (this.state.marketCapTier !== 'all') c++;
-    } else if (cat === 'financials') {
-      if (this.state.peMin !== null || this.state.peMax !== null) c++;
-      if (this.state.minDividendYield !== null) c++;
-      if (this.state.minRoce !== null) c++;
-    } else if (cat === 'technicals') {
-      if (this.state.rsiMin !== null || this.state.rsiMax !== null) c++;
-      if (this.state.technicalRating !== 'all') c++;
-      if (this.state.priceAbove200Sma) c++;
-      if (this.state.near52WeekHigh) c++;
+  private updateCountersOnly() {
+    const filterCount = this.getActiveFilterCount();
+    const badgeEl = this.overlay.querySelector('.modal-header .tv-filter-count-badge');
+    const headerTitleWrapper = this.overlay.querySelector('.modal-header > div:first-child');
+    if (badgeEl) {
+      if (filterCount > 0) {
+        badgeEl.textContent = `${filterCount} active`;
+      } else {
+        badgeEl.remove();
+      }
+    } else if (filterCount > 0 && headerTitleWrapper) {
+      const newBadge = document.createElement('span');
+      newBadge.className = 'tv-filter-count-badge';
+      newBadge.textContent = `${filterCount} active`;
+      headerTitleWrapper.appendChild(newBadge);
     }
-    return c;
+
+    const applyBtn = this.overlay.querySelector('.apply-tv-filters-btn');
+    if (applyBtn) {
+      applyBtn.textContent = `Apply Filters ${filterCount > 0 ? `(${filterCount})` : ''}`;
+    }
+
+    (['descriptive', 'financials', 'technicals'] as const).forEach((cat) => {
+      const btn = this.overlay.querySelector(`.tv-filter-cat-btn[data-cat="${cat}"]`);
+      if (btn) {
+        const active = this.getCatActiveCount(cat);
+        const total = this.getCatTotal(cat);
+        const group = btn.querySelector('.cat-badges-group');
+        if (group) {
+          group.innerHTML = `
+            ${active > 0 ? `<span class="cat-pill active">${active} active</span>` : ''}
+            <span class="cat-pill">${total}</span>
+          `;
+        }
+      }
+    });
   }
 
   private renderCategoryFields(): string {
@@ -171,10 +243,32 @@ export class TradingViewFiltersModal {
           <label class="tv-field-label">Market Capitalization</label>
           <div class="tv-radio-chips">
             <button class="tv-chip-select ${this.state.marketCapTier === 'all' ? 'active' : ''}" data-field="marketCapTier" data-val="all">All Tiers</button>
-            <button class="tv-chip-select ${this.state.marketCapTier === 'mega' ? 'active' : ''}" data-field="marketCapTier" data-val="mega">Mega (>₹10T / >$200B)</button>
-            <button class="tv-chip-select ${this.state.marketCapTier === 'large' ? 'active' : ''}" data-field="marketCapTier" data-val="large">Large (>₹500B / >$10B)</button>
+            <button class="tv-chip-select ${this.state.marketCapTier === 'mega' ? 'active' : ''}" data-field="marketCapTier" data-val="mega">Mega Cap (>₹10T / >$200B)</button>
+            <button class="tv-chip-select ${this.state.marketCapTier === 'large' ? 'active' : ''}" data-field="marketCapTier" data-val="large">Large Cap (>₹500B / >$10B)</button>
             <button class="tv-chip-select ${this.state.marketCapTier === 'mid' ? 'active' : ''}" data-field="marketCapTier" data-val="mid">Mid Cap</button>
             <button class="tv-chip-select ${this.state.marketCapTier === 'small' ? 'active' : ''}" data-field="marketCapTier" data-val="small">Small Cap</button>
+          </div>
+        </div>
+
+        <div class="tv-field-group">
+          <label class="tv-field-label">Primary Exchange</label>
+          <select class="filter-select" id="filter-field-exchange" style="width: 100%;">
+            <option value="all" ${this.state.exchange === 'all' ? 'selected' : ''}>All Exchanges</option>
+            <option value="NSE" ${this.state.exchange === 'NSE' ? 'selected' : ''}>NSE (National Stock Exchange)</option>
+            <option value="BSE" ${this.state.exchange === 'BSE' ? 'selected' : ''}>BSE (Bombay Stock Exchange)</option>
+            <option value="NASDAQ" ${this.state.exchange === 'NASDAQ' ? 'selected' : ''}>NASDAQ (US)</option>
+            <option value="NYSE" ${this.state.exchange === 'NYSE' ? 'selected' : ''}>NYSE (US)</option>
+            <option value="TSE" ${this.state.exchange === 'TSE' ? 'selected' : ''}>TSE (Tokyo Stock Exchange)</option>
+            <option value="LSE" ${this.state.exchange === 'LSE' ? 'selected' : ''}>LSE (London Stock Exchange)</option>
+          </select>
+        </div>
+
+        <div class="tv-field-group">
+          <label class="tv-field-label">Price Range</label>
+          <div class="tv-range-inputs">
+            <input type="number" class="search-input" id="filter-field-price-min" placeholder="Min Price" value="${this.state.minPrice ?? ''}"/>
+            <span style="color: var(--text-muted); font-size: 11px;">to</span>
+            <input type="number" class="search-input" id="filter-field-price-max" placeholder="Max Price" value="${this.state.maxPrice ?? ''}"/>
           </div>
         </div>
       `;
@@ -203,6 +297,14 @@ export class TradingViewFiltersModal {
           <label class="tv-field-label">Return on Capital Employed (ROCE %)</label>
           <div style="display: flex; align-items: center; gap: 8px;">
             <input type="number" step="0.5" class="search-input" id="filter-field-roce" placeholder="Min % (e.g. 15)" value="${this.state.minRoce ?? ''}" style="width: 140px;"/>
+            <span style="font-size: 11px; color: var(--text-muted);">or higher</span>
+          </div>
+        </div>
+
+        <div class="tv-field-group">
+          <label class="tv-field-label">Net Profit Margin (%)</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input type="number" step="1" class="search-input" id="filter-field-margin" placeholder="Min % (e.g. 10)" value="${this.state.minNetMargin ?? ''}" style="width: 140px;"/>
             <span style="font-size: 11px; color: var(--text-muted);">or higher</span>
           </div>
         </div>
@@ -240,6 +342,10 @@ export class TradingViewFiltersModal {
             <span style="font-size: 12px;">Price Above 200-day Simple Moving Average (SMA 200)</span>
           </label>
           <label class="checkbox-item">
+            <input type="checkbox" id="filter-field-sma50" ${this.state.priceAbove50Sma ? 'checked' : ''}/>
+            <span style="font-size: 12px;">Price Above 50-day Simple Moving Average (SMA 50)</span>
+          </label>
+          <label class="checkbox-item">
             <input type="checkbox" id="filter-field-high52" ${this.state.near52WeekHigh ? 'checked' : ''}/>
             <span style="font-size: 12px;">Trading within 5% of 52-Week High</span>
           </label>
@@ -262,6 +368,17 @@ export class TradingViewFiltersModal {
           this.render();
         }
       });
+    });
+
+    // Real-time counter updates on input/change
+    const contentArea = this.overlay.querySelector('.tv-filters-content-area');
+    contentArea?.addEventListener('input', () => {
+      this.saveCurrentInputs();
+      this.updateCountersOnly();
+    });
+    contentArea?.addEventListener('change', () => {
+      this.saveCurrentInputs();
+      this.updateCountersOnly();
     });
 
     // Reset all
@@ -294,6 +411,16 @@ export class TradingViewFiltersModal {
     const sectorEl = this.overlay.querySelector<HTMLSelectElement>('#filter-field-sector');
     if (sectorEl) this.state.sector = sectorEl.value;
 
+    // Exchange
+    const exchangeEl = this.overlay.querySelector<HTMLSelectElement>('#filter-field-exchange');
+    if (exchangeEl) this.state.exchange = exchangeEl.value;
+
+    // Price
+    const priceMinEl = this.overlay.querySelector<HTMLInputElement>('#filter-field-price-min');
+    const priceMaxEl = this.overlay.querySelector<HTMLInputElement>('#filter-field-price-max');
+    if (priceMinEl) this.state.minPrice = priceMinEl.value ? parseFloat(priceMinEl.value) : null;
+    if (priceMaxEl) this.state.maxPrice = priceMaxEl.value ? parseFloat(priceMaxEl.value) : null;
+
     // PE
     const peMinEl = this.overlay.querySelector<HTMLInputElement>('#filter-field-pe-min');
     const peMaxEl = this.overlay.querySelector<HTMLInputElement>('#filter-field-pe-max');
@@ -308,6 +435,10 @@ export class TradingViewFiltersModal {
     const roceEl = this.overlay.querySelector<HTMLInputElement>('#filter-field-roce');
     if (roceEl) this.state.minRoce = roceEl.value ? parseFloat(roceEl.value) : null;
 
+    // Net Margin
+    const marginEl = this.overlay.querySelector<HTMLInputElement>('#filter-field-margin');
+    if (marginEl) this.state.minNetMargin = marginEl.value ? parseFloat(marginEl.value) : null;
+
     // Rating
     const ratingEl = this.overlay.querySelector<HTMLSelectElement>('#filter-field-rating');
     if (ratingEl) this.state.technicalRating = ratingEl.value;
@@ -319,8 +450,11 @@ export class TradingViewFiltersModal {
     if (rsiMaxEl) this.state.rsiMax = rsiMaxEl.value ? parseFloat(rsiMaxEl.value) : null;
 
     // Checkboxes
-    const smaEl = this.overlay.querySelector<HTMLInputElement>('#filter-field-sma200');
-    if (smaEl) this.state.priceAbove200Sma = smaEl.checked;
+    const sma200El = this.overlay.querySelector<HTMLInputElement>('#filter-field-sma200');
+    if (sma200El) this.state.priceAbove200Sma = sma200El.checked;
+
+    const sma50El = this.overlay.querySelector<HTMLInputElement>('#filter-field-sma50');
+    if (sma50El) this.state.priceAbove50Sma = sma50El.checked;
 
     const high52El = this.overlay.querySelector<HTMLInputElement>('#filter-field-high52');
     if (high52El) this.state.near52WeekHigh = high52El.checked;

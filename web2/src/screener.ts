@@ -195,6 +195,15 @@ class ScreenerApp {
         return false;
       }
 
+      // Primary Exchange
+      if (adv.exchange && adv.exchange !== 'all' && inst.exchange !== adv.exchange) {
+        return false;
+      }
+
+      // Price Bounds
+      if (adv.minPrice !== null && inst.price < adv.minPrice) return false;
+      if (adv.maxPrice !== null && inst.price > adv.maxPrice) return false;
+
       // 4. Valuation: P/E bounds
       if (adv.peMin !== null && (inst.pe <= 0 || inst.pe < adv.peMin)) return false;
       if (adv.peMax !== null && (inst.pe <= 0 || inst.pe > adv.peMax)) return false;
@@ -202,8 +211,9 @@ class ScreenerApp {
       // 5. Valuation: Dividend Yield
       if (adv.minDividendYield !== null && inst.dividendYield < adv.minDividendYield) return false;
 
-      // 6. Fundamentals: ROCE
+      // 6. Fundamentals: ROCE & Net Margin
       if (adv.minRoce !== null && inst.roce < adv.minRoce) return false;
+      if (adv.minNetMargin !== null && inst.netMargin < adv.minNetMargin) return false;
 
       // 7. Technical Rating
       if (adv.technicalRating !== 'all') {
@@ -218,8 +228,9 @@ class ScreenerApp {
       if (adv.rsiMin !== null && inst.rsi14 < adv.rsiMin) return false;
       if (adv.rsiMax !== null && inst.rsi14 > adv.rsiMax) return false;
 
-      // 9. Trend: 200 SMA
+      // 9. Trend: 200 SMA & 50 SMA
       if (adv.priceAbove200Sma && inst.price < inst.sma200) return false;
+      if (adv.priceAbove50Sma && inst.price < inst.sma50) return false;
 
       // 10. 52-Week High Proximity
       if (adv.near52WeekHigh && (inst.high52 - inst.price) / inst.high52 > 0.05) return false;

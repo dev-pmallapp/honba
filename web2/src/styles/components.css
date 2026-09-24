@@ -814,12 +814,26 @@
   border-left: 3px solid var(--accent-primary);
 }
 
+.cat-badges-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .cat-pill {
   font-size: 10px;
   background: var(--bg-app);
   padding: 1px 6px;
   border-radius: var(--radius-full);
   color: var(--text-muted);
+  font-weight: 500;
+}
+
+.cat-pill.active {
+  background: var(--accent-subtle);
+  color: var(--accent-primary);
+  font-weight: 700;
+  border: 1px solid var(--accent-primary);
 }
 
 .tv-filters-content-area {

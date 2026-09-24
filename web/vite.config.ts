@@ -10,6 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
+        screener: resolve(__dirname, "screener.html"),
         designer: resolve(__dirname, "designer.html"),
         simulator: resolve(__dirname, "simulator.html"),
         stock: resolve(__dirname, "stock.html"),

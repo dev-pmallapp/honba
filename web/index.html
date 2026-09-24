@@ -16,14 +16,98 @@
     <!-- 1. Universal Top Navigation Bar -->
     <header class="h-12 bg-tv-secondary border-b border-tv-border flex items-center justify-between px-3 z-30 select-none flex-shrink-0">
       <div class="flex items-center space-x-3">
-        <!-- Logo -->
-        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-tv-border group">
-          <div class="w-6 h-6 rounded bg-tv-accent flex items-center justify-center font-bold text-white text-xs shadow-md">
-            相
+        <!-- Logo & Sub-App Selector Launcher -->
+        <div class="relative" id="subapp-launcher-container">
+          <button id="subapp-launcher-btn" class="flex items-center space-x-2 pr-2.5 py-1 rounded-lg border border-transparent hover:border-tv-border hover:bg-tv-tertiary/70 transition group cursor-pointer" title="Switch Sub-App / Workspace">
+            <div class="w-6 h-6 rounded bg-tv-accent flex items-center justify-center font-bold text-white text-xs shadow-md group-hover:scale-105 transition-transform">
+              相
+            </div>
+            <div class="flex flex-col text-left leading-none">
+              <div class="flex items-center space-x-1">
+                <span class="font-bold text-xs tracking-wider text-white">HONBA</span>
+                <span class="text-[9px] text-tv-accent font-mono font-bold px-1 rounded bg-tv-accent/15 uppercase" id="current-app-badge">WORKBENCH</span>
+              </div>
+              <span class="text-[9px] text-tv-muted font-mono tracking-widest uppercase flex items-center space-x-0.5">
+                <span>APPS</span>
+                <span class="text-[8px]">▾</span>
+              </span>
+            </div>
+          </button>
+
+          <!-- Sub-App Selector Dropdown -->
+          <div id="subapp-launcher-menu" class="hidden absolute top-full left-0 mt-2 w-80 bg-tv-secondary border border-tv-border rounded-xl shadow-2xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md">
+            <div class="px-2.5 py-1.5 text-[10px] text-tv-muted uppercase font-mono tracking-wider font-bold border-b border-tv-border flex items-center justify-between">
+              <span>Connected Quant Suite</span>
+              <span class="text-[9px] text-tv-accent">6 SUB-APPS</span>
+            </div>
+            
+            <a href="/" data-app-item="workbench" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border bg-tv-tertiary/60">
+              <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center text-base flex-shrink-0">📊</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Workbench</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">ACTIVE</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Multi-pane trading terminal with side-by-side comparative views</p>
+              </div>
+            </a>
+
+            <a href="/screener.html" data-app-item="screener" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-base flex-shrink-0">🔍</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Quant Screener</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-bullish/20 text-tv-bullish font-mono">SHORTLIST</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Momentum & breakout scanner; send stocks side-by-side to Workbench</p>
+              </div>
+            </a>
+
+            <a href="/designer.html" data-app-item="designer" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center text-base flex-shrink-0">📐</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Algo Designer</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">OPENALGO</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Jesse & OpenAlgo visual rule builder with Python & Rust export</p>
+              </div>
+            </a>
+
+            <a href="/simulator.html" data-app-item="simulator" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center text-base flex-shrink-0">🧪</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Quant Simulator</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">JESSE SCORE</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">10-metric scorecard, 1000-sample Monte Carlo fans & STT friction</p>
+              </div>
+            </a>
+
+            <a href="/options.html" data-app-item="options" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center text-base flex-shrink-0">📑</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Options Chain</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">GREEKS</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">NSE strike chain, ATM highlight, PCR & Delta/IV dynamics</p>
+              </div>
+            </a>
+
+            <a href="/backtest.html" data-app-item="backtest" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-rose-500/15 text-rose-400 flex items-center justify-center text-base flex-shrink-0">🛡️</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>CPCV Stress Tester</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">DSR</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">López de Prado Deflated Sharpe & Probability of Backtest Overfit</p>
+              </div>
+            </a>
           </div>
-          <span class="font-bold text-sm tracking-wider text-white">HONBA</span>
-          <span class="text-[10px] text-tv-muted font-mono tracking-widest uppercase">QUANT</span>
-        </a>
+        </div>
 
         <!-- Symbol Dropdown -->
         <div class="relative">
@@ -35,18 +119,36 @@
             <option value="RELIANCE">RELIANCE</option>
             <option value="TCS">TCS</option>
             <option value="HDFCBANK">HDFCBANK</option>
+            <option value="INFY">INFY</option>
           </select>
         </div>
 
         <!-- MPA Navigation Links -->
         <nav class="flex items-center space-x-1 border-l border-tv-border pl-2 text-xs">
           <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-xs transition">Workbench</a>
+          <a href="/screener.html" data-nav-page="screener" class="px-2.5 py-1 rounded text-xs transition">Screener</a>
           <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-xs transition">Algo Designer</a>
           <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-xs transition">Simulator</a>
           <a href="/stock.html" data-nav-page="stock" class="px-2.5 py-1 rounded text-xs transition">Scrip Research</a>
-          <a href="/options.html" data-nav-page="options" class="px-2.5 py-1 rounded text-xs transition">Options Chain</a>
-          <a href="/backtest.html" data-nav-page="backtest" class="px-2.5 py-1 rounded text-xs transition">Backtest & Audit</a>
+          <a href="/options.html" data-nav-page="options" class="px-2.5 py-1 rounded text-xs transition">Options</a>
+          <a href="/backtest.html" data-nav-page="backtest" class="px-2.5 py-1 rounded text-xs transition">Backtest</a>
         </nav>
+
+        <!-- Multi-Chart Side-by-Side Layout Switcher -->
+        <div id="workbench-layout-switcher" class="hidden sm:flex items-center bg-tv-primary rounded p-0.5 border border-tv-border text-xs" title="Multi-Chart Split Layout">
+          <button data-layout="1" title="Single Chart (1x1)" class="px-2 py-0.5 rounded bg-tv-tertiary text-white font-semibold transition cursor-pointer">
+            1x1
+          </button>
+          <button data-layout="2" title="Dual Side-by-Side (1x2)" class="px-2 py-0.5 rounded text-tv-muted hover:text-white transition cursor-pointer">
+            1x2 ▌▌
+          </button>
+          <button data-layout="3" title="Triple Split (1x3)" class="px-2 py-0.5 rounded text-tv-muted hover:text-white transition cursor-pointer">
+            1x3 ☲
+          </button>
+          <button data-layout="4" title="Quad Grid (2x2)" class="px-2 py-0.5 rounded text-tv-muted hover:text-white transition cursor-pointer">
+            2x2 ⊞
+          </button>
+        </div>
 
         <!-- Timeframe Selectors -->
         <div class="hidden lg:flex items-center bg-tv-primary rounded p-0.5 border border-tv-border text-xs">
@@ -150,8 +252,22 @@
 
       <!-- Center Interactive Market Chart Area -->
       <main data-widget="widget-chart" class="flex-1 relative overflow-hidden bg-tv-primary flex flex-col">
-        <!-- Floating Chart Legend -->
-        <div class="absolute top-2 left-3 z-10 pointer-events-none flex items-center space-x-2 text-xs font-mono">
+        <!-- Multi-Chart Active Split Status Bar (Shown when 2+ charts active) -->
+        <div id="multi-chart-status-bar" class="hidden bg-tv-secondary/95 border-b border-tv-border px-3 py-1.5 text-xs flex items-center justify-between z-20 backdrop-blur-md">
+          <div class="flex items-center space-x-2">
+            <span class="text-sm">⚡</span>
+            <span class="font-bold text-white text-xs">Side-by-Side Comparative View</span>
+            <span id="active-symbols-summary" class="text-[11px] text-tv-accent font-mono font-bold px-2 py-0.5 rounded bg-tv-accent/15"></span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button id="btn-reset-single-chart" class="px-2.5 py-0.5 rounded bg-tv-tertiary hover:bg-tv-elevated text-tv-text hover:text-white text-[11px] font-medium transition cursor-pointer">
+              Single View (1x1)
+            </button>
+          </div>
+        </div>
+
+        <!-- Floating Chart Legend (Single Mode) -->
+        <div id="single-chart-legend" class="absolute top-2 left-3 z-10 pointer-events-none flex items-center space-x-2 text-xs font-mono">
           <span id="legend-symbol" class="font-bold text-white font-sans text-sm">NIFTY ALPHA 50</span>
           <span class="text-[10px] px-1 rounded bg-tv-tertiary text-tv-muted">NSE</span>
           <span class="text-tv-muted">O:</span> <span id="legend-o" class="text-white">8045.09</span>
@@ -161,8 +277,10 @@
           <span id="legend-change" class="text-tv-bearish">-4.49 (-0.06%)</span>
         </div>
 
-        <!-- OpenAlgo Canvas Container -->
-        <div id="chart-container" class="flex-1 w-full h-full relative"></div>
+        <!-- Charts Grid Wrapper (Supports 1x1, 1x2, 1x3, 2x2) -->
+        <div id="charts-wrapper" class="flex-1 w-full h-full relative grid grid-cols-1 gap-1 p-1 overflow-hidden">
+          <div id="chart-container" class="w-full h-full relative rounded overflow-hidden"></div>
+        </div>
       </main>
 
       <!-- Right Multi-Tab Sidebar -->

@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Honba (相場) - Quant Stock Screener & Shortlisting</title>
+    <!-- Google Fonts: Inter, JetBrains Mono & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@300..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/index.css" />
+  </head>
+  <body class="bg-tv-primary text-tv-text overflow-y-auto font-sans antialiased min-h-screen flex flex-col selection:bg-tv-accent selection:text-white">
+    
+    <!-- 1. Universal Top Navigation Bar with Sub-App Launcher -->
+    <header class="h-12 bg-tv-secondary border-b border-tv-border flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
+      <div class="flex items-center space-x-3">
+        
+        <!-- Logo & Sub-App Selector Launcher -->
+        <div class="relative" id="subapp-launcher-container">
+          <button id="subapp-launcher-btn" class="flex items-center space-x-2 pr-2.5 py-1 rounded-lg border border-transparent hover:border-tv-border hover:bg-tv-tertiary/70 transition group cursor-pointer" title="Switch Sub-App / Workspace">
+            <div class="w-6 h-6 rounded bg-tv-accent flex items-center justify-center font-bold text-white text-xs shadow-md group-hover:scale-105 transition-transform">
+              相
+            </div>
+            <div class="flex flex-col text-left leading-none">
+              <div class="flex items-center space-x-1">
+                <span class="font-bold text-xs tracking-wider text-white">HONBA</span>
+                <span class="text-[9px] text-tv-accent font-mono font-bold px-1 rounded bg-tv-accent/15 uppercase" id="current-app-badge">SCREENER</span>
+              </div>
+              <span class="text-[9px] text-tv-muted font-mono tracking-widest uppercase flex items-center space-x-0.5">
+                <span>APPS</span>
+                <span class="text-[8px]">▾</span>
+              </span>
+            </div>
+          </button>
+
+          <!-- Sub-App Selector Dropdown -->
+          <div id="subapp-launcher-menu" class="hidden absolute top-full left-0 mt-2 w-80 bg-tv-secondary border border-tv-border rounded-xl shadow-2xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md">
+            <div class="px-2.5 py-1.5 text-[10px] text-tv-muted uppercase font-mono tracking-wider font-bold border-b border-tv-border flex items-center justify-between">
+              <span>Connected Quant Suite</span>
+              <span class="text-[9px] text-tv-accent">6 SUB-APPS</span>
+            </div>
+            
+            <a href="/" data-app-item="workbench" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center text-base flex-shrink-0">📊</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Workbench</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">MULTI-CHART</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Multi-pane trading terminal with side-by-side comparative views</p>
+              </div>
+            </a>
+
+            <a href="/screener.html" data-app-item="screener" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border bg-tv-tertiary/60">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-base flex-shrink-0">🔍</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Quant Screener</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-bullish/20 text-tv-bullish font-mono">ACTIVE</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Momentum & breakout scanner; send stocks side-by-side to Workbench</p>
+              </div>
+            </a>
+
+            <a href="/designer.html" data-app-item="designer" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center text-base flex-shrink-0">📐</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Algo Designer</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">OPENALGO</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Jesse & OpenAlgo visual rule builder with Python & Rust export</p>
+              </div>
+            </a>
+
+            <a href="/simulator.html" data-app-item="simulator" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center text-base flex-shrink-0">🧪</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Quant Simulator</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">JESSE SCORE</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">10-metric scorecard, 1000-sample Monte Carlo fans & STT friction</p>
+              </div>
+            </a>
+
+            <a href="/options.html" data-app-item="options" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center text-base flex-shrink-0">📑</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Options Chain</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">GREEKS</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">NSE strike chain, ATM highlight, PCR & Delta/IV dynamics</p>
+              </div>
+            </a>
+
+            <a href="/backtest.html" data-app-item="backtest" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-rose-500/15 text-rose-400 flex items-center justify-center text-base flex-shrink-0">🛡️</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>CPCV Stress Tester</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">DSR</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">López de Prado Deflated Sharpe & Probability of Backtest Overfit</p>
+              </div>
+            </a>
+          </div>
+        </div>
+
+        <!-- Global Symbol Selector -->
+        <div class="flex items-center space-x-2">
+          <select id="symbol-select" class="bg-tv-tertiary hover:bg-tv-elevated text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-tv-elevated focus:outline-none focus:border-tv-accent">
+            <option value="NIFTY 50">NIFTY 50 (₹24,850.20)</option>
+            <option value="NIFTY ALPHA 50">NIFTY ALPHA 50 (₹8,124.60)</option>
+            <option value="BANKNIFTY">BANKNIFTY (₹51,320.50)</option>
+            <option value="NIFTY200 A30">NIFTY200 A30 (₹4,925.10)</option>
+            <option value="RELIANCE">RELIANCE (₹2,984.75)</option>
+            <option value="TCS">TCS (₹4,280.00)</option>
+          </select>
+        </div>
+
+        <!-- Sub-Apps Quick Nav Links -->
+        <nav class="flex items-center space-x-1 border-l border-tv-border pl-2 text-xs">
+          <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-tv-muted hover:text-white transition">Workbench</a>
+          <a href="/screener.html" data-nav-page="screener" class="px-2.5 py-1 rounded bg-tv-tertiary text-white font-medium transition">Screener</a>
+          <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-tv-muted hover:text-white transition">Algo Designer</a>
+          <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-tv-muted hover:text-white transition">Simulator</a>
+          <a href="/options.html" data-nav-page="options" class="px-2.5 py-1 rounded text-tv-muted hover:text-white transition">Options</a>
+          <a href="/backtest.html" data-nav-page="backtest" class="px-2.5 py-1 rounded text-tv-muted hover:text-white transition">Backtest</a>
+        </nav>
+      </div>
+
+      <!-- Right Header Actions -->
+      <div class="flex items-center space-x-2.5">
+        <!-- Live Market Status & Time -->
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-tv-primary border border-tv-border font-mono text-[10px]">
+          <span class="w-2 h-2 rounded-full bg-tv-bullish animate-pulse"></span>
+          <span id="ist-clock" class="text-tv-muted font-medium">NSE LIVE | 09:15:00 IST</span>
+        </div>
+
+        <!-- Customize Widgets & Theme -->
+        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-tv-tertiary hover:bg-tv-elevated text-tv-text hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
+          <span>🎛️</span>
+          <span class="hidden sm:inline">Workspace & Theme</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 2. Screener Main View -->
+    <main class="flex-1 p-4 max-w-7xl w-full mx-auto space-y-4">
+      
+      <!-- Screener Hero Banner -->
+      <div class="bg-gradient-to-r from-tv-secondary to-tv-primary border border-tv-border rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg">
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-xl">🔍</span>
+            <h1 class="text-base font-bold text-white tracking-wide">Honba Quantitative Stock Screener</h1>
+            <span class="px-2 py-0.5 rounded bg-tv-accent/20 text-tv-accent text-[10px] font-mono font-bold">CONNECTED SUITE</span>
+          </div>
+          <p class="text-xs text-tv-muted mt-1">
+            Real-time technical filters for Indian equities & F&O stocks. Shortlist candidates and send them <strong class="text-tv-text font-semibold">side-by-side into Workbench</strong> for deep-dive comparative execution.
+          </p>
+        </div>
+
+        <!-- Quick Breadth Indicators -->
+        <div class="flex items-center space-x-3 text-xs font-mono flex-shrink-0">
+          <div class="px-3 py-1.5 rounded-lg bg-tv-primary border border-tv-border flex flex-col items-center">
+            <span class="text-[10px] text-tv-muted uppercase">Nifty Breadth</span>
+            <span class="text-tv-bullish font-bold text-sm">34 Adv / 16 Dec</span>
+          </div>
+          <div class="px-3 py-1.5 rounded-lg bg-tv-primary border border-tv-border flex flex-col items-center">
+            <span class="text-[10px] text-tv-muted uppercase">52W Breakouts</span>
+            <span class="text-tv-accent font-bold text-sm">5 Stocks</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Controls Card -->
+      <div class="bg-tv-secondary border border-tv-border rounded-xl p-3.5 space-y-3 shadow-md">
+        <!-- Preset Filters Row -->
+        <div class="flex flex-wrap items-center justify-between gap-2.5">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-xs font-semibold text-tv-muted mr-1">Presets:</span>
+            <button data-screener-preset="all" class="px-2.5 py-1 rounded bg-tv-accent text-white font-semibold text-xs transition cursor-pointer">
+              All Stocks
+            </button>
+            <button data-screener-preset="momentum" class="px-2.5 py-1 rounded bg-tv-tertiary text-tv-muted hover:text-white text-xs transition cursor-pointer flex items-center space-x-1">
+              <span>🚀</span>
+              <span>52W High Momentum</span>
+            </button>
+            <button data-screener-preset="breakout" class="px-2.5 py-1 rounded bg-tv-tertiary text-tv-muted hover:text-white text-xs transition cursor-pointer flex items-center space-x-1">
+              <span>📈</span>
+              <span>Volume Breakout (RVOL > 2.0x)</span>
+            </button>
+            <button data-screener-preset="oversold" class="px-2.5 py-1 rounded bg-tv-tertiary text-tv-muted hover:text-white text-xs transition cursor-pointer flex items-center space-x-1">
+              <span>⚡</span>
+              <span>RSI Oversold Bounce (&le; 40)</span>
+            </button>
+            <button data-screener-preset="supertrend" class="px-2.5 py-1 rounded bg-tv-tertiary text-tv-muted hover:text-white text-xs transition cursor-pointer flex items-center space-x-1">
+              <span>🛡️</span>
+              <span>Supertrend Bullish</span>
+            </button>
+            <button data-screener-preset="volume" class="px-2.5 py-1 rounded bg-tv-tertiary text-tv-muted hover:text-white text-xs transition cursor-pointer flex items-center space-x-1">
+              <span>🔥</span>
+              <span>High Volume</span>
+            </button>
+          </div>
+
+          <div id="screener-count" class="text-xs font-mono text-tv-muted">
+            Showing 12 Candidates
+          </div>
+        </div>
+
+        <!-- Search & Sector Row -->
+        <div class="flex flex-col sm:flex-row items-center gap-2.5 pt-2 border-t border-tv-border/50">
+          <div class="relative flex-1 w-full">
+            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-tv-muted text-xs">🔍</span>
+            <input id="screener-search" type="text" placeholder="Search by symbol, company name, or sector..." class="w-full pl-8 pr-3 py-1.5 rounded-lg bg-tv-primary border border-tv-border text-xs text-white placeholder-tv-muted focus:outline-none focus:border-tv-accent transition" />
+          </div>
+
+          <div class="flex items-center space-x-2 w-full sm:w-auto">
+            <span class="text-xs text-tv-muted whitespace-nowrap">Sector:</span>
+            <select id="screener-sector-filter" class="w-full sm:w-auto bg-tv-primary border border-tv-border text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-tv-accent cursor-pointer">
+              <option value="all">All Sectors</option>
+              <option value="Information Tech">Information Technology</option>
+              <option value="Banking">Banking & Financials</option>
+              <option value="Energy">Energy / Conglomerate</option>
+              <option value="Automobile">Automobile</option>
+              <option value="Telecom">Telecom</option>
+              <option value="Infrastructure">Infrastructure / Capital Goods</option>
+              <option value="Healthcare">Healthcare & Pharma</option>
+              <option value="FMCG">FMCG</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screener Data Table Card -->
+      <div class="bg-tv-secondary border border-tv-border rounded-xl shadow-md overflow-hidden flex flex-col">
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse text-left">
+            <thead>
+              <tr class="bg-tv-primary border-b border-tv-border text-[11px] font-mono text-tv-muted uppercase tracking-wider select-none">
+                <th class="p-3 text-center w-10">
+                  <input type="checkbox" id="screener-select-all" class="w-4 h-4 rounded border-tv-border bg-tv-primary text-tv-accent focus:ring-0 cursor-pointer" title="Select / Deselect All Visible" />
+                </th>
+                <th class="p-3">Symbol & Company</th>
+                <th class="p-3">Sector</th>
+                <th class="p-3 text-right">LTP (₹) & 1D %</th>
+                <th class="p-3 text-right hidden md:table-cell">1W / 1M %</th>
+                <th class="p-3 text-right">Volume & RVOL</th>
+                <th class="p-3 text-center">RSI (14)</th>
+                <th class="p-3 text-center">Supertrend</th>
+                <th class="p-3 text-right">52W Distance</th>
+                <th class="p-3 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="screener-tbody" class="divide-y divide-tv-border/50">
+              <!-- Dynamically populated by screener.ts -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- 3. Floating Shortlist Action Drawer (Connected to Workbench) -->
+    <div id="shortlist-action-bar" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-tv-secondary border border-tv-accent rounded-2xl shadow-2xl px-5 py-3 flex items-center space-x-4 max-w-2xl w-[90%] transition-all duration-300 transform translate-y-24 opacity-0 pointer-events-none backdrop-blur-lg">
+      <div class="flex items-center space-x-2 flex-shrink-0">
+        <span class="text-xl">⚡</span>
+        <div>
+          <div class="text-xs font-bold text-white flex items-center space-x-1.5">
+            <span id="shortlist-count">2 Stocks Shortlisted</span>
+          </div>
+          <div class="text-[10px] text-tv-muted">Ready for multi-chart comparative analysis</div>
+        </div>
+      </div>
+
+      <!-- Shortlisted Symbol Badges -->
+      <div id="shortlist-tags" class="flex-1 overflow-x-auto flex items-center space-x-1.5 py-1 max-h-10">
+        <!-- Badges added dynamically -->
+      </div>
+
+      <!-- Main Action: Open in Workbench Side-by-Side -->
+      <div class="flex items-center space-x-2 flex-shrink-0">
+        <button id="btn-shortlist-workbench" class="bg-tv-accent hover:bg-tv-accent-hover text-white text-xs font-bold px-3.5 py-2 rounded-xl transition shadow flex items-center space-x-1.5 cursor-pointer">
+          <span>📊</span>
+          <span>Open in Workbench (Side-by-Side)</span>
+        </button>
+        <button id="btn-shortlist-simulator" title="Test first stock in Jesse Simulator" class="bg-tv-tertiary hover:bg-amber-500/20 hover:text-amber-400 text-tv-text text-xs font-semibold px-2.5 py-2 rounded-xl transition cursor-pointer">
+          🧪
+        </button>
+        <button id="btn-clear-shortlist" title="Clear All" class="text-tv-muted hover:text-tv-bearish text-xs p-1.5 rounded-lg transition cursor-pointer">
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- Script entry -->
+    <script type="module" src="/src/screener.ts"></script>
+  </body>
+</html>

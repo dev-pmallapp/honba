@@ -2,12 +2,56 @@ import { initTheme } from "./theme";
 import { initWidgetCustomizer } from "./widgets/widget-customizer";
 
 export function initHeaderNavigation(
-  activePage: "workbench" | "designer" | "simulator" | "stock" | "options" | "backtest"
+  activePage: "workbench" | "screener" | "designer" | "simulator" | "stock" | "options" | "backtest"
 ) {
   // 1. Initialize user's selected theme & typography
   initTheme();
 
-  // 2. Update live IST market clock
+  // 2. Setup Top-Left Sub-App Selector Launcher
+  const launcherBtn = document.getElementById("subapp-launcher-btn");
+  const launcherMenu = document.getElementById("subapp-launcher-menu");
+  const currentBadge = document.getElementById("current-app-badge");
+
+  const pageTitleMap: Record<string, string> = {
+    workbench: "WORKBENCH",
+    screener: "SCREENER",
+    designer: "ALGO DESIGNER",
+    simulator: "SIMULATOR",
+    stock: "SECURITY INTEL",
+    options: "OPTIONS CHAIN",
+    backtest: "CPCV TESTER",
+  };
+
+  if (currentBadge && pageTitleMap[activePage]) {
+    currentBadge.textContent = pageTitleMap[activePage];
+  }
+
+  if (launcherBtn && launcherMenu) {
+    launcherBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      launcherMenu.classList.toggle("hidden");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!launcherMenu.contains(e.target as Node) && e.target !== launcherBtn) {
+        launcherMenu.classList.add("hidden");
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        launcherMenu.classList.add("hidden");
+      }
+    });
+
+    // Highlight current active app in dropdown
+    const activeAppItem = launcherMenu.querySelector(`[data-app-item="${activePage}"]`);
+    if (activeAppItem) {
+      activeAppItem.classList.add("bg-tv-tertiary", "border-tv-accent");
+    }
+  }
+
+  // 3. Update live IST market clock
   const clockEl = document.getElementById("ist-clock");
   if (clockEl) {
     const updateTime = () => {
@@ -25,7 +69,7 @@ export function initHeaderNavigation(
     setInterval(updateTime, 1000);
   }
 
-  // 3. Active page styling
+  // 4. Active page styling for top nav links
   const navLinks = document.querySelectorAll<HTMLAnchorElement>("[data-nav-page]");
   navLinks.forEach((link) => {
     const page = link.getAttribute("data-nav-page");

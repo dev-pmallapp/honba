@@ -16,14 +16,98 @@
     <!-- 1. Universal Top Navigation Bar -->
     <header class="h-12 bg-tv-secondary border-b border-tv-border flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
       <div class="flex items-center space-x-3">
-        <!-- Logo -->
-        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-tv-border group">
-          <div class="w-6 h-6 rounded bg-tv-accent flex items-center justify-center font-bold text-white text-xs shadow-md">
-            相
+        <!-- Logo & Sub-App Selector Launcher -->
+        <div class="relative" id="subapp-launcher-container">
+          <button id="subapp-launcher-btn" class="flex items-center space-x-2 pr-2.5 py-1 rounded-lg border border-transparent hover:border-tv-border hover:bg-tv-tertiary/70 transition group cursor-pointer" title="Switch Sub-App / Workspace">
+            <div class="w-6 h-6 rounded bg-tv-accent flex items-center justify-center font-bold text-white text-xs shadow-md group-hover:scale-105 transition-transform">
+              相
+            </div>
+            <div class="flex flex-col text-left leading-none">
+              <div class="flex items-center space-x-1">
+                <span class="font-bold text-xs tracking-wider text-white">HONBA</span>
+                <span class="text-[9px] text-tv-accent font-mono font-bold px-1 rounded bg-tv-accent/15 uppercase" id="current-app-badge">APPS</span>
+              </div>
+              <span class="text-[9px] text-tv-muted font-mono tracking-widest uppercase flex items-center space-x-0.5">
+                <span>APPS</span>
+                <span class="text-[8px]">▾</span>
+              </span>
+            </div>
+          </button>
+
+          <!-- Sub-App Selector Dropdown -->
+          <div id="subapp-launcher-menu" class="hidden absolute top-full left-0 mt-2 w-80 bg-tv-secondary border border-tv-border rounded-xl shadow-2xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-md">
+            <div class="px-2.5 py-1.5 text-[10px] text-tv-muted uppercase font-mono tracking-wider font-bold border-b border-tv-border flex items-center justify-between">
+              <span>Connected Quant Suite</span>
+              <span class="text-[9px] text-tv-accent">6 SUB-APPS</span>
+            </div>
+            
+            <a href="/" data-app-item="workbench" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center text-base flex-shrink-0">📊</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Workbench</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">MULTI-CHART</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Multi-pane trading terminal with side-by-side comparative views</p>
+              </div>
+            </a>
+
+            <a href="/screener.html" data-app-item="screener" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-base flex-shrink-0">🔍</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Quant Screener</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-bullish/20 text-tv-bullish font-mono">SHORTLIST</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Momentum & breakout scanner; send stocks side-by-side to Workbench</p>
+              </div>
+            </a>
+
+            <a href="/designer.html" data-app-item="designer" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center text-base flex-shrink-0">📐</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Algo Designer</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">OPENALGO</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">Jesse & OpenAlgo visual rule builder with Python & Rust export</p>
+              </div>
+            </a>
+
+            <a href="/simulator.html" data-app-item="simulator" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center text-base flex-shrink-0">🧪</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Quant Simulator</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">JESSE SCORE</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">10-metric scorecard, 1000-sample Monte Carlo fans & STT friction</p>
+              </div>
+            </a>
+
+            <a href="/options.html" data-app-item="options" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center text-base flex-shrink-0">📑</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>Options Chain</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">GREEKS</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">NSE strike chain, ATM highlight, PCR & Delta/IV dynamics</p>
+              </div>
+            </a>
+
+            <a href="/backtest.html" data-app-item="backtest" class="flex items-start space-x-2.5 p-2 rounded-lg hover:bg-tv-tertiary transition group border border-transparent hover:border-tv-border">
+              <div class="w-8 h-8 rounded-lg bg-rose-500/15 text-rose-400 flex items-center justify-center text-base flex-shrink-0">🛡️</div>
+              <div>
+                <div class="text-xs font-semibold text-white group-hover:text-tv-accent flex items-center space-x-1.5">
+                  <span>CPCV Stress Tester</span>
+                  <span class="text-[9px] px-1 py-0.2 rounded bg-tv-border text-tv-muted font-mono">DSR</span>
+                </div>
+                <p class="text-[10px] text-tv-muted leading-tight mt-0.5">López de Prado Deflated Sharpe & Probability of Backtest Overfit</p>
+              </div>
+            </a>
           </div>
-          <span class="font-bold text-sm tracking-wider text-white">HONBA</span>
-          <span class="text-[10px] text-tv-muted font-mono tracking-widest uppercase">QUANT</span>
-        </a>
+        </div>
 
         <!-- Symbol Dropdown -->
         <div class="relative">
@@ -41,6 +125,7 @@
         <!-- MPA Navigation Links -->
         <nav class="flex items-center space-x-1 border-l border-tv-border pl-2 text-xs">
           <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-xs transition">Workbench</a>
+          <a href="/screener.html" data-nav-page="screener" class="px-2.5 py-1 rounded text-xs transition">Screener</a>
           <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-xs transition">Algo Designer</a>
           <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-xs transition">Simulator</a>
           <a href="/stock.html" data-nav-page="stock" class="px-2.5 py-1 rounded text-xs transition">Scrip Research</a>

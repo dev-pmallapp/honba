@@ -46,3 +46,21 @@ export interface BacktestTearsheet {
   dsr: number;
   pbo: number;
 }
+
+export interface ScreenerStock {
+  symbol: string;
+  name: string;
+  sector: string;
+  price: number;
+  changePercent1D: number;
+  changePercent1W: number;
+  changePercent1M: number;
+  volume: string;
+  rvol: number;
+  rsi: number;
+  emaCross: "BULLISH_CROSS" | "BEARISH_CROSS" | "BULLISH_TREND" | "BEARISH_TREND";
+  supertrend: "BULLISH" | "BEARISH";
+  high52wDiff: number;
+  tags: string[];
+}
+

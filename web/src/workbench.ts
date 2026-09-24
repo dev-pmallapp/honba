@@ -1,27 +1,52 @@
-import { createChart, darkTheme, type Chart, type SeriesApi, type IndicatorApi } from "openalgo-charts";
+import { createChart, darkTheme, type Chart, type SeriesApi } from "openalgo-charts";
 import { WATCHLIST_DATA, SAMPLE_OPTIONS_CHAIN, DEFAULT_TEARSHEET, generateSampleBars } from "./data";
 import { initHeaderNavigation } from "./nav";
 
+export interface ChartPane {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  chart: Chart;
+  series: SeriesApi;
+}
+
+let activeSymbols: string[] = ["NIFTY ALPHA 50"];
+let chartPanes: ChartPane[] = [];
 let currentSymbol = localStorage.getItem("honba_symbol") || "NIFTY ALPHA 50";
 let currentTimeframe = "5m";
-let chartInstance: Chart | null = null;
 let candleSeries: SeriesApi | null = null;
-const indicators: { ema9?: IndicatorApi; ema21?: IndicatorApi; volume?: IndicatorApi; supertrend?: IndicatorApi } = {};
 let indicatorStates = { ema9: true, ema21: true, volume: true, supertrend: false };
 
 export function initWorkbench() {
   initHeaderNavigation("workbench");
 
-  // Initialize Canvas Chart
-  initChart();
+  // 1. Read URL query parameters for ?symbols=RELIANCE,TCS (e.g. from Screener)
+  const urlParams = new URLSearchParams(window.location.search);
+  const symbolsParam = urlParams.get("symbols");
+  if (symbolsParam) {
+    const list = symbolsParam
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (list.length > 0) {
+      activeSymbols = list.slice(0, 4);
+      currentSymbol = activeSymbols[0];
+    }
+  }
 
-  // Initialize Drawing Tool Rail
+  // 2. Initialize Canvas Charts (Multi-Pane Side-by-Side aware)
+  renderCharts();
+
+  // 3. Initialize Multi-Chart Layout Switcher
+  initLayoutSwitcher();
+
+  // 4. Initialize Drawing Tool Rail
   initDrawingToolbar();
 
-  // Initialize Right Sidebar (Watchlist, Order Ticket, Options)
+  // 5. Initialize Right Sidebar (Watchlist, Order Ticket, Options)
   initSidebar();
 
-  // Initialize Bottom Strategy Dock
+  // 6. Initialize Bottom Strategy Dock
   initStrategyDock();
 
   // Listen for global symbol changes
@@ -32,6 +57,7 @@ export function initWorkbench() {
   // Listen for theme changes
   window.addEventListener("honba:theme-change", () => {
     renderEquityCurveCanvas();
+    renderCharts();
   });
 
   // Timeframe selector buttons
@@ -41,7 +67,14 @@ export function initWorkbench() {
       tfButtons.forEach((b) => b.classList.remove("bg-tv-tertiary", "text-white", "font-semibold"));
       btn.classList.add("bg-tv-tertiary", "text-white", "font-semibold");
       currentTimeframe = btn.getAttribute("data-tf") || "5m";
-      loadChartData();
+      chartPanes.forEach((pane) => {
+        const bars = generateSampleBars(pane.symbol, currentTimeframe);
+        pane.series.setData(bars);
+      });
+      if (chartPanes.length === 1) {
+        const bars = generateSampleBars(currentSymbol, currentTimeframe);
+        if (bars.length > 0) updateLegend(bars[bars.length - 1]);
+      }
     });
   });
 
@@ -50,115 +83,252 @@ export function initWorkbench() {
 
   // Run Backtest action
   setupBacktestButton();
+
+  // Window resize handler (openalgo-charts handles container resize automatically via ResizeObserver)
+  window.addEventListener("resize", () => {
+    // resize observer handles panes
+  });
 }
 
-function initChart() {
-  const container = document.getElementById("chart-container");
-  if (!container) return;
-
-  container.innerHTML = "";
-
-  chartInstance = createChart(container, {
-    theme: darkTheme,
-    crosshairMode: "normal",
-    animZoom: true,
-    animAutoscale: true,
+function initLayoutSwitcher() {
+  const layoutBtns = document.querySelectorAll<HTMLButtonElement>("[data-layout]");
+  layoutBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const layoutNum = parseInt(btn.getAttribute("data-layout") || "1", 10);
+      setLayout(layoutNum);
+    });
   });
 
+  const resetBtn = document.getElementById("btn-reset-single-chart");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      setLayout(1);
+    });
+  }
+}
+
+function setLayout(count: number) {
+  if (count === 1) {
+    activeSymbols = [currentSymbol];
+  } else if (count === 2) {
+    const second = activeSymbols[1] || (currentSymbol === "RELIANCE" ? "TCS" : "RELIANCE");
+    activeSymbols = [currentSymbol, second];
+  } else if (count === 3) {
+    activeSymbols = [currentSymbol, "RELIANCE", "TCS"].slice(0, 3);
+  } else if (count === 4) {
+    activeSymbols = [currentSymbol, "RELIANCE", "TCS", "INFY"].slice(0, 4);
+  }
+  renderCharts();
+}
+
+export function addSymbolSideBySide(sym: string) {
+  if (!activeSymbols.includes(sym)) {
+    if (activeSymbols.length >= 4) {
+      activeSymbols[activeSymbols.length - 1] = sym;
+    } else {
+      activeSymbols.push(sym);
+    }
+    renderCharts();
+  }
+}
+
+function renderCharts() {
+  const wrapper = document.getElementById("charts-wrapper");
+  if (!wrapper) return;
+
+  // Cleanup existing charts
+  chartPanes = [];
+  wrapper.innerHTML = "";
+
+  const count = activeSymbols.length;
+
+  // Multi-pane grid classes
+  wrapper.className = `flex-1 w-full h-full relative grid gap-1.5 p-1 overflow-hidden ${
+    count === 1
+      ? "grid-cols-1 grid-rows-1"
+      : count === 2
+      ? "grid-cols-1 md:grid-cols-2 grid-rows-1"
+      : count === 3
+      ? "grid-cols-1 md:grid-cols-3 grid-rows-1"
+      : "grid-cols-2 grid-rows-2"
+  }`;
+
+  // Update layout switcher buttons active states
+  const layoutBtns = document.querySelectorAll<HTMLButtonElement>("[data-layout]");
+  layoutBtns.forEach((b) => {
+    const l = parseInt(b.getAttribute("data-layout") || "1", 10);
+    if (l === count) {
+      b.classList.add("bg-tv-tertiary", "text-white", "font-semibold");
+      b.classList.remove("text-tv-muted");
+    } else {
+      b.classList.remove("bg-tv-tertiary", "text-white", "font-semibold");
+      b.classList.add("text-tv-muted");
+    }
+  });
+
+  // Multi-chart status bar vs Single legend
+  const statusBar = document.getElementById("multi-chart-status-bar");
+  const singleLegend = document.getElementById("single-chart-legend");
+  const summaryEl = document.getElementById("active-symbols-summary");
+
+  if (count > 1) {
+    if (statusBar) statusBar.classList.remove("hidden");
+    if (singleLegend) singleLegend.classList.add("hidden");
+    if (summaryEl) summaryEl.textContent = activeSymbols.join(" vs ");
+  } else {
+    if (statusBar) statusBar.classList.add("hidden");
+    if (singleLegend) singleLegend.classList.remove("hidden");
+  }
+
+  // Theme tokens
   const style = getComputedStyle(document.documentElement);
   const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
   const bearish = style.getPropertyValue("--tv-bearish").trim() || "#f23645";
   const accent = style.getPropertyValue("--tv-accent").trim() || "#2962ff";
   const border = style.getPropertyValue("--tv-border").trim() || "#2a2e39";
 
-  candleSeries = chartInstance.addSeries("candlestick", {
-    style: {
-      upColor: bullish,
-      downColor: bearish,
-      borderUpColor: bullish,
-      borderDownColor: bearish,
-      wickUpColor: bullish,
-      wickDownColor: bearish,
-    },
-  });
+  activeSymbols.forEach((symbol, index) => {
+    const paneDiv = document.createElement("div");
+    paneDiv.className =
+      "flex flex-col bg-tv-primary border border-tv-border rounded-lg overflow-hidden h-full relative group shadow-sm";
 
-  // Indicators
-  try {
-    indicators.ema9 = chartInstance.addIndicator("ema", { length: 9, color: accent });
-    indicators.ema9.setVisible(indicatorStates.ema9);
+    const quote = WATCHLIST_DATA.find((w) => w.symbol === symbol) || {
+      price: symbol === "RELIANCE" ? 2984.75 : 4280.0,
+      changePercent: 1.2,
+      change: 25.0,
+    };
+    const isBull = quote.changePercent >= 0;
 
-    indicators.ema21 = chartInstance.addIndicator("ema", { length: 21, color: "#f59e0b" });
-    indicators.ema21.setVisible(indicatorStates.ema21);
+    paneDiv.innerHTML = `
+      <!-- Pane Header -->
+      <div class="h-7 bg-tv-secondary border-b border-tv-border px-2.5 flex items-center justify-between z-10 flex-shrink-0 select-none">
+        <div class="flex items-center space-x-2">
+          <span class="font-bold text-xs text-white font-mono tracking-wide">${symbol}</span>
+          <span class="text-[10px] text-tv-muted font-mono font-medium">₹${quote.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+          <span class="text-[10px] font-mono font-semibold ${isBull ? "text-tv-bullish" : "text-tv-bearish"}">
+            ${isBull ? "+" : ""}${quote.changePercent.toFixed(2)}%
+          </span>
+        </div>
+        <div class="flex items-center space-x-1.5 text-[10px]">
+          <span class="px-1.5 py-0.2 rounded bg-tv-tertiary text-tv-accent font-mono font-semibold">${currentTimeframe}</span>
+          ${
+            count > 1
+              ? `<button data-remove-pane="${symbol}" title="Close pane" class="w-5 h-5 rounded flex items-center justify-center text-tv-muted hover:text-white hover:bg-tv-bearish/30 transition cursor-pointer text-xs">✕</button>`
+              : ""
+          }
+        </div>
+      </div>
 
-    indicators.volume = chartInstance.addIndicator("volume", {
-      color: border,
-      colorByDirection: true,
-      upColor: bullish,
-      downColor: bearish,
-    });
-    indicators.volume.setVisible(indicatorStates.volume);
+      <!-- Canvas container -->
+      <div id="chart-canvas-${index}" class="flex-1 w-full h-full relative"></div>
+    `;
 
-    indicators.supertrend = chartInstance.addIndicator("supertrend", {
-      period: 10,
-      multiplier: 3,
-      upColor: bullish,
-      downColor: bearish,
-    });
-    indicators.supertrend.setVisible(indicatorStates.supertrend);
-  } catch (err) {
-    console.warn("Indicator setup error:", err);
-  }
+    wrapper.appendChild(paneDiv);
 
-  // Crosshair move subscription for legend
-  chartInstance.subscribeCrosshairMove((param: any) => {
-    if (param && param.bar) {
-      updateLegend(param.bar);
+    const canvasContainer = paneDiv.querySelector(`#chart-canvas-${index}`) as HTMLDivElement;
+    if (!canvasContainer) return;
+
+    try {
+      const paneChart = createChart(canvasContainer, {
+        theme: darkTheme,
+        crosshairMode: "normal",
+        animZoom: true,
+        animAutoscale: true,
+      });
+
+      const paneSeries = paneChart.addSeries("candlestick", {
+        style: {
+          upColor: bullish,
+          downColor: bearish,
+          borderUpColor: bullish,
+          borderDownColor: bearish,
+          wickUpColor: bullish,
+          wickDownColor: bearish,
+        },
+      });
+
+      // Indicators
+      try {
+        if (indicatorStates.ema9) {
+          paneChart.addIndicator("ema", { length: 9, color: accent });
+        }
+        if (indicatorStates.ema21) {
+          paneChart.addIndicator("ema", { length: 21, color: "#f59e0b" });
+        }
+        if (indicatorStates.volume) {
+          paneChart.addIndicator("volume", {
+            color: border,
+            colorByDirection: true,
+            upColor: bullish,
+            downColor: bearish,
+          });
+        }
+        if (indicatorStates.supertrend) {
+          paneChart.addIndicator("supertrend", {
+            period: 10,
+            multiplier: 3,
+            upColor: bullish,
+            downColor: bearish,
+          });
+        }
+      } catch (err) {
+        // ignore indicator error
+      }
+
+      // Populate candlestick data
+      const bars = generateSampleBars(symbol, currentTimeframe);
+      paneSeries.setData(bars);
+
+      chartPanes.push({
+        id: `pane-${index}`,
+        symbol,
+        timeframe: currentTimeframe,
+        chart: paneChart,
+        series: paneSeries,
+      });
+
+      if (index === 0) {
+        candleSeries = paneSeries;
+        if (count === 1) {
+          paneChart.subscribeCrosshairMove((param: any) => {
+            if (param && param.bar) {
+              updateLegend(param.bar);
+            }
+          });
+          if (bars.length > 0) {
+            updateLegend(bars[bars.length - 1]);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to initialize chart for", symbol, e);
     }
   });
 
-  loadChartData();
+  // Wire up remove pane buttons
+  wrapper.querySelectorAll<HTMLButtonElement>("[data-remove-pane]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const sym = btn.getAttribute("data-remove-pane");
+      if (sym && activeSymbols.length > 1) {
+        activeSymbols = activeSymbols.filter((s) => s !== sym);
+        currentSymbol = activeSymbols[0];
+        renderCharts();
+      }
+    });
+  });
 }
 
-function loadChartData() {
-  if (!candleSeries) return;
-  const bars = generateSampleBars(currentSymbol, currentTimeframe);
-  candleSeries.setData(bars);
-
-  // Markers
-  if (bars.length > 25) {
-    try {
-      const style = getComputedStyle(document.documentElement);
-      const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
-      const bearish = style.getPropertyValue("--tv-bearish").trim() || "#f23645";
-
-      const markers = candleSeries.createMarkers();
-      const buyBar = bars[bars.length - 20];
-      const sellBar = bars[bars.length - 8];
-      markers.setMarkers([
-        {
-          time: buyBar.time,
-          position: "belowBar",
-          shape: "arrowUp",
-          size: "small",
-          color: bullish,
-          text: `BUY (EMA cross) @ ₹${buyBar.close}`,
-        },
-        {
-          time: sellBar.time,
-          position: "aboveBar",
-          shape: "arrowDown",
-          size: "small",
-          color: bearish,
-          text: `SELL (Exit) @ ₹${sellBar.close}`,
-        },
-      ]);
-    } catch {
-      // ignore
-    }
-  }
-
-  if (bars.length > 0) {
-    updateLegend(bars[bars.length - 1]);
+export function loadChartData() {
+  if (chartPanes.length > 0) {
+    chartPanes.forEach((pane) => {
+      const bars = generateSampleBars(pane.symbol, currentTimeframe);
+      pane.series.setData(bars);
+    });
+  } else if (candleSeries) {
+    const bars = generateSampleBars(currentSymbol, currentTimeframe);
+    candleSeries.setData(bars);
+    if (bars.length > 0) updateLegend(bars[bars.length - 1]);
   }
 }
 
@@ -196,7 +366,12 @@ function switchSymbol(symbol: string) {
     headerLtp.innerHTML = `LTP: <span class="text-white font-semibold">₹${item.price.toFixed(2)}</span> <span class="${item.change >= 0 ? "text-tv-bullish" : "text-tv-bearish"}">${item.change >= 0 ? "+" : ""}${item.change.toFixed(2)} (${item.changePercent > 0 ? "+" : ""}${item.changePercent.toFixed(2)}%)</span>`;
   }
 
-  loadChartData();
+  if (activeSymbols.length <= 1) {
+    activeSymbols = [symbol];
+  } else {
+    activeSymbols[0] = symbol;
+  }
+  renderCharts();
 }
 
 function initDrawingToolbar() {
@@ -233,9 +408,7 @@ function setupIndicatorToggles() {
       cb.checked = indicatorStates[key];
       cb.addEventListener("change", () => {
         indicatorStates[key] = cb.checked;
-        if (indicators[key]) {
-          indicators[key]?.setVisible(cb.checked);
-        }
+        renderCharts();
       });
     });
   }
@@ -291,15 +464,21 @@ function renderWatchlist(list: typeof WATCHLIST_DATA) {
 
   container.innerHTML = "";
   list.forEach((item) => {
+    const isSelected = activeSymbols.includes(item.symbol);
     const row = document.createElement("div");
     row.className = `flex items-center justify-between p-2.5 hover:bg-tv-tertiary cursor-pointer border-b border-tv-border/50 transition ${
-      item.symbol === currentSymbol ? "bg-tv-tertiary/60 border-l-2 border-l-tv-accent" : ""
+      isSelected ? "bg-tv-tertiary/60 border-l-2 border-l-tv-accent" : ""
     }`;
     const isBull = item.change >= 0;
     row.innerHTML = `
-      <div>
-        <div class="font-semibold text-xs text-white">${item.symbol}</div>
-        <div class="text-[10px] text-tv-muted truncate max-w-[120px]">${item.name}</div>
+      <div class="flex items-center space-x-2">
+        <button data-compare-sym="${item.symbol}" title="Add Side-by-Side in Workbench" class="w-5 h-5 rounded flex items-center justify-center bg-tv-primary hover:bg-tv-accent text-tv-muted hover:text-white text-[9px] font-mono transition flex-shrink-0 cursor-pointer border border-tv-border">
+          ▌▌
+        </button>
+        <div>
+          <div class="font-semibold text-xs text-white">${item.symbol}</div>
+          <div class="text-[10px] text-tv-muted truncate max-w-[100px]">${item.name}</div>
+        </div>
       </div>
       <div class="text-right">
         <div class="font-mono text-xs font-medium text-white">₹${item.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
@@ -308,6 +487,14 @@ function renderWatchlist(list: typeof WATCHLIST_DATA) {
         </div>
       </div>
     `;
+
+    const compareBtn = row.querySelector(`[data-compare-sym="${item.symbol}"]`);
+    compareBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      addSymbolSideBySide(item.symbol);
+      renderWatchlist(list);
+    });
+
     row.addEventListener("click", () => {
       switchSymbol(item.symbol);
       renderWatchlist(list);
@@ -435,8 +622,7 @@ function initStrategyDock() {
   // Re-render canvases and chart when theme changes
   window.addEventListener("honba:theme-change", () => {
     renderEquityCurveCanvas();
-    initChart();
-    loadChartData();
+    renderCharts();
   });
 }
 

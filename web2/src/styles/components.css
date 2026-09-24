@@ -88,22 +88,63 @@
   border-radius: var(--radius-xs);
 }
 
-/* Screens Dropdown Button */
-.tv-screen-selector-btn {
+/* Screens Selector (TradingView Style: Breadcrumb + Large Bold Dropdown) */
+.tv-screen-heading-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0px;
+}
+
+.tv-screen-breadcrumb {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+.tv-screen-main-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 800;
   color: var(--text-primary);
+  cursor: pointer;
+  letter-spacing: -0.2px;
 }
 
-.tv-screen-selector-btn:hover {
+.tv-screen-main-btn:hover {
+  color: var(--accent-primary);
+}
+
+.tv-quick-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+.tv-tool-btn, .tv-tool-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tv-tool-btn:hover, .tv-tool-icon-btn:hover {
   background: var(--bg-surface-hover);
-  border-color: var(--border-medium);
+  color: var(--text-primary);
 }
 
 .tv-screen-icon {
@@ -234,28 +275,167 @@
 .screener-filter-bar.tv-filter-bar {
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-medium);
-  padding: 6px 12px;
+  padding: 8px 14px 6px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   user-select: none;
   flex-shrink: 0;
 }
 
-.filter-bar-top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.filter-bar-bottom-row {
+/* Row 1: TradingView Filter Pills */
+.filter-pills-row.tv-pills-row {
   display: flex;
   align-items: center;
   gap: 6px;
   overflow-x: auto;
+  scrollbar-width: none;
   padding-bottom: 2px;
+}
+
+.filter-pills-row.tv-pills-row::-webkit-scrollbar {
+  display: none;
+}
+
+.tv-ai-pill-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, rgba(41, 98, 255, 0.2), rgba(168, 85, 247, 0.2));
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tv-ai-pill-btn:hover {
+  background: linear-gradient(135deg, rgba(41, 98, 255, 0.35), rgba(168, 85, 247, 0.35));
+  border-color: rgba(168, 85, 247, 0.8);
+}
+
+.ai-sparkle {
+  color: #c084fc;
+  font-size: 12px;
+}
+
+.tv-pill-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.tv-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.tv-pill-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+
+.tv-pill-btn.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.pill-caret {
+  font-size: 7px;
+  opacity: 0.7;
+}
+
+.tv-hidden-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.tv-add-filter-pill-btn {
+  border-style: dashed;
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.tv-add-filter-pill-btn:hover {
+  background: var(--accent-subtle);
+}
+
+.tv-clear-all-pill {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--bearish);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tv-clear-all-pill:hover {
+  text-decoration: underline;
+}
+
+/* Row 2: View Tabs & Controls Bar */
+.filter-bar-top-row.tv-tabs-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.tv-view-icons-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-surface-elevated);
+  padding: 2px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+}
+
+.tv-view-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tv-view-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.tv-view-icon-btn.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 /* View Tabs */
@@ -267,15 +447,19 @@
   padding: 2px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
+  overflow-x: auto;
 }
 
 .view-tab-btn {
   padding: 4px 10px;
   border-radius: var(--radius-xs);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
   border: none;
+  white-space: nowrap;
+  background: transparent;
+  cursor: pointer;
 }
 
 .view-tab-btn:hover {
@@ -294,13 +478,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-medium);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-primary);
+  cursor: pointer;
 }
 
 .tv-filter-btn:hover {
@@ -317,7 +502,7 @@
 .tv-filter-badge {
   background: var(--accent-primary);
   color: #ffffff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   padding: 1px 5px;
   border-radius: var(--radius-full);

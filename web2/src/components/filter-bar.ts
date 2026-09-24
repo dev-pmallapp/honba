@@ -17,6 +17,7 @@ export class FilterBar {
   private onFilterChange: (criteria: ScreenerFilterCriteria) => void;
   private onOpenFiltersModal: () => void;
   private onOpenColumnsModal: () => void;
+  private onToggleDrawer?: () => void;
 
   private criteria: ScreenerFilterCriteria = {
     tab: 'overview',
@@ -32,12 +33,14 @@ export class FilterBar {
     container: HTMLElement,
     onFilterChange: (criteria: ScreenerFilterCriteria) => void,
     onOpenFiltersModal: () => void,
-    onOpenColumnsModal: () => void
+    onOpenColumnsModal: () => void,
+    onToggleDrawer?: () => void
   ) {
     this.container = container;
     this.onFilterChange = onFilterChange;
     this.onOpenFiltersModal = onOpenFiltersModal;
     this.onOpenColumnsModal = onOpenColumnsModal;
+    this.onToggleDrawer = onToggleDrawer;
 
     this.render();
     this.setupListeners();
@@ -99,23 +102,132 @@ export class FilterBar {
 
     this.container.innerHTML = `
       <div class="screener-filter-bar tv-filter-bar">
-        <!-- Top Row: TradingView View Tabs + Filters Modal Button + Quick Search + Columns -->
-        <div class="filter-bar-top-row">
-          <div class="view-tabs" id="view-tabs">
-            <button class="view-tab-btn ${this.criteria.tab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
-            <button class="view-tab-btn ${this.criteria.tab === 'performance' ? 'active' : ''}" data-tab="performance">Performance</button>
-            <button class="view-tab-btn ${this.criteria.tab === 'valuation' ? 'active' : ''}" data-tab="valuation">Valuation</button>
-            <button class="view-tab-btn ${this.criteria.tab === 'dividends' ? 'active' : ''}" data-tab="dividends">Dividends</button>
-            <button class="view-tab-btn ${this.criteria.tab === 'margins' ? 'active' : ''}" data-tab="margins">Margins</button>
-            <button class="view-tab-btn ${this.criteria.tab === 'technicals' ? 'active' : ''}" data-tab="technicals">Technicals</button>
-            <button class="view-tab-btn ${this.criteria.tab === 'oscillators' ? 'active' : ''}" data-tab="oscillators">Oscillators</button>
-            <button class="view-tab-btn" id="tab-add-custom-btn" title="Add / Customize Columns" style="color: var(--accent-primary);">+ Custom</button>
+        <!-- Row 1: TradingView Signature Filter Pills Bar -->
+        <div class="filter-pills-row tv-pills-row">
+          <button class="tv-ai-pill-btn" id="ai-screener-pill-btn" title="AI Screener Search">
+            <span class="ai-sparkle">✦</span>
+            <span>AI</span>
+          </button>
+
+          <!-- Sector Filter Pill -->
+          <div class="tv-pill-dropdown-wrapper">
+            <button class="tv-pill-btn ${this.criteria.advanced.sector !== 'all' ? 'active' : ''}" id="pill-sector-btn">
+              <span>Sector: ${this.criteria.advanced.sector === 'all' ? 'All' : this.criteria.advanced.sector}</span>
+              <span class="pill-caret">▼</span>
+            </button>
+            <select class="tv-hidden-select" id="quick-sector-select">
+              <option value="all" ${this.criteria.advanced.sector === 'all' ? 'selected' : ''}>All Sectors</option>
+              <option value="Technology" ${this.criteria.advanced.sector === 'Technology' ? 'selected' : ''}>Technology</option>
+              <option value="Financials" ${this.criteria.advanced.sector === 'Financials' ? 'selected' : ''}>Financials</option>
+              <option value="Energy" ${this.criteria.advanced.sector === 'Energy' ? 'selected' : ''}>Energy</option>
+              <option value="Healthcare" ${this.criteria.advanced.sector === 'Healthcare' ? 'selected' : ''}>Healthcare</option>
+              <option value="Automobile" ${this.criteria.advanced.sector === 'Automobile' ? 'selected' : ''}>Automobile</option>
+              <option value="Consumer Goods" ${this.criteria.advanced.sector === 'Consumer Goods' ? 'selected' : ''}>Consumer Goods</option>
+              <option value="Materials" ${this.criteria.advanced.sector === 'Materials' ? 'selected' : ''}>Materials</option>
+              <option value="Telecom" ${this.criteria.advanced.sector === 'Telecom' ? 'selected' : ''}>Telecom</option>
+              <option value="Industrials" ${this.criteria.advanced.sector === 'Industrials' ? 'selected' : ''}>Industrials</option>
+            </select>
+          </div>
+
+          <!-- Market Cap Filter Pill -->
+          <div class="tv-pill-dropdown-wrapper">
+            <button class="tv-pill-btn ${this.criteria.advanced.marketCapTier !== 'all' ? 'active' : ''}" id="pill-cap-btn">
+              <span>Mkt cap: ${this.criteria.advanced.marketCapTier === 'all' ? 'All' : this.criteria.advanced.marketCapTier}</span>
+              <span class="pill-caret">▼</span>
+            </button>
+            <select class="tv-hidden-select" id="quick-cap-select">
+              <option value="all" ${this.criteria.advanced.marketCapTier === 'all' ? 'selected' : ''}>Market Cap: All</option>
+              <option value="mega" ${this.criteria.advanced.marketCapTier === 'mega' ? 'selected' : ''}>Mega Cap (>₹10T)</option>
+              <option value="large" ${this.criteria.advanced.marketCapTier === 'large' ? 'selected' : ''}>Large Cap (>₹500B)</option>
+              <option value="mid" ${this.criteria.advanced.marketCapTier === 'mid' ? 'selected' : ''}>Mid Cap</option>
+              <option value="small" ${this.criteria.advanced.marketCapTier === 'small' ? 'selected' : ''}>Small Cap</option>
+            </select>
+          </div>
+
+          <!-- Technical Rating Filter Pill -->
+          <div class="tv-pill-dropdown-wrapper">
+            <button class="tv-pill-btn ${this.criteria.advanced.technicalRating !== 'all' ? 'active' : ''}" id="pill-rating-btn">
+              <span>Rating: ${this.criteria.advanced.technicalRating === 'all' ? 'All' : this.criteria.advanced.technicalRating}</span>
+              <span class="pill-caret">▼</span>
+            </button>
+            <select class="tv-hidden-select" id="quick-rating-select">
+              <option value="all" ${this.criteria.advanced.technicalRating === 'all' ? 'selected' : ''}>Tech Rating: All</option>
+              <option value="Strong Buy" ${this.criteria.advanced.technicalRating === 'Strong Buy' ? 'selected' : ''}>Strong Buy</option>
+              <option value="Buy" ${this.criteria.advanced.technicalRating === 'Buy' ? 'selected' : ''}>Buy & Strong Buy</option>
+              <option value="Neutral" ${this.criteria.advanced.technicalRating === 'Neutral' ? 'selected' : ''}>Neutral</option>
+              <option value="Sell" ${this.criteria.advanced.technicalRating === 'Sell' ? 'selected' : ''}>Sell</option>
+              <option value="Strong Sell" ${this.criteria.advanced.technicalRating === 'Strong Sell' ? 'selected' : ''}>Strong Sell</option>
+            </select>
+          </div>
+
+          <!-- Quick Presets -->
+          <button class="tv-pill-btn filter-pill ${this.criteria.quickPreset === 'gainers' ? 'active' : ''}" data-preset="gainers">Chg %: Gainers</button>
+          <button class="tv-pill-btn filter-pill ${this.criteria.quickPreset === 'losers' ? 'active' : ''}" data-preset="losers">Chg %: Losers</button>
+          <button class="tv-pill-btn filter-pill ${this.criteria.quickPreset === 'high52' ? 'active' : ''}" data-preset="high52">52W High</button>
+          <button class="tv-pill-btn filter-pill ${this.criteria.quickPreset === 'value' ? 'active' : ''}" data-preset="value">P/E &lt; 25</button>
+          <button class="tv-pill-btn filter-pill ${this.criteria.quickPreset === 'dividend' ? 'active' : ''}" data-preset="dividend">Div yield &gt; 1.5%</button>
+          <button class="tv-pill-btn filter-pill ${this.criteria.quickPreset === 'momentum' ? 'active' : ''}" data-preset="momentum">RSI &gt; 60</button>
+          <button class="tv-pill-btn filter-pill ${this.criteria.quickPreset === 'oversold' ? 'active' : ''}" data-preset="oversold">RSI &lt; 40</button>
+
+          <!-- Add Filter Button -->
+          <button class="tv-pill-btn tv-add-filter-pill-btn" id="open-filters-modal-pill-btn" title="Add Filter">
+            <span style="font-weight: 700; font-size: 13px;">+</span>
+            <span>Add Filter</span>
+          </button>
+
+          ${
+            activeCount > 0
+              ? `<button class="tv-clear-all-pill" id="clear-all-filters-btn">Clear All (${activeCount})</button>`
+              : ''
+          }
+        </div>
+
+        <!-- Row 2: View Tabs & Controls Bar -->
+        <div class="filter-bar-top-row tv-tabs-bar-row">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <!-- TradingView View Mode Icons: Table, Chart Preview, Matrix -->
+            <div class="tv-view-icons-group">
+              <button class="tv-view-icon-btn active" id="layout-view-table-btn" title="Table View">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="3" y1="9" x2="21" y2="9"/>
+                  <line x1="3" y1="15" x2="21" y2="15"/>
+                  <line x1="9" y1="3" x2="9" y2="21"/>
+                  <line x1="15" y1="3" x2="15" y2="21"/>
+                </svg>
+              </button>
+              <button class="tv-view-icon-btn" id="layout-view-chart-btn" title="Toggle Detail & Chart Preview">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                </svg>
+              </button>
+              <button class="tv-view-icon-btn" id="layout-view-matrix-btn" title="Heatmap Matrix Layout">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"/>
+                  <rect x="14" y="3" width="7" height="7"/>
+                  <rect x="14" y="14" width="7" height="7"/>
+                  <rect x="3" y="14" width="7" height="7"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- View Tabs -->
+            <div class="view-tabs" id="view-tabs">
+              <button class="view-tab-btn ${this.criteria.tab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button>
+              <button class="view-tab-btn ${this.criteria.tab === 'performance' ? 'active' : ''}" data-tab="performance">Performance</button>
+              <button class="view-tab-btn ${this.criteria.tab === 'technicals' ? 'active' : ''}" data-tab="technicals">Technicals</button>
+              <button class="view-tab-btn ${this.criteria.tab === 'valuation' ? 'active' : ''}" data-tab="valuation">Valuation</button>
+              <button class="view-tab-btn ${this.criteria.tab === 'dividends' ? 'active' : ''}" data-tab="dividends">Dividends</button>
+              <button class="view-tab-btn ${this.criteria.tab === 'margins' ? 'active' : ''}" data-tab="margins">Margins</button>
+              <button class="view-tab-btn ${this.criteria.tab === 'oscillators' ? 'active' : ''}" data-tab="oscillators">Oscillators</button>
+              <button class="view-tab-btn" id="tab-add-custom-btn" title="Add / Customize Columns" style="color: var(--accent-primary);">+ Custom</button>
+            </div>
           </div>
 
           <div style="display: flex; align-items: center; gap: 8px;">
-            <!-- Prominent TradingView Filters Dialog Button -->
+            <!-- Prominent Filters Dialog Button -->
             <button class="tv-filter-btn ${activeCount > 0 ? 'active' : ''}" id="open-filters-modal-btn">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
               </svg>
               <span>Filters</span>
@@ -128,7 +240,7 @@ export class FilterBar {
                 type="text" 
                 class="search-input" 
                 id="screener-inline-search" 
-                placeholder="Filter table symbols..." 
+                placeholder="Search symbols..." 
                 value="${this.criteria.search}"
                 autocomplete="off"
               />
@@ -146,62 +258,6 @@ export class FilterBar {
               Showing ${this.filteredCount || 50} of ${this.totalCount || 50} stocks
             </div>
           </div>
-        </div>
-
-        <!-- Bottom Row: Quick Knobs & Filter Chips -->
-        <div class="filter-bar-bottom-row">
-          <!-- Sector Knob -->
-          <select class="filter-select" id="quick-sector-select" title="Filter by Sector">
-            <option value="all" ${this.criteria.advanced.sector === 'all' ? 'selected' : ''}>All Sectors</option>
-            <option value="Technology" ${this.criteria.advanced.sector === 'Technology' ? 'selected' : ''}>Technology</option>
-            <option value="Financials" ${this.criteria.advanced.sector === 'Financials' ? 'selected' : ''}>Financials</option>
-            <option value="Energy" ${this.criteria.advanced.sector === 'Energy' ? 'selected' : ''}>Energy</option>
-            <option value="Healthcare" ${this.criteria.advanced.sector === 'Healthcare' ? 'selected' : ''}>Healthcare</option>
-            <option value="Automobile" ${this.criteria.advanced.sector === 'Automobile' ? 'selected' : ''}>Automobile</option>
-            <option value="Consumer Goods" ${this.criteria.advanced.sector === 'Consumer Goods' ? 'selected' : ''}>Consumer Goods</option>
-            <option value="Materials" ${this.criteria.advanced.sector === 'Materials' ? 'selected' : ''}>Materials</option>
-            <option value="Telecom" ${this.criteria.advanced.sector === 'Telecom' ? 'selected' : ''}>Telecom</option>
-            <option value="Industrials" ${this.criteria.advanced.sector === 'Industrials' ? 'selected' : ''}>Industrials</option>
-          </select>
-
-          <!-- Market Cap Knob -->
-          <select class="filter-select" id="quick-cap-select" title="Filter by Market Cap">
-            <option value="all" ${this.criteria.advanced.marketCapTier === 'all' ? 'selected' : ''}>Market Cap: All</option>
-            <option value="mega" ${this.criteria.advanced.marketCapTier === 'mega' ? 'selected' : ''}>Mega Cap (>₹10T)</option>
-            <option value="large" ${this.criteria.advanced.marketCapTier === 'large' ? 'selected' : ''}>Large Cap (>₹500B)</option>
-            <option value="mid" ${this.criteria.advanced.marketCapTier === 'mid' ? 'selected' : ''}>Mid Cap</option>
-            <option value="small" ${this.criteria.advanced.marketCapTier === 'small' ? 'selected' : ''}>Small Cap</option>
-          </select>
-
-          <!-- Technical Rating Knob -->
-          <select class="filter-select" id="quick-rating-select" title="Filter by Technical Rating">
-            <option value="all" ${this.criteria.advanced.technicalRating === 'all' ? 'selected' : ''}>Tech Rating: All</option>
-            <option value="Strong Buy" ${this.criteria.advanced.technicalRating === 'Strong Buy' ? 'selected' : ''}>Strong Buy</option>
-            <option value="Buy" ${this.criteria.advanced.technicalRating === 'Buy' ? 'selected' : ''}>Buy</option>
-            <option value="Neutral" ${this.criteria.advanced.technicalRating === 'Neutral' ? 'selected' : ''}>Neutral</option>
-            <option value="Sell" ${this.criteria.advanced.technicalRating === 'Sell' ? 'selected' : ''}>Sell</option>
-            <option value="Strong Sell" ${this.criteria.advanced.technicalRating === 'Strong Sell' ? 'selected' : ''}>Strong Sell</option>
-          </select>
-
-          <div class="tv-bar-vertical-divider"></div>
-
-          <!-- Quick Filter Chips -->
-          <div class="filter-chips-scroll" id="quick-preset-chips">
-            <button class="filter-pill ${this.criteria.quickPreset === 'all' ? 'active' : ''}" data-preset="all">All</button>
-            <button class="filter-pill ${this.criteria.quickPreset === 'gainers' ? 'active' : ''}" data-preset="gainers">▲ Top Gainers</button>
-            <button class="filter-pill ${this.criteria.quickPreset === 'losers' ? 'active' : ''}" data-preset="losers">▼ Top Losers</button>
-            <button class="filter-pill ${this.criteria.quickPreset === 'high52' ? 'active' : ''}" data-preset="high52">📈 52W High</button>
-            <button class="filter-pill ${this.criteria.quickPreset === 'momentum' ? 'active' : ''}" data-preset="momentum">⚡ RSI > 60</button>
-            <button class="filter-pill ${this.criteria.quickPreset === 'oversold' ? 'active' : ''}" data-preset="oversold">📉 Oversold (<40)</button>
-            <button class="filter-pill ${this.criteria.quickPreset === 'value' ? 'active' : ''}" data-preset="value">💎 P/E &lt; 25</button>
-            <button class="filter-pill ${this.criteria.quickPreset === 'dividend' ? 'active' : ''}" data-preset="dividend">💰 Div Yield &gt; 1.5%</button>
-          </div>
-
-          ${
-            activeCount > 0
-              ? `<button class="tv-clear-all-link" id="clear-all-filters-btn">Clear All (${activeCount})</button>`
-              : ''
-          }
         </div>
       </div>
     `;
@@ -226,9 +282,17 @@ export class FilterBar {
       this.onOpenColumnsModal();
     });
 
-    // Filters modal button
+    // Filters modal buttons
     this.container.querySelector('#open-filters-modal-btn')?.addEventListener('click', () => {
       this.onOpenFiltersModal();
+    });
+    this.container.querySelector('#open-filters-modal-pill-btn')?.addEventListener('click', () => {
+      this.onOpenFiltersModal();
+    });
+
+    // Toggle drawer layout button
+    this.container.querySelector('#layout-view-chart-btn')?.addEventListener('click', () => {
+      this.onToggleDrawer?.();
     });
 
     // Inline search input
@@ -249,6 +313,8 @@ export class FilterBar {
     const sectorSelect = this.container.querySelector<HTMLSelectElement>('#quick-sector-select');
     sectorSelect?.addEventListener('change', () => {
       this.criteria.advanced.sector = sectorSelect.value;
+      this.render();
+      this.setupListeners();
       this.onFilterChange(this.criteria);
     });
 
@@ -256,6 +322,8 @@ export class FilterBar {
     const capSelect = this.container.querySelector<HTMLSelectElement>('#quick-cap-select');
     capSelect?.addEventListener('change', () => {
       this.criteria.advanced.marketCapTier = capSelect.value;
+      this.render();
+      this.setupListeners();
       this.onFilterChange(this.criteria);
     });
 
@@ -263,17 +331,19 @@ export class FilterBar {
     const ratingSelect = this.container.querySelector<HTMLSelectElement>('#quick-rating-select');
     ratingSelect?.addEventListener('change', () => {
       this.criteria.advanced.technicalRating = ratingSelect.value;
+      this.render();
+      this.setupListeners();
       this.onFilterChange(this.criteria);
     });
 
-    // Quick chips
+    // Quick chips / pills
     this.container.querySelectorAll('.filter-pill[data-preset]').forEach((pill) => {
       pill.addEventListener('click', () => {
         const preset = pill.getAttribute('data-preset');
         if (preset) {
-          this.criteria.quickPreset = preset;
-          this.container.querySelectorAll('.filter-pill[data-preset]').forEach((p) => p.classList.remove('active'));
-          pill.classList.add('active');
+          this.criteria.quickPreset = this.criteria.quickPreset === preset ? 'all' : preset;
+          this.render();
+          this.setupListeners();
           this.onFilterChange(this.criteria);
         }
       });

@@ -73,13 +73,65 @@
 
 .symbol-th-content {
   justify-content: flex-start;
+  align-items: center;
   gap: 8px;
 }
 
+.symbol-th-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.symbol-th-label-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.th-search-icon {
+  color: var(--text-muted);
+}
+
+.symbol-th-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 .th-sort-icon {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--accent-primary);
   min-width: 10px;
+}
+
+/* Custom Add Column '+' Button in Table Header */
+.col-add-custom-th {
+  width: 34px !important;
+  text-align: center !important;
+  padding: 4px 6px !important;
+}
+
+.th-add-col-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: 1px dashed var(--border-medium);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.th-add-col-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
 }
 
 /* Sticky First Column (Symbol / Company) */
@@ -90,7 +142,7 @@
   background: var(--bg-surface);
   text-align: left;
   border-right: 1px solid var(--border-subtle);
-  min-width: 250px;
+  min-width: 260px;
 }
 
 .tv-screener-table td.col-symbol {
@@ -123,7 +175,7 @@
 }
 
 .tv-screener-table td {
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-primary);
   white-space: nowrap;
@@ -140,23 +192,23 @@
 }
 
 .company-avatar {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   color: #ffffff;
   flex-shrink: 0;
   text-transform: uppercase;
+  box-shadow: var(--shadow-sm);
 }
 
 .symbol-badge-box {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
   min-width: 0;
 }
 
@@ -164,32 +216,74 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .symbol-ticker {
   font-weight: 700;
   font-size: 12px;
   color: var(--text-primary);
-  letter-spacing: 0.3px;
-}
-
-.exchange-badge {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-surface-elevated);
-  padding: 1px 4px;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--border-subtle);
+  letter-spacing: 0.2px;
 }
 
 .symbol-name {
   font-size: 11px;
   color: var(--text-muted);
-  max-width: 150px;
+  max-width: 170px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Dividend Tag (Like TradingView's compact 'D' badge) */
+.dividend-tag {
+  font-size: 9px;
+  font-weight: 800;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 2px;
+  padding: 0 3px;
+  line-height: 12px;
+  cursor: help;
+}
+
+/* Currency Subdued Tag (e.g. 1,231.60 INR) */
+.currency-unit {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-left: 2px;
+  font-family: var(--font-family-mono);
+}
+
+/* TradingView Double-Chevron Analyst & Technical Rating */
+.tv-rating-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tv-rating-badge .chevron {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.tv-rating-badge.rating-strong-buy,
+.tv-rating-badge.rating-buy {
+  color: var(--bullish);
+}
+
+.tv-rating-badge.rating-neutral {
+  color: var(--text-muted);
+}
+
+.tv-rating-badge.rating-sell,
+.tv-rating-badge.rating-strong-sell {
+  color: var(--bearish);
 }
 
 .star-btn {

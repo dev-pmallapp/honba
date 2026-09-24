@@ -78,7 +78,7 @@ export class AppNav {
 
     this.container.innerHTML = `
       <header class="app-header tv-topbar">
-        <!-- Left Section: App Logo, Product Menu, Screens Dropdown, Search -->
+        <!-- Left Section: App Logo, Screen Title Breadcrumb & Dropdown, Quick Tools -->
         <div class="header-left">
           <!-- TradingView Styled Brand & App Switcher -->
           <div class="app-switcher-wrapper" id="app-switcher-container">
@@ -110,26 +110,35 @@ export class AppNav {
 
           <div class="tv-topbar-divider"></div>
 
-          <!-- Screens Selector Dropdown (e.g. Top Gainers, Most Active) -->
-          <div class="dropdown-wrapper" id="screen-dropdown-container">
-            <button class="tv-screen-selector-btn" id="screen-selector-btn" title="Saved Screens & Popular Presets">
-              <span class="tv-screen-icon">${currentScreen.icon}</span>
-              <span id="active-screen-label" style="font-weight: 600;">${currentScreen.name}</span>
-              <span class="app-caret" style="font-size: 8px;">▼</span>
-            </button>
-            <div class="honba-dropdown-menu" id="screen-menu" style="width: 250px;">
-              <div class="app-menu-header">Popular Screener Presets</div>
-              ${SCREEN_PRESETS.map(
-                (preset) => `
-                <div class="market-item ${preset.id === this.currentScreenId ? 'active' : ''}" data-screen-id="${preset.id}">
-                  <div class="market-item-left">
-                    <span>${preset.icon}</span>
-                    <span style="font-weight: 500;">${preset.name}</span>
+          <!-- Screens Selector (TradingView Style: Breadcrumb + Large Bold Dropdown) -->
+          <div class="tv-screen-heading-wrapper">
+            <div class="tv-screen-breadcrumb">Stock Screener</div>
+            <div class="dropdown-wrapper" id="screen-dropdown-container">
+              <button class="tv-screen-main-btn" id="screen-selector-btn" title="Saved Screens & Popular Presets">
+                <span id="active-screen-label">${currentScreen.name}</span>
+                <span class="app-caret" style="font-size: 8px;">▼</span>
+              </button>
+              <div class="honba-dropdown-menu" id="screen-menu" style="width: 250px;">
+                <div class="app-menu-header">Popular Screener Presets</div>
+                ${SCREEN_PRESETS.map(
+                  (preset) => `
+                  <div class="market-item ${preset.id === this.currentScreenId ? 'active' : ''}" data-screen-id="${preset.id}">
+                    <div class="market-item-left">
+                      <span>${preset.icon}</span>
+                      <span style="font-weight: 500;">${preset.name}</span>
+                    </div>
                   </div>
-                </div>
-              `
-              ).join('')}
+                `
+                ).join('')}
+              </div>
             </div>
+          </div>
+
+          <!-- Quick Tools (Undo, Redo, Settings) -->
+          <div class="tv-quick-tools">
+            <button class="tv-tool-btn" id="nav-undo-btn" title="Undo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/></svg></button>
+            <button class="tv-tool-btn" id="nav-redo-btn" title="Redo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3L21 13"/></svg></button>
+            <button class="tv-tool-btn" id="nav-settings-btn" title="Screener Settings"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
           </div>
 
           <div class="tv-topbar-divider"></div>

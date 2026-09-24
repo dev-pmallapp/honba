@@ -79,7 +79,8 @@ class ScreenerApp {
           this.detailDrawer?.setInstrument(inst);
           this.detailDrawer?.toggleCollapse(false);
         }
-      }
+      },
+      () => this.columnModal?.open()
     );
 
     // 5. Top Navigation Bar
@@ -106,7 +107,8 @@ class ScreenerApp {
       filterContainer,
       (criteria) => this.handleFilterChange(criteria),
       () => this.filtersModal?.open(this.filterBar?.getCriteria().advanced),
-      () => this.columnModal?.open()
+      () => this.columnModal?.open(),
+      () => this.detailDrawer?.toggleCollapse()
     );
 
     // 7. Signature TradingView Bottom Dock Bar

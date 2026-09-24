@@ -22,16 +22,20 @@ export class ScreenerTable {
   private onSelectSymbol: (symbol: string) => void;
   private unsubscribeTick: (() => void) | null = null;
 
+  private onOpenColumnsModal?: () => void;
+
   constructor(
     container: HTMLElement,
     floatingActionBar: HTMLElement,
     columns: ColumnDef[],
-    onSelectSymbol: (symbol: string) => void
+    onSelectSymbol: (symbol: string) => void,
+    onOpenColumnsModal?: () => void
   ) {
     this.container = container;
     this.floatingActionBar = floatingActionBar;
     this.columns = columns;
     this.onSelectSymbol = onSelectSymbol;
+    this.onOpenColumnsModal = onOpenColumnsModal;
 
     this.setupTickListener();
     this.setupFloatingActionBarListeners();
@@ -79,10 +83,10 @@ export class ScreenerTable {
         const changePctCell = row.querySelector<HTMLElement>('.cell-change-pct');
         const changePtsCell = row.querySelector<HTMLElement>('.cell-change-pts');
 
-        const currencySymbol = dataLayer.getCurrentMarketInfo().currencySymbol;
+        const market = dataLayer.getCurrentMarketInfo();
 
         if (priceCell) {
-          priceCell.textContent = `${currencySymbol}${this.formatNumber(tick.price)}`;
+          priceCell.innerHTML = `${this.formatNumber(tick.price)} <span class="currency-unit">${market.currency}</span>`;
           priceCell.classList.remove('tick-flash-up', 'tick-flash-down');
           void priceCell.offsetWidth; // trigger reflow
           priceCell.classList.add(tick.change >= 0 ? 'tick-flash-up' : 'tick-flash-down');
@@ -135,7 +139,16 @@ export class ScreenerTable {
             <th class="col-symbol">
               <div class="th-content symbol-th-content">
                 <input type="checkbox" id="master-checkbox" class="symbol-checkbox" ${allSelected ? 'checked' : ''} title="Select All"/>
-                <span>Symbol / Company</span>
+                <div class="symbol-th-header-info">
+                  <div class="symbol-th-label-row">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="th-search-icon">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <span>Symbol</span>
+                  </div>
+                  <span class="symbol-th-count">${this.instruments.length}</span>
+                </div>
               </div>
             </th>
     `;
@@ -143,20 +156,22 @@ export class ScreenerTable {
     visibleCols.forEach((col) => {
       if (col.id === 'symbol') return;
       const isSorted = this.sortField === col.id;
-      const sortIcon = isSorted ? (this.sortOrder === 'asc' ? '▲' : '▼') : '';
+      const sortIcon = isSorted ? (this.sortOrder === 'asc' ? '↑' : '↓') : '';
       html += `
         <th class="sortable ${isSorted ? 'sorted' : ''}" data-col-id="${col.id}" title="Click to sort by ${col.label}">
           <div class="th-content">
+            ${isSorted ? `<span class="th-sort-icon">${sortIcon}</span>` : ''}
             <span>${col.label}</span>
-            <span class="th-sort-icon">${sortIcon}</span>
           </div>
         </th>
       `;
     });
 
-    // Action column
+    // Custom Column '+' Header
     html += `
-        <th style="width: 32px; text-align: center;"></th>
+        <th class="col-add-custom-th" title="Add / Customize Columns">
+          <button class="th-add-col-btn" id="table-add-col-btn" title="Add Column">+</button>
+        </th>
       </tr>
     </thead>
     <tbody>
@@ -184,9 +199,9 @@ export class ScreenerTable {
               <div class="symbol-badge-box">
                 <div class="ticker-line">
                   <span class="symbol-ticker">${inst.symbol}</span>
-                  <span class="exchange-badge">${inst.exchange}</span>
+                  <span class="symbol-name" title="${inst.name}">${inst.name}</span>
+                  ${inst.dividendYield > 0 ? `<span class="dividend-tag" title="Dividend Payer (${inst.dividendYield.toFixed(2)}%)">D</span>` : ''}
                 </div>
-                <span class="symbol-name" title="${inst.name}">${inst.name}</span>
               </div>
             </div>
           </td>
@@ -194,7 +209,7 @@ export class ScreenerTable {
 
       visibleCols.forEach((col) => {
         if (col.id === 'symbol') return;
-        html += this.renderTableCell(col.id, inst, market.currencySymbol, isUp, sign);
+        html += this.renderTableCell(col.id, inst, market.currency, isUp, sign);
       });
 
       // Quick row menu dots
@@ -215,13 +230,13 @@ export class ScreenerTable {
   private renderTableCell(
     colId: string,
     inst: Instrument,
-    currencySymbol: string,
+    currencyCode: string,
     isUp: boolean,
     sign: string
   ): string {
     switch (colId) {
       case 'price':
-        return `<td class="cell-price num" style="font-weight: 600;">${currencySymbol}${this.formatNumber(inst.price)}</td>`;
+        return `<td class="cell-price num" style="font-weight: 600;">${this.formatNumber(inst.price)} <span class="currency-unit">${currencyCode}</span></td>`;
       case 'changePercent':
         return `<td class="cell-change-pct num ${isUp ? 'val-up' : 'val-down'}">${sign}${inst.changePercent.toFixed(2)}%</td>`;
       case 'change':
@@ -234,28 +249,40 @@ export class ScreenerTable {
         return `<td>${this.render52WeekMiniBar(inst)}</td>`;
       case 'sparkline':
         return `<td>${this.renderSparklineSvg(inst.sparkline, isUp, inst.symbol)}</td>`;
-      case 'technicalRating':
-        return `<td><span class="rating-pill rating-${inst.technicalRating.toLowerCase().replace(' ', '-')}">${inst.technicalRating}</span></td>`;
+      case 'technicalRating': {
+        const rating = inst.technicalRating;
+        if (rating === 'Strong Buy') {
+          return `<td><span class="tv-rating-badge rating-strong-buy"><span class="chevron">︽</span> Strong buy</span></td>`;
+        } else if (rating === 'Buy') {
+          return `<td><span class="tv-rating-badge rating-buy"><span class="chevron">︽</span> Buy</span></td>`;
+        } else if (rating === 'Neutral') {
+          return `<td><span class="tv-rating-badge rating-neutral"><span class="chevron">—</span> Neutral</span></td>`;
+        } else if (rating === 'Sell') {
+          return `<td><span class="tv-rating-badge rating-sell"><span class="chevron">︾</span> Sell</span></td>`;
+        } else {
+          return `<td><span class="tv-rating-badge rating-strong-sell"><span class="chevron">︾</span> Strong sell</span></td>`;
+        }
+      }
       case 'marketCap':
-        return `<td class="num val-neutral">${currencySymbol}${this.formatCompact(inst.marketCap)}</td>`;
+        return `<td class="num val-neutral">${this.formatCompact(inst.marketCap)} <span class="currency-unit">${currencyCode}</span></td>`;
       case 'pe':
-        return `<td class="num val-neutral">${inst.pe ? inst.pe.toFixed(1) : '-'}</td>`;
+        return `<td class="num val-neutral">${inst.pe ? inst.pe.toFixed(2) : '-'}</td>`;
       case 'forwardPe':
-        return `<td class="num val-neutral">${inst.forwardPe ? inst.forwardPe.toFixed(1) : '-'}</td>`;
+        return `<td class="num val-neutral">${inst.forwardPe ? inst.forwardPe.toFixed(2) : '-'}</td>`;
       case 'eps':
-        return `<td class="num val-neutral">${currencySymbol}${inst.eps ? inst.eps.toFixed(2) : '-'}</td>`;
+        return `<td class="num val-neutral">${inst.eps ? inst.eps.toFixed(2) : '-'} <span class="currency-unit">${currencyCode}</span></td>`;
       case 'pb':
         return `<td class="num val-neutral">${inst.pb ? inst.pb.toFixed(2) : '-'}</td>`;
       case 'dividendYield':
         return `<td class="num val-neutral">${inst.dividendYield ? inst.dividendYield.toFixed(2) + '%' : '0.00%'}</td>`;
       case 'high52':
-        return `<td class="num val-neutral">${currencySymbol}${this.formatNumber(inst.high52)}</td>`;
+        return `<td class="num val-neutral">${this.formatNumber(inst.high52)} <span class="currency-unit">${currencyCode}</span></td>`;
       case 'low52':
-        return `<td class="num val-neutral">${currencySymbol}${this.formatNumber(inst.low52)}</td>`;
+        return `<td class="num val-neutral">${this.formatNumber(inst.low52)} <span class="currency-unit">${currencyCode}</span></td>`;
       case 'rsi14':
         return `<td class="num" style="color: ${inst.rsi14 > 70 ? 'var(--bearish)' : inst.rsi14 < 35 ? 'var(--bullish)' : 'var(--text-primary)'};">${inst.rsi14.toFixed(1)}</td>`;
       case 'sma200':
-        return `<td class="num val-neutral">${currencySymbol}${this.formatNumber(inst.sma200)}</td>`;
+        return `<td class="num val-neutral">${this.formatNumber(inst.sma200)} <span class="currency-unit">${currencyCode}</span></td>`;
       case 'perf1W':
         return `<td class="num ${inst.perf1W >= 0 ? 'val-up' : 'val-down'}">${inst.perf1W >= 0 ? '+' : ''}${inst.perf1W.toFixed(2)}%</td>`;
       case 'perf1M':
@@ -347,6 +374,12 @@ export class ScreenerTable {
       dataLayer.setAllShortlisted(allSymbols, masterCheckbox.checked);
       this.render();
       this.updateFloatingActionBar();
+    });
+
+    // Add Column Button in Header
+    this.container.querySelector('#table-add-col-btn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.onOpenColumnsModal?.();
     });
 
     // Row selection checkbox

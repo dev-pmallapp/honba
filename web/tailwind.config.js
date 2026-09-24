@@ -2,28 +2,29 @@
 export default {
   content: [
     "./index.html",
+    "./*.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
       colors: {
         tv: {
-          primary: "#131722",
-          secondary: "#1e222d",
-          tertiary: "#2a2e39",
-          elevated: "#363a45",
-          border: "#2a2e39",
-          accent: "#2962ff",
-          "accent-hover": "#1e53e5",
-          bullish: "#089981",
-          bearish: "#f23645",
-          text: "#d1d4dc",
-          muted: "#787b86",
+          primary: "var(--tv-bg-primary)",
+          secondary: "var(--tv-bg-secondary)",
+          tertiary: "var(--tv-bg-tertiary)",
+          elevated: "var(--tv-bg-elevated)",
+          border: "var(--tv-border)",
+          accent: "var(--tv-accent)",
+          "accent-hover": "var(--tv-accent-hover)",
+          bullish: "var(--tv-bullish)",
+          bearish: "var(--tv-bearish)",
+          text: "var(--tv-text)",
+          muted: "var(--tv-text-muted)",
         },
       },
       fontFamily: {
-        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Trebuchet MS", "sans-serif"],
-        mono: ["'JetBrains Mono'", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
+        sans: ["var(--font-sans, Inter)", "-apple-system", "BlinkMacSystemFont", "Trebuchet MS", "sans-serif"],
+        mono: ["var(--font-mono, 'JetBrains Mono')", "ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
       },
     },
   },

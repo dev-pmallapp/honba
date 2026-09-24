@@ -29,12 +29,17 @@ export function initWorkbench() {
     switchSymbol(e.detail);
   });
 
+  // Listen for theme changes
+  window.addEventListener("honba:theme-change", () => {
+    renderEquityCurveCanvas();
+  });
+
   // Timeframe selector buttons
   const tfButtons = document.querySelectorAll<HTMLButtonElement>("[data-tf]");
   tfButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      tfButtons.forEach((b) => b.classList.remove("bg-[#2a2e39]", "text-white", "font-semibold"));
-      btn.classList.add("bg-[#2a2e39]", "text-white", "font-semibold");
+      tfButtons.forEach((b) => b.classList.remove("bg-tv-tertiary", "text-white", "font-semibold"));
+      btn.classList.add("bg-tv-tertiary", "text-white", "font-semibold");
       currentTimeframe = btn.getAttribute("data-tf") || "5m";
       loadChartData();
     });
@@ -60,38 +65,44 @@ function initChart() {
     animAutoscale: true,
   });
 
+  const style = getComputedStyle(document.documentElement);
+  const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
+  const bearish = style.getPropertyValue("--tv-bearish").trim() || "#f23645";
+  const accent = style.getPropertyValue("--tv-accent").trim() || "#2962ff";
+  const border = style.getPropertyValue("--tv-border").trim() || "#2a2e39";
+
   candleSeries = chartInstance.addSeries("candlestick", {
     style: {
-      upColor: "#089981",
-      downColor: "#f23645",
-      borderUpColor: "#089981",
-      borderDownColor: "#f23645",
-      wickUpColor: "#089981",
-      wickDownColor: "#f23645",
+      upColor: bullish,
+      downColor: bearish,
+      borderUpColor: bullish,
+      borderDownColor: bearish,
+      wickUpColor: bullish,
+      wickDownColor: bearish,
     },
   });
 
   // Indicators
   try {
-    indicators.ema9 = chartInstance.addIndicator("ema", { length: 9, color: "#2962ff" });
+    indicators.ema9 = chartInstance.addIndicator("ema", { length: 9, color: accent });
     indicators.ema9.setVisible(indicatorStates.ema9);
 
     indicators.ema21 = chartInstance.addIndicator("ema", { length: 21, color: "#f59e0b" });
     indicators.ema21.setVisible(indicatorStates.ema21);
 
     indicators.volume = chartInstance.addIndicator("volume", {
-      color: "#3a4666",
+      color: border,
       colorByDirection: true,
-      upColor: "#089981",
-      downColor: "#f23645",
+      upColor: bullish,
+      downColor: bearish,
     });
     indicators.volume.setVisible(indicatorStates.volume);
 
     indicators.supertrend = chartInstance.addIndicator("supertrend", {
       period: 10,
       multiplier: 3,
-      upColor: "#089981",
-      downColor: "#f23645",
+      upColor: bullish,
+      downColor: bearish,
     });
     indicators.supertrend.setVisible(indicatorStates.supertrend);
   } catch (err) {
@@ -116,6 +127,10 @@ function loadChartData() {
   // Markers
   if (bars.length > 25) {
     try {
+      const style = getComputedStyle(document.documentElement);
+      const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
+      const bearish = style.getPropertyValue("--tv-bearish").trim() || "#f23645";
+
       const markers = candleSeries.createMarkers();
       const buyBar = bars[bars.length - 20];
       const sellBar = bars[bars.length - 8];
@@ -125,7 +140,7 @@ function loadChartData() {
           position: "belowBar",
           shape: "arrowUp",
           size: "small",
-          color: "#089981",
+          color: bullish,
           text: `BUY (EMA cross) @ ₹${buyBar.close}`,
         },
         {
@@ -133,7 +148,7 @@ function loadChartData() {
           position: "aboveBar",
           shape: "arrowDown",
           size: "small",
-          color: "#f23645",
+          color: bearish,
           text: `SELL (Exit) @ ₹${sellBar.close}`,
         },
       ]);
@@ -166,7 +181,7 @@ function updateLegend(bar: any) {
     const pct = (diff / bar.open) * 100;
     const sign = diff >= 0 ? "+" : "";
     chgEl.textContent = `${sign}${diff.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
-    chgEl.className = `font-mono text-xs ${diff >= 0 ? "text-[#089981]" : "text-[#f23645]"}`;
+    chgEl.className = `font-mono text-xs ${diff >= 0 ? "text-tv-bullish" : "text-tv-bearish"}`;
   }
 }
 
@@ -178,7 +193,7 @@ function switchSymbol(symbol: string) {
   const headerLtp = document.getElementById("header-ltp");
   const item = WATCHLIST_DATA.find((w) => w.symbol === symbol);
   if (headerLtp && item) {
-    headerLtp.innerHTML = `LTP: <span class="text-white font-semibold">₹${item.price.toFixed(2)}</span> <span class="${item.change >= 0 ? "text-[#089981]" : "text-[#f23645]"}">${item.change >= 0 ? "+" : ""}${item.change.toFixed(2)} (${item.changePercent > 0 ? "+" : ""}${item.changePercent.toFixed(2)}%)</span>`;
+    headerLtp.innerHTML = `LTP: <span class="text-white font-semibold">₹${item.price.toFixed(2)}</span> <span class="${item.change >= 0 ? "text-tv-bullish" : "text-tv-bearish"}">${item.change >= 0 ? "+" : ""}${item.change.toFixed(2)} (${item.changePercent > 0 ? "+" : ""}${item.changePercent.toFixed(2)}%)</span>`;
   }
 
   loadChartData();
@@ -188,8 +203,8 @@ function initDrawingToolbar() {
   const tools = document.querySelectorAll<HTMLButtonElement>("[data-draw-tool]");
   tools.forEach((btn) => {
     btn.addEventListener("click", () => {
-      tools.forEach((b) => b.classList.remove("bg-[#2962ff]", "text-white"));
-      btn.classList.add("bg-[#2962ff]", "text-white");
+      tools.forEach((b) => b.classList.remove("bg-tv-accent", "text-white"));
+      btn.classList.add("bg-tv-accent", "text-white");
     });
   });
 }
@@ -234,11 +249,11 @@ function initSidebar() {
     btn.addEventListener("click", () => {
       const targetTab = btn.getAttribute("data-side-tab");
       tabBtns.forEach((b) => {
-        b.classList.remove("text-white", "border-b-2", "border-[#2962ff]", "bg-[#1e222d]");
-        b.classList.add("text-[#787b86]");
+        b.classList.remove("text-white", "border-b-2", "border-tv-accent", "bg-tv-secondary");
+        b.classList.add("text-tv-muted");
       });
-      btn.classList.add("text-white", "border-b-2", "border-[#2962ff]", "bg-[#1e222d]");
-      btn.classList.remove("text-[#787b86]");
+      btn.classList.add("text-white", "border-b-2", "border-tv-accent", "bg-tv-secondary");
+      btn.classList.remove("text-tv-muted");
 
       tabContents.forEach((content) => {
         if (content.getAttribute("data-tab-content") === targetTab) {
@@ -277,18 +292,18 @@ function renderWatchlist(list: typeof WATCHLIST_DATA) {
   container.innerHTML = "";
   list.forEach((item) => {
     const row = document.createElement("div");
-    row.className = `flex items-center justify-between p-2.5 hover:bg-[#2a2e39] cursor-pointer border-b border-[#2a2e39]/50 transition ${
-      item.symbol === currentSymbol ? "bg-[#2a2e39]/60 border-l-2 border-l-[#2962ff]" : ""
+    row.className = `flex items-center justify-between p-2.5 hover:bg-tv-tertiary cursor-pointer border-b border-tv-border/50 transition ${
+      item.symbol === currentSymbol ? "bg-tv-tertiary/60 border-l-2 border-l-tv-accent" : ""
     }`;
     const isBull = item.change >= 0;
     row.innerHTML = `
       <div>
         <div class="font-semibold text-xs text-white">${item.symbol}</div>
-        <div class="text-[10px] text-[#787b86] truncate max-w-[120px]">${item.name}</div>
+        <div class="text-[10px] text-tv-muted truncate max-w-[120px]">${item.name}</div>
       </div>
       <div class="text-right">
         <div class="font-mono text-xs font-medium text-white">₹${item.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
-        <div class="font-mono text-[11px] ${isBull ? "text-[#089981]" : "text-[#f23645]"}">
+        <div class="font-mono text-[11px] ${isBull ? "text-tv-bullish" : "text-tv-bearish"}">
           ${isBull ? "▲" : "▼"} ${Math.abs(item.change).toFixed(2)} (${isBull ? "+" : ""}${item.changePercent.toFixed(2)}%)
         </div>
       </div>
@@ -314,17 +329,17 @@ function initOrderTicket() {
   if (buyBtn && sellBtn && submitBtn) {
     buyBtn.addEventListener("click", () => {
       orderSide = "BUY";
-      buyBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-[#089981] text-white";
-      sellBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-[#2a2e39] text-[#787b86] hover:text-white";
-      submitBtn.className = "w-full py-2.5 rounded font-semibold text-xs tracking-wide uppercase bg-[#089981] hover:bg-[#067a67] text-white transition shadow";
+      buyBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-tv-bullish text-white";
+      sellBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-tv-tertiary text-tv-muted hover:text-white";
+      submitBtn.className = "w-full py-2.5 rounded font-semibold text-xs tracking-wide uppercase bg-tv-bullish hover:opacity-90 text-white transition shadow";
       submitBtn.textContent = `Place Buy Order (${currentSymbol})`;
     });
 
     sellBtn.addEventListener("click", () => {
       orderSide = "SELL";
-      sellBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-[#f23645] text-white";
-      buyBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-[#2a2e39] text-[#787b86] hover:text-white";
-      submitBtn.className = "w-full py-2.5 rounded font-semibold text-xs tracking-wide uppercase bg-[#f23645] hover:bg-[#d42d3b] text-white transition shadow";
+      sellBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-tv-bearish text-white";
+      buyBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded bg-tv-tertiary text-tv-muted hover:text-white";
+      submitBtn.className = "w-full py-2.5 rounded font-semibold text-xs tracking-wide uppercase bg-tv-bearish hover:opacity-90 text-white transition shadow";
       submitBtn.textContent = `Place Sell Order (${currentSymbol})`;
     });
 
@@ -358,11 +373,11 @@ function renderOptionsTable() {
   SAMPLE_OPTIONS_CHAIN.forEach((strike) => {
     const isAtm = strike.strikePrice === 24850;
     const tr = document.createElement("tr");
-    tr.className = `border-b border-[#2a2e39]/60 hover:bg-[#2a2e39]/50 font-mono text-[11px] ${isAtm ? "bg-[#2a2e39]/80 font-bold" : ""}`;
+    tr.className = `border-b border-tv-border/60 hover:bg-tv-tertiary/50 font-mono text-[11px] ${isAtm ? "bg-tv-tertiary/80 font-bold" : ""}`;
     tr.innerHTML = `
-      <td class="p-1.5 text-right text-[#089981]">${strike.callLtp.toFixed(1)}</td>
-      <td class="p-1.5 text-center text-white bg-[#131722]/80 border-x border-[#2a2e39]">${strike.strikePrice}</td>
-      <td class="p-1.5 text-left text-[#f23645]">${strike.putLtp.toFixed(1)}</td>
+      <td class="p-1.5 text-right text-tv-bullish">${strike.callLtp.toFixed(1)}</td>
+      <td class="p-1.5 text-center text-white bg-tv-primary/80 border-x border-tv-border">${strike.strikePrice}</td>
+      <td class="p-1.5 text-left text-tv-bearish">${strike.putLtp.toFixed(1)}</td>
     `;
     container.appendChild(tr);
   });
@@ -398,11 +413,11 @@ function initStrategyDock() {
     tab.addEventListener("click", () => {
       const target = tab.getAttribute("data-dock-tab");
       dockTabs.forEach((t) => {
-        t.classList.remove("text-white", "border-b-2", "border-[#2962ff]", "bg-[#2a2e39]/40");
-        t.classList.add("text-[#787b86]");
+        t.classList.remove("text-white", "border-b-2", "border-tv-accent", "bg-tv-tertiary/40");
+        t.classList.add("text-tv-muted");
       });
-      tab.classList.add("text-white", "border-b-2", "border-[#2962ff]", "bg-[#2a2e39]/40");
-      tab.classList.remove("text-[#787b86]");
+      tab.classList.add("text-white", "border-b-2", "border-tv-accent", "bg-tv-tertiary/40");
+      tab.classList.remove("text-tv-muted");
 
       dockPanels.forEach((p) => {
         if (p.getAttribute("data-dock-panel") === target) {
@@ -416,6 +431,13 @@ function initStrategyDock() {
 
   // Render Cumulative Equity Curve canvas
   renderEquityCurveCanvas();
+
+  // Re-render canvases and chart when theme changes
+  window.addEventListener("honba:theme-change", () => {
+    renderEquityCurveCanvas();
+    initChart();
+    loadChartData();
+  });
 }
 
 function renderEquityCurveCanvas() {
@@ -425,13 +447,18 @@ function renderEquityCurveCanvas() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const style = getComputedStyle(document.documentElement);
+  const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
+  const border = style.getPropertyValue("--tv-border").trim() || "#2a2e39";
+  const muted = style.getPropertyValue("--tv-text-muted").trim() || "#787b86";
+
   const width = canvas.width;
   const height = canvas.height;
 
   ctx.clearRect(0, 0, width, height);
 
   // Background subtle grid
-  ctx.strokeStyle = "#2a2e39";
+  ctx.strokeStyle = border;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 4]);
   for (let y = 15; y < height; y += 25) {
@@ -443,7 +470,7 @@ function renderEquityCurveCanvas() {
   ctx.setLineDash([]);
 
   // Benchmark curve (Nifty 50 TR)
-  ctx.strokeStyle = "#787b86";
+  ctx.strokeStyle = muted;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(0, height - 10);
@@ -458,7 +485,7 @@ function renderEquityCurveCanvas() {
   ctx.stroke();
 
   // Strategy curve (Honba Alpha 50)
-  ctx.strokeStyle = "#089981";
+  ctx.strokeStyle = bullish;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   const stratPoints = [
@@ -504,7 +531,7 @@ function setupBacktestButton() {
       const profitEl = document.getElementById("metric-profit");
       if (profitEl) {
         const randProfit = (DEFAULT_TEARSHEET.netProfit + Math.floor(Math.random() * 8000 - 4000)).toLocaleString("en-IN");
-        profitEl.innerHTML = `₹${randProfit} <span class="text-xs text-[#089981] ml-1">(+29.1%)</span>`;
+        profitEl.innerHTML = `₹${randProfit} <span class="text-xs text-tv-bullish ml-1">(+29.1%)</span>`;
       }
       renderEquityCurveCanvas();
     }, 900);

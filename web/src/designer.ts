@@ -50,11 +50,11 @@ export function initDesigner() {
     tab.addEventListener("click", () => {
       const target = tab.getAttribute("data-code-tab");
       codeTabs.forEach((t) => {
-        t.classList.remove("text-white", "border-b-2", "border-[#2962ff]", "bg-[#2a2e39]/40");
-        t.classList.add("text-[#787b86]");
+        t.classList.remove("text-white", "border-b-2", "border-tv-accent", "bg-tv-tertiary/40");
+        t.classList.add("text-tv-muted");
       });
-      tab.classList.add("text-white", "border-b-2", "border-[#2962ff]", "bg-[#2a2e39]/40");
-      tab.classList.remove("text-[#787b86]");
+      tab.classList.add("text-white", "border-b-2", "border-tv-accent", "bg-tv-tertiary/40");
+      tab.classList.remove("text-tv-muted");
 
       codePanels.forEach((p) => {
         if (p.getAttribute("data-code-panel") === target) {

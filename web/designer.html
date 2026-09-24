@@ -8,26 +8,26 @@
     <!-- Google Fonts: Inter & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@300..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/index.css" />
   </head>
-  <body class="bg-[#131722] text-[#d1d4dc] overflow-y-auto font-sans antialiased min-h-screen flex flex-col">
+  <body class="bg-tv-primary text-tv-text overflow-y-auto font-sans antialiased min-h-screen flex flex-col">
     
     <!-- 1. Universal Top Navigation Bar -->
-    <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
+    <header class="h-12 bg-tv-secondary border-b border-tv-border flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
       <div class="flex items-center space-x-3">
         <!-- Logo -->
-        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-[#2a2e39] group">
-          <div class="w-6 h-6 rounded bg-[#2962ff] flex items-center justify-center font-bold text-white text-xs shadow-md">
+        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-tv-border group">
+          <div class="w-6 h-6 rounded bg-tv-accent flex items-center justify-center font-bold text-white text-xs shadow-md">
             相
           </div>
           <span class="font-bold text-sm tracking-wider text-white">HONBA</span>
-          <span class="text-[10px] text-[#787b86] font-mono tracking-widest uppercase">QUANT</span>
+          <span class="text-[10px] text-tv-muted font-mono tracking-widest uppercase">QUANT</span>
         </a>
 
         <!-- Symbol Dropdown -->
         <div class="relative">
-          <select id="symbol-select" class="bg-[#2a2e39] hover:bg-[#363a45] text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-[#363a45] focus:outline-none focus:border-[#2962ff]">
+          <select id="symbol-select" class="bg-tv-tertiary hover:bg-tv-elevated text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-tv-elevated focus:outline-none focus:border-tv-accent">
             <option value="NIFTY ALPHA 50">NIFTY ALPHA 50</option>
             <option value="NIFTY 50">NIFTY 50</option>
             <option value="BANKNIFTY">BANKNIFTY</option>
@@ -38,7 +38,7 @@
         </div>
 
         <!-- MPA Navigation Links -->
-        <nav class="flex items-center space-x-1 border-l border-[#2a2e39] pl-2 text-xs">
+        <nav class="flex items-center space-x-1 border-l border-tv-border pl-2 text-xs">
           <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-xs transition">Workbench</a>
           <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-xs transition">Algo Designer</a>
           <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-xs transition">Simulator</a>
@@ -50,15 +50,15 @@
 
       <!-- Right Header Actions -->
       <div class="flex items-center space-x-3 text-xs">
-        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-[#131722] border border-[#2a2e39] font-mono text-[10px]">
-          <span class="w-2 h-2 rounded-full bg-[#089981] animate-pulse"></span>
-          <span id="ist-clock" class="text-[#d1d4dc]">NSE LIVE | 14:42:18 IST</span>
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-tv-primary border border-tv-border font-mono text-[10px]">
+          <span class="w-2 h-2 rounded-full bg-tv-bullish animate-pulse"></span>
+          <span id="ist-clock" class="text-tv-text">NSE LIVE | 14:42:18 IST</span>
         </div>
-        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-[#2a2e39] hover:bg-[#363a45] text-[#d1d4dc] hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
+        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-tv-tertiary hover:bg-tv-elevated text-tv-text hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
           <span>🎛️</span>
           <span>Widgets</span>
         </button>
-        <button id="btn-deploy-openalgo" class="bg-[#2962ff] hover:bg-[#1e53e5] text-white px-3 py-1 rounded font-semibold transition shadow-sm cursor-pointer">
+        <button id="btn-deploy-openalgo" class="bg-tv-accent hover:bg-tv-accent-hover text-white px-3 py-1 rounded font-semibold transition shadow-sm cursor-pointer">
           🚀 Deploy to OpenAlgo / Dhan
         </button>
       </div>
@@ -71,26 +71,26 @@
       <div class="lg:col-span-7 space-y-4">
         
         <!-- Strategy Profile Card -->
-        <div data-widget="widget-designer-profile" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-profile" class="bg-tv-secondary border border-tv-border rounded-lg p-4 space-y-3">
           <div class="flex items-center justify-between">
             <h1 class="text-sm font-bold text-white flex items-center space-x-2">
-              <span class="w-2.5 h-2.5 rounded bg-[#2962ff]"></span>
+              <span class="w-2.5 h-2.5 rounded bg-tv-accent"></span>
               <span>Strategy Configuration Profile</span>
             </h1>
-            <span class="text-[10px] px-2 py-0.5 rounded bg-[#089981]/20 text-[#089981] font-mono font-semibold">
+            <span class="text-[10px] px-2 py-0.5 rounded bg-tv-bullish/20 text-tv-bullish font-mono font-semibold">
               OpenAlgo v2 Parity
             </span>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             <div class="space-y-1">
-              <label class="text-[#787b86]">Strategy Name</label>
-              <input id="strategy-name" type="text" value="Alpha Momentum Trend Rider" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-3 py-1.5 text-white font-medium focus:outline-none focus:border-[#2962ff]" />
+              <label class="text-tv-muted">Strategy Name</label>
+              <input id="strategy-name" type="text" value="Alpha Momentum Trend Rider" class="w-full bg-tv-primary border border-tv-border rounded px-3 py-1.5 text-white font-medium focus:outline-none focus:border-tv-accent" />
             </div>
 
             <div class="space-y-1">
-              <label class="text-[#787b86]">Broker Execution Route</label>
-              <select class="w-full bg-[#131722] border border-[#2a2e39] rounded px-3 py-1.5 text-white focus:outline-none focus:border-[#2962ff]">
+              <label class="text-tv-muted">Broker Execution Route</label>
+              <select class="w-full bg-tv-primary border border-tv-border rounded px-3 py-1.5 text-white focus:outline-none focus:border-tv-accent">
                 <option>OpenAlgo Gateway (Dhan HQ API)</option>
                 <option>OpenAlgo Gateway (Zerodha Kite)</option>
                 <option>OpenAlgo Gateway (Angel One)</option>
@@ -101,31 +101,31 @@
         </div>
 
         <!-- Quantitative Indicator Settings -->
-        <div data-widget="widget-designer-indicators" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-indicators" class="bg-tv-secondary border border-tv-border rounded-lg p-4 space-y-3">
           <h2 class="text-sm font-bold text-white flex items-center space-x-2">
-            <span class="w-2.5 h-2.5 rounded bg-[#f59e0b]"></span>
+            <span class="w-2.5 h-2.5 rounded bg-amber-500"></span>
             <span>Indicator Inputs & Math Filters</span>
           </h2>
 
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div class="space-y-1">
-              <label class="text-[#787b86]">Fast EMA (Period)</label>
-              <input id="param-fast-ema" type="number" value="9" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-[#2962ff]" />
+              <label class="text-tv-muted">Fast EMA (Period)</label>
+              <input id="param-fast-ema" type="number" value="9" class="w-full bg-tv-primary border border-tv-border rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-tv-accent" />
             </div>
 
             <div class="space-y-1">
-              <label class="text-[#787b86]">Slow EMA (Period)</label>
-              <input id="param-slow-ema" type="number" value="21" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-[#2962ff]" />
+              <label class="text-tv-muted">Slow EMA (Period)</label>
+              <input id="param-slow-ema" type="number" value="21" class="w-full bg-tv-primary border border-tv-border rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-tv-accent" />
             </div>
 
             <div class="space-y-1">
-              <label class="text-[#787b86]">RSI Momentum Floor</label>
-              <input id="param-rsi-thresh" type="number" value="50" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-[#2962ff]" />
+              <label class="text-tv-muted">RSI Momentum Floor</label>
+              <input id="param-rsi-thresh" type="number" value="50" class="w-full bg-tv-primary border border-tv-border rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-tv-accent" />
             </div>
 
             <div class="space-y-1">
-              <label class="text-[#787b86]">SuperTrend Filter</label>
-              <select class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#2962ff]">
+              <label class="text-tv-muted">SuperTrend Filter</label>
+              <select class="w-full bg-tv-primary border border-tv-border rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-tv-accent">
                 <option>Active (10, 3.0)</option>
                 <option>Disabled</option>
               </select>
@@ -134,73 +134,73 @@
         </div>
 
         <!-- Rule Builder Cards (Jesse & OpenAlgo Inspired) -->
-        <div data-widget="widget-designer-rules" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-rules" class="bg-tv-secondary border border-tv-border rounded-lg p-4 space-y-3">
           <h2 class="text-sm font-bold text-white flex items-center space-x-2">
-            <span class="w-2.5 h-2.5 rounded bg-[#089981]"></span>
+            <span class="w-2.5 h-2.5 rounded bg-tv-bullish"></span>
             <span>Entry & Exit Execution Conditions</span>
           </h2>
 
           <!-- Long Entry Rule Card -->
-          <div class="bg-[#131722] border border-[#089981]/40 rounded-lg p-3 space-y-2">
+          <div class="bg-tv-primary border border-tv-bullish/40 rounded-lg p-3 space-y-2">
             <div class="flex items-center justify-between text-xs">
-              <span class="font-bold text-[#089981] flex items-center space-x-1.5">
+              <span class="font-bold text-tv-bullish flex items-center space-x-1.5">
                 <span>▲ LONG ENTRY CONDITION</span>
               </span>
-              <span class="text-[10px] text-[#787b86] font-mono">Jesse: should_long()</span>
+              <span class="text-[10px] text-tv-muted font-mono">Jesse: should_long()</span>
             </div>
-            <div class="font-mono text-xs text-[#d1d4dc] bg-[#1e222d] p-2.5 rounded border border-[#2a2e39]">
-              WHEN <span class="text-[#2962ff] font-bold">EMA(9)</span> CROSSES ABOVE <span class="text-[#f59e0b] font-bold">EMA(21)</span><br />
-              AND <span class="text-white font-bold">RSI(14)</span> &gt; <span class="text-[#089981] font-bold">50</span><br />
-              AND <span class="text-[#787b86]">Session Time between 09:20 IST and 15:15 IST</span>
+            <div class="font-mono text-xs text-tv-text bg-tv-secondary p-2.5 rounded border border-tv-border">
+              WHEN <span class="text-tv-accent font-bold">EMA(9)</span> CROSSES ABOVE <span class="text-amber-400 font-bold">EMA(21)</span><br />
+              AND <span class="text-white font-bold">RSI(14)</span> &gt; <span class="text-tv-bullish font-bold">50</span><br />
+              AND <span class="text-tv-muted">Session Time between 09:20 IST and 15:15 IST</span>
             </div>
           </div>
 
           <!-- Short Entry Rule Card -->
-          <div class="bg-[#131722] border border-[#f23645]/40 rounded-lg p-3 space-y-2">
+          <div class="bg-tv-primary border border-tv-bearish/40 rounded-lg p-3 space-y-2">
             <div class="flex items-center justify-between text-xs">
-              <span class="font-bold text-[#f23645] flex items-center space-x-1.5">
+              <span class="font-bold text-tv-bearish flex items-center space-x-1.5">
                 <span>▼ SHORT ENTRY CONDITION</span>
               </span>
-              <span class="text-[10px] text-[#787b86] font-mono">Jesse: should_short()</span>
+              <span class="text-[10px] text-tv-muted font-mono">Jesse: should_short()</span>
             </div>
-            <div class="font-mono text-xs text-[#d1d4dc] bg-[#1e222d] p-2.5 rounded border border-[#2a2e39]">
-              WHEN <span class="text-[#2962ff] font-bold">EMA(9)</span> CROSSES BELOW <span class="text-[#f59e0b] font-bold">EMA(21)</span><br />
-              AND <span class="text-white font-bold">RSI(14)</span> &lt; <span class="text-[#f23645] font-bold">50</span><br />
-              AND <span class="text-[#787b86]">Session Time between 09:20 IST and 15:15 IST</span>
+            <div class="font-mono text-xs text-tv-text bg-tv-secondary p-2.5 rounded border border-tv-border">
+              WHEN <span class="text-tv-accent font-bold">EMA(9)</span> CROSSES BELOW <span class="text-amber-400 font-bold">EMA(21)</span><br />
+              AND <span class="text-white font-bold">RSI(14)</span> &lt; <span class="text-tv-bearish font-bold">50</span><br />
+              AND <span class="text-tv-muted">Session Time between 09:20 IST and 15:15 IST</span>
             </div>
           </div>
         </div>
 
         <!-- Position Sizing & Indian Market Risk Management -->
-        <div data-widget="widget-designer-risk" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-4 space-y-3">
+        <div data-widget="widget-designer-risk" class="bg-tv-secondary border border-tv-border rounded-lg p-4 space-y-3">
           <h2 class="text-sm font-bold text-white flex items-center space-x-2">
-            <span class="w-2.5 h-2.5 rounded bg-[#f23645]"></span>
+            <span class="w-2.5 h-2.5 rounded bg-tv-bearish"></span>
             <span>Position Sizing & Risk Bracket Parameters</span>
           </h2>
 
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div class="space-y-1">
-              <label class="text-[#787b86]">Order Quantity (Lots)</label>
-              <input id="param-lot-size" type="number" value="2" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-[#2962ff]" />
-              <div class="text-[10px] text-[#787b86]">2 Lots × 25 = 50 Qty</div>
+              <label class="text-tv-muted">Order Quantity (Lots)</label>
+              <input id="param-lot-size" type="number" value="2" class="w-full bg-tv-primary border border-tv-border rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-tv-accent" />
+              <div class="text-[10px] text-tv-muted">2 Lots × 25 = 50 Qty</div>
             </div>
 
             <div class="space-y-1">
-              <label class="text-[#787b86]">Stop Loss (%)</label>
-              <input id="param-sl-val" type="number" step="0.1" value="1.5" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-[#2962ff]" />
-              <div class="text-[10px] text-[#f23645]">Risk: ~₹6,093</div>
+              <label class="text-tv-muted">Stop Loss (%)</label>
+              <input id="param-sl-val" type="number" step="0.1" value="1.5" class="w-full bg-tv-primary border border-tv-border rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-tv-accent" />
+              <div class="text-[10px] text-tv-bearish">Risk: ~₹6,093</div>
             </div>
 
             <div class="space-y-1">
-              <label class="text-[#787b86]">Target (Risk:Reward)</label>
-              <input id="param-tp-val" type="number" step="0.5" value="2.0" class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-[#2962ff]" />
-              <div class="text-[10px] text-[#089981]">1:2.0 RR (3.0% Gain)</div>
+              <label class="text-tv-muted">Target (Risk:Reward)</label>
+              <input id="param-tp-val" type="number" step="0.5" value="2.0" class="w-full bg-tv-primary border border-tv-border rounded px-2.5 py-1.5 font-mono text-white focus:outline-none focus:border-tv-accent" />
+              <div class="text-[10px] text-tv-bullish">1:2.0 RR (3.0% Gain)</div>
             </div>
 
             <div class="space-y-1">
-              <label class="text-[#787b86]">MIS Auto-Square Off</label>
-              <input type="text" value="15:15 IST" readonly class="w-full bg-[#131722] border border-[#2a2e39] rounded px-2.5 py-1.5 font-mono text-[#787b86] cursor-not-allowed" />
-              <div class="text-[10px] text-[#787b86]">SEBI Mandate</div>
+              <label class="text-tv-muted">MIS Auto-Square Off</label>
+              <input type="text" value="15:15 IST" readonly class="w-full bg-tv-primary border border-tv-border rounded px-2.5 py-1.5 font-mono text-tv-muted cursor-not-allowed" />
+              <div class="text-[10px] text-tv-muted">SEBI Mandate</div>
             </div>
           </div>
         </div>
@@ -210,39 +210,39 @@
       <div data-widget="widget-code-preview" class="lg:col-span-5 flex flex-col space-y-4">
         
         <!-- Live Generated Strategy Code Box -->
-        <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg flex-1 flex flex-col overflow-hidden">
-          <div class="bg-[#181b24] border-b border-[#2a2e39] flex items-center justify-between px-3 py-2 text-xs">
+        <div class="bg-tv-secondary border border-tv-border rounded-lg flex-1 flex flex-col overflow-hidden">
+          <div class="bg-tv-primary border-b border-tv-border flex items-center justify-between px-3 py-2 text-xs">
             <div class="flex items-center space-x-1">
-              <button data-code-tab="python" class="px-2.5 py-1 rounded text-white border-b-2 border-[#2962ff] bg-[#2a2e39]/40 font-semibold transition">
+              <button data-code-tab="python" class="px-2.5 py-1 rounded text-white border-b-2 border-tv-accent bg-tv-tertiary/40 font-semibold transition">
                 Python (Jesse/Honba)
               </button>
-              <button data-code-tab="json" class="px-2.5 py-1 rounded text-[#787b86] hover:text-white transition">
+              <button data-code-tab="json" class="px-2.5 py-1 rounded text-tv-muted hover:text-white transition">
                 OpenAlgo JSON
               </button>
-              <button data-code-tab="rust" class="px-2.5 py-1 rounded text-[#787b86] hover:text-white transition">
+              <button data-code-tab="rust" class="px-2.5 py-1 rounded text-tv-muted hover:text-white transition">
                 Rust Nautilus
               </button>
             </div>
 
-            <button id="btn-copy-code" class="text-[11px] text-[#787b86] hover:text-white px-2 py-0.5 rounded bg-[#131722] border border-[#2a2e39] transition">
+            <button id="btn-copy-code" class="text-[11px] text-tv-muted hover:text-white px-2 py-0.5 rounded bg-tv-primary border border-tv-border transition">
               📋 Copy Code
             </button>
           </div>
 
-          <div class="flex-1 bg-[#131722] p-3 overflow-y-auto max-h-[580px]">
-            <pre data-code-panel="python" class="font-mono text-xs text-[#d1d4dc] leading-relaxed"><code id="code-python"></code></pre>
-            <pre data-code-panel="json" class="hidden font-mono text-xs text-[#089981] leading-relaxed"><code id="code-json"></code></pre>
-            <pre data-code-panel="rust" class="hidden font-mono text-xs text-[#f59e0b] leading-relaxed"><code id="code-rust"></code></pre>
+          <div class="flex-1 bg-tv-primary p-3 overflow-y-auto max-h-[580px]">
+            <pre data-code-panel="python" class="font-mono text-xs text-tv-text leading-relaxed"><code id="code-python"></code></pre>
+            <pre data-code-panel="json" class="hidden font-mono text-xs text-tv-bullish leading-relaxed"><code id="code-json"></code></pre>
+            <pre data-code-panel="rust" class="hidden font-mono text-xs text-amber-400 leading-relaxed"><code id="code-rust"></code></pre>
           </div>
         </div>
 
         <!-- Testing CTA Banner -->
-        <div class="bg-gradient-to-r from-[#1e222d] to-[#131722] border border-[#2a2e39] rounded-lg p-4 flex items-center justify-between shadow">
+        <div class="bg-gradient-to-r from-tv-secondary to-tv-primary border border-tv-border rounded-lg p-4 flex items-center justify-between shadow">
           <div>
             <div class="font-bold text-white text-sm">Ready to Test Strategy?</div>
-            <div class="text-xs text-[#787b86]">Run tick-level backtest with Jesse & OpenAlgo engine.</div>
+            <div class="text-xs text-tv-muted">Run tick-level backtest with Jesse & OpenAlgo engine.</div>
           </div>
-          <button id="btn-test-in-simulator" class="bg-[#089981] hover:bg-[#067a67] text-white px-4 py-2 rounded-lg font-bold text-xs tracking-wide uppercase transition shadow flex items-center space-x-1 cursor-pointer">
+          <button id="btn-test-in-simulator" class="bg-tv-bullish hover:opacity-90 text-white px-4 py-2 rounded-lg font-bold text-xs tracking-wide uppercase transition shadow flex items-center space-x-1 cursor-pointer">
             <span>🧪 Test in Simulator →</span>
           </button>
         </div>

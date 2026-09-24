@@ -1,9 +1,13 @@
+import { initTheme } from "./theme";
 import { initWidgetCustomizer } from "./widgets/widget-customizer";
 
 export function initHeaderNavigation(
   activePage: "workbench" | "designer" | "simulator" | "stock" | "options" | "backtest"
 ) {
-  // Update live IST market clock
+  // 1. Initialize user's selected theme & typography
+  initTheme();
+
+  // 2. Update live IST market clock
   const clockEl = document.getElementById("ist-clock");
   if (clockEl) {
     const updateTime = () => {
@@ -21,20 +25,20 @@ export function initHeaderNavigation(
     setInterval(updateTime, 1000);
   }
 
-  // Active page styling
+  // 3. Active page styling
   const navLinks = document.querySelectorAll<HTMLAnchorElement>("[data-nav-page]");
   navLinks.forEach((link) => {
     const page = link.getAttribute("data-nav-page");
     if (page === activePage) {
-      link.classList.add("bg-[#2a2e39]", "text-white", "font-medium");
-      link.classList.remove("text-[#787b86]");
+      link.classList.add("bg-tv-tertiary", "text-white", "font-medium");
+      link.classList.remove("text-tv-muted");
     } else {
-      link.classList.remove("bg-[#2a2e39]", "text-white", "font-medium");
-      link.classList.add("text-[#787b86]", "hover:text-[#d1d4dc]", "hover:bg-[#1e222d]");
+      link.classList.remove("bg-tv-tertiary", "text-white", "font-medium");
+      link.classList.add("text-tv-muted", "hover:text-tv-text", "hover:bg-tv-secondary");
     }
   });
 
-  // Global symbol switcher listener
+  // 4. Global symbol switcher listener
   const symbolSelect = document.getElementById("symbol-select") as HTMLSelectElement | null;
   if (symbolSelect) {
     const currentStoredSymbol = localStorage.getItem("honba_symbol") || "NIFTY ALPHA 50";
@@ -47,6 +51,6 @@ export function initHeaderNavigation(
     });
   }
 
-  // Initialize modular widget customization and saved views
+  // 5. Initialize modular widget customization and saved views
   initWidgetCustomizer(activePage);
 }

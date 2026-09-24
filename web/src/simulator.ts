@@ -36,6 +36,13 @@ export function initSimulator() {
   renderDrawdownChart();
   renderMonteCarloChart();
 
+  // Listen for theme changes to re-render charts
+  window.addEventListener("honba:theme-change", () => {
+    renderEquityChart();
+    renderDrawdownChart();
+    renderMonteCarloChart();
+  });
+
   // Tab switching for Simulation Views (Performance Overview, Monte Carlo, Trade Log, Tax Friction)
   const tabs = document.querySelectorAll<HTMLButtonElement>("[data-sim-tab]");
   const panels = document.querySelectorAll<HTMLDivElement>("[data-sim-panel]");
@@ -44,11 +51,11 @@ export function initSimulator() {
     tab.addEventListener("click", () => {
       const target = tab.getAttribute("data-sim-tab");
       tabs.forEach((t) => {
-        t.classList.remove("text-white", "border-b-2", "border-[#2962ff]", "bg-[#2a2e39]/40");
-        t.classList.add("text-[#787b86]");
+        t.classList.remove("text-white", "border-b-2", "border-tv-accent", "bg-tv-tertiary/40");
+        t.classList.add("text-tv-muted");
       });
-      tab.classList.add("text-white", "border-b-2", "border-[#2962ff]", "bg-[#2a2e39]/40");
-      tab.classList.remove("text-[#787b86]");
+      tab.classList.add("text-white", "border-b-2", "border-tv-accent", "bg-tv-tertiary/40");
+      tab.classList.remove("text-tv-muted");
 
       panels.forEach((p) => {
         if (p.getAttribute("data-sim-panel") === target) {
@@ -121,13 +128,18 @@ function renderEquityChart(isRecomputed = false) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const style = getComputedStyle(document.documentElement);
+  const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
+  const border = style.getPropertyValue("--tv-border").trim() || "#2a2e39";
+  const muted = style.getPropertyValue("--tv-text-muted").trim() || "#787b86";
+
   const w = canvas.width;
   const h = canvas.height;
 
   ctx.clearRect(0, 0, w, h);
 
   // Grid
-  ctx.strokeStyle = "#2a2e39";
+  ctx.strokeStyle = border;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 4]);
   for (let y = 30; y < h; y += 35) {
@@ -139,7 +151,7 @@ function renderEquityChart(isRecomputed = false) {
   ctx.setLineDash([]);
 
   // Benchmark curve (Nifty 50 TR)
-  ctx.strokeStyle = "#787b86";
+  ctx.strokeStyle = muted;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(0, h - 20);
@@ -155,7 +167,7 @@ function renderEquityChart(isRecomputed = false) {
   ctx.stroke();
 
   // Strategy Equity Curve
-  ctx.strokeStyle = "#089981";
+  ctx.strokeStyle = bullish;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   const stratPts = [
@@ -176,8 +188,8 @@ function renderEquityChart(isRecomputed = false) {
 
   // Gradient fill
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, "rgba(8, 153, 129, 0.25)");
-  grad.addColorStop(1, "rgba(8, 153, 129, 0.0)");
+  grad.addColorStop(0, bullish + "40");
+  grad.addColorStop(1, bullish + "00");
   ctx.fillStyle = grad;
   ctx.lineTo(w, h);
   ctx.lineTo(0, h);
@@ -192,13 +204,17 @@ function renderDrawdownChart() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const style = getComputedStyle(document.documentElement);
+  const bearish = style.getPropertyValue("--tv-bearish").trim() || "#f23645";
+  const muted = style.getPropertyValue("--tv-text-muted").trim() || "#787b86";
+
   const w = canvas.width;
   const h = canvas.height;
 
   ctx.clearRect(0, 0, w, h);
 
   // Top baseline (0% DD)
-  ctx.strokeStyle = "#787b86";
+  ctx.strokeStyle = muted;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, 5);
@@ -206,7 +222,7 @@ function renderDrawdownChart() {
   ctx.stroke();
 
   // Underwater DD path
-  ctx.strokeStyle = "#f23645";
+  ctx.strokeStyle = bearish;
   ctx.lineWidth = 1.8;
   ctx.beginPath();
   ctx.moveTo(0, 5);
@@ -228,8 +244,8 @@ function renderDrawdownChart() {
 
   // Red gradient fill
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, "rgba(242, 54, 69, 0.0)");
-  grad.addColorStop(1, "rgba(242, 54, 69, 0.35)");
+  grad.addColorStop(0, bearish + "00");
+  grad.addColorStop(1, bearish + "50");
   ctx.fillStyle = grad;
   ctx.lineTo(w, 5);
   ctx.closePath();
@@ -243,13 +259,20 @@ function renderMonteCarloChart() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const style = getComputedStyle(document.documentElement);
+  const border = style.getPropertyValue("--tv-border").trim() || "#2a2e39";
+  const accent = style.getPropertyValue("--tv-accent").trim() || "#2962ff";
+  const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
+  const bearish = style.getPropertyValue("--tv-bearish").trim() || "#f23645";
+  const muted = style.getPropertyValue("--tv-text-muted").trim() || "#787b86";
+
   const w = canvas.width;
   const h = canvas.height;
 
   ctx.clearRect(0, 0, w, h);
 
   // Grid
-  ctx.strokeStyle = "#2a2e39";
+  ctx.strokeStyle = border;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 4]);
   for (let x = 40; x < w; x += 60) {
@@ -268,12 +291,12 @@ function renderMonteCarloChart() {
     const isBest = i === 24;
 
     ctx.strokeStyle = isMedian
-      ? "#2962ff"
+      ? accent
       : isWorst
-      ? "rgba(242, 54, 69, 0.6)"
+      ? bearish + "99"
       : isBest
-      ? "rgba(8, 153, 129, 0.6)"
-      : "rgba(120, 123, 134, 0.15)";
+      ? bullish + "99"
+      : muted + "33";
     ctx.lineWidth = isMedian ? 2.5 : 1;
 
     ctx.beginPath();

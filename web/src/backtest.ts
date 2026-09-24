@@ -3,6 +3,14 @@ import { initHeaderNavigation } from "./nav";
 export function initBacktestPage() {
   initHeaderNavigation("backtest");
 
+  renderCpcvFanChart();
+
+  window.addEventListener("honba:theme-change", () => {
+    renderCpcvFanChart();
+  });
+}
+
+function renderCpcvFanChart() {
   // Render CPCV fan chart canvas
   const canvas = document.getElementById("cpcv-fan-canvas") as HTMLCanvasElement | null;
   if (!canvas) return;
@@ -10,13 +18,18 @@ export function initBacktestPage() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const style = getComputedStyle(document.documentElement);
+  const border = style.getPropertyValue("--tv-border").trim() || "#2a2e39";
+  const accent = style.getPropertyValue("--tv-accent").trim() || "#2962ff";
+  const bullish = style.getPropertyValue("--tv-bullish").trim() || "#089981";
+
   const width = canvas.width;
   const height = canvas.height;
 
   ctx.clearRect(0, 0, width, height);
 
   // Grid
-  ctx.strokeStyle = "#2a2e39";
+  ctx.strokeStyle = border;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 4]);
   for (let y = 30; y < height; y += 40) {
@@ -31,7 +44,7 @@ export function initBacktestPage() {
   const pathsCount = 16;
   for (let p = 0; p < pathsCount; p++) {
     const isMedian = p === 8;
-    ctx.strokeStyle = isMedian ? "#2962ff" : "rgba(8, 153, 129, 0.18)";
+    ctx.strokeStyle = isMedian ? accent : bullish + "33";
     ctx.lineWidth = isMedian ? 2.5 : 1.2;
 
     ctx.beginPath();

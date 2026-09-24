@@ -8,26 +8,26 @@
     <!-- Google Fonts: Inter & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@300..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/index.css" />
   </head>
-  <body class="bg-[#131722] text-[#d1d4dc] overflow-y-auto font-sans antialiased min-h-screen flex flex-col">
+  <body class="bg-tv-primary text-tv-text overflow-y-auto font-sans antialiased min-h-screen flex flex-col">
     
     <!-- 1. Universal Top Navigation Bar -->
-    <header class="h-12 bg-[#1e222d] border-b border-[#2a2e39] flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
+    <header class="h-12 bg-tv-secondary border-b border-tv-border flex items-center justify-between px-3 z-30 select-none flex-shrink-0 sticky top-0">
       <div class="flex items-center space-x-3">
         <!-- Logo -->
-        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-[#2a2e39] group">
-          <div class="w-6 h-6 rounded bg-[#2962ff] flex items-center justify-center font-bold text-white text-xs shadow-md">
+        <a href="/" class="flex items-center space-x-1.5 pr-2 border-r border-tv-border group">
+          <div class="w-6 h-6 rounded bg-tv-accent flex items-center justify-center font-bold text-white text-xs shadow-md">
             相
           </div>
           <span class="font-bold text-sm tracking-wider text-white">HONBA</span>
-          <span class="text-[10px] text-[#787b86] font-mono tracking-widest uppercase">QUANT</span>
+          <span class="text-[10px] text-tv-muted font-mono tracking-widest uppercase">QUANT</span>
         </a>
 
         <!-- Symbol Dropdown -->
         <div class="relative">
-          <select id="symbol-select" class="bg-[#2a2e39] hover:bg-[#363a45] text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-[#363a45] focus:outline-none focus:border-[#2962ff]">
+          <select id="symbol-select" class="bg-tv-tertiary hover:bg-tv-elevated text-white text-xs font-semibold px-2.5 py-1 rounded cursor-pointer border border-tv-elevated focus:outline-none focus:border-tv-accent">
             <option value="NIFTY ALPHA 50">NIFTY ALPHA 50</option>
             <option value="NIFTY 50">NIFTY 50</option>
             <option value="BANKNIFTY">BANKNIFTY</option>
@@ -38,7 +38,7 @@
         </div>
 
         <!-- MPA Navigation Links -->
-        <nav class="flex items-center space-x-1 border-l border-[#2a2e39] pl-2 text-xs">
+        <nav class="flex items-center space-x-1 border-l border-tv-border pl-2 text-xs">
           <a href="/" data-nav-page="workbench" class="px-2.5 py-1 rounded text-xs transition">Workbench</a>
           <a href="/designer.html" data-nav-page="designer" class="px-2.5 py-1 rounded text-xs transition">Algo Designer</a>
           <a href="/simulator.html" data-nav-page="simulator" class="px-2.5 py-1 rounded text-xs transition">Simulator</a>
@@ -50,15 +50,15 @@
 
       <!-- Right Header Actions -->
       <div class="flex items-center space-x-3 text-xs">
-        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-[#131722] border border-[#2a2e39] font-mono text-[10px]">
-          <span class="w-2 h-2 rounded-full bg-[#089981] animate-pulse"></span>
-          <span id="ist-clock" class="text-[#d1d4dc]">NSE LIVE | 14:42:18 IST</span>
+        <div class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-tv-primary border border-tv-border font-mono text-[10px]">
+          <span class="w-2 h-2 rounded-full bg-tv-bullish animate-pulse"></span>
+          <span id="ist-clock" class="text-tv-text">NSE LIVE | 14:42:18 IST</span>
         </div>
-        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-[#2a2e39] hover:bg-[#363a45] text-[#d1d4dc] hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
+        <button id="btn-customize-widgets" class="flex items-center space-x-1 bg-tv-tertiary hover:bg-tv-elevated text-tv-text hover:text-white px-2.5 py-1 rounded transition text-xs cursor-pointer">
           <span>🎛️</span>
           <span>Widgets</span>
         </button>
-        <button id="btn-export-report" class="text-xs text-[#787b86] hover:text-white px-2.5 py-1 rounded bg-[#2a2e39] hover:bg-[#363a45] transition">
+        <button id="btn-export-report" class="text-xs text-tv-muted hover:text-white px-2.5 py-1 rounded bg-tv-tertiary hover:bg-tv-elevated transition">
           📥 Export Report
         </button>
       </div>
@@ -68,104 +68,104 @@
     <main class="flex-1 max-w-[1800px] w-full mx-auto p-4 space-y-4">
       
       <!-- Simulation Parameter Bar -->
-      <div data-widget="widget-sim-params" class="bg-[#1e222d] border border-[#2a2e39] rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div data-widget="widget-sim-params" class="bg-tv-secondary border border-tv-border rounded-lg p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex items-center space-x-2">
-            <span class="text-[#787b86]">Strategy:</span>
-            <span id="sim-strategy-name" class="font-bold text-white bg-[#131722] px-2.5 py-1 rounded border border-[#2a2e39]">
+            <span class="text-tv-muted">Strategy:</span>
+            <span id="sim-strategy-name" class="font-bold text-white bg-tv-primary px-2.5 py-1 rounded border border-tv-border">
               Alpha Momentum Trend Rider
             </span>
           </div>
 
           <div class="flex items-center space-x-2">
-            <span class="text-[#787b86]">Capital:</span>
-            <input type="text" value="₹10,00,000" class="w-28 bg-[#131722] border border-[#2a2e39] rounded px-2 py-1 font-mono text-white text-xs" />
+            <span class="text-tv-muted">Capital:</span>
+            <input type="text" value="₹10,00,000" class="w-28 bg-tv-primary border border-tv-border rounded px-2 py-1 font-mono text-white text-xs" />
           </div>
 
           <div class="flex items-center space-x-2">
-            <span class="text-[#787b86]">Period:</span>
-            <span class="font-mono text-white bg-[#131722] px-2 py-1 rounded border border-[#2a2e39] text-xs">
+            <span class="text-tv-muted">Period:</span>
+            <span class="font-mono text-white bg-tv-primary px-2 py-1 rounded border border-tv-border text-xs">
               01 Sep 2025 – 23 Sep 2026 (1Y)
             </span>
           </div>
 
           <div class="flex items-center space-x-2">
-            <span class="text-[#787b86]">Slippage:</span>
-            <span class="font-mono text-[#089981] bg-[#131722] px-2 py-1 rounded border border-[#2a2e39] text-xs">
+            <span class="text-tv-muted">Slippage:</span>
+            <span class="font-mono text-tv-bullish bg-tv-primary px-2 py-1 rounded border border-tv-border text-xs">
               1.5× Spread
             </span>
           </div>
         </div>
 
-        <button id="btn-run-simulation" class="bg-[#2962ff] hover:bg-[#1e53e5] text-white px-4 py-1.5 rounded-lg font-bold text-xs tracking-wide uppercase transition shadow flex items-center space-x-1.5 cursor-pointer">
+        <button id="btn-run-simulation" class="bg-tv-accent hover:bg-tv-accent-hover text-white px-4 py-1.5 rounded-lg font-bold text-xs tracking-wide uppercase transition shadow flex items-center space-x-1.5 cursor-pointer">
           <span>▶</span>
           <span>Run Simulation</span>
         </button>
       </div>
 
       <!-- Simulation Progress Runner (Animated) -->
-      <div id="sim-progress-container" class="hidden bg-[#1e222d] border border-[#2962ff]/40 rounded-lg p-3 space-y-2">
+      <div id="sim-progress-container" class="hidden bg-tv-secondary border border-tv-accent/40 rounded-lg p-3 space-y-2">
         <div class="flex justify-between text-xs">
           <span id="sim-progress-text" class="text-white font-mono">Simulating Bar 1,250 of 2,520 (NSE Event Loop)...</span>
-          <span class="text-[#2962ff] font-bold font-mono">Zero-Allocation Tokio Kernel</span>
+          <span class="text-tv-accent font-bold font-mono">Zero-Allocation Tokio Kernel</span>
         </div>
-        <div class="w-full bg-[#131722] rounded-full h-2 overflow-hidden border border-[#2a2e39]">
-          <div id="sim-progress-bar" class="bg-gradient-to-r from-[#2962ff] to-[#089981] h-2 rounded-full transition-all duration-100" style="width: 0%"></div>
+        <div class="w-full bg-tv-primary rounded-full h-2 overflow-hidden border border-tv-border">
+          <div id="sim-progress-bar" class="bg-gradient-to-r from-tv-accent to-tv-bullish h-2 rounded-full transition-all duration-100" style="width: 0%"></div>
         </div>
       </div>
 
       <!-- Completion Toast / Alert -->
-      <div id="sim-completed-alert" class="hidden bg-[#089981]/20 border border-[#089981]/40 text-[#089981] px-4 py-2 rounded-lg text-xs font-semibold flex items-center justify-between">
+      <div id="sim-completed-alert" class="hidden bg-tv-bullish/20 border border-tv-bullish/40 text-tv-bullish px-4 py-2 rounded-lg text-xs font-semibold flex items-center justify-between">
         <span>✓ Backtest Simulation Complete: 128 trades executed with full Indian tax friction (Budget 2024 STT applied).</span>
         <span class="font-mono text-[10px]">Parity Verified 100%</span>
       </div>
 
       <!-- Jesse-Style Executive Metrics Scorecard (10 Metrics) -->
       <div data-widget="widget-sim-metrics" class="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
-          <div class="text-[10px] text-[#787b86] uppercase">Ending Capital / Net PnL</div>
-          <div class="font-mono text-base font-bold text-[#089981]">₹12,84,500 <span class="text-xs">(+28.4%)</span></div>
-          <div class="text-[10px] text-[#787b86]">Initial: ₹10,00,000</div>
+        <div class="bg-tv-secondary p-3 rounded-lg border border-tv-border">
+          <div class="text-[10px] text-tv-muted uppercase">Ending Capital / Net PnL</div>
+          <div class="font-mono text-base font-bold text-tv-bullish">₹12,84,500 <span class="text-xs">(+28.4%)</span></div>
+          <div class="text-[10px] text-tv-muted">Initial: ₹10,00,000</div>
         </div>
 
-        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
-          <div class="text-[10px] text-[#787b86] uppercase">Annual Return / Alpha</div>
-          <div class="font-mono text-base font-bold text-white">28.4% <span class="text-xs text-[#089981] font-semibold">vs 14.2%</span></div>
-          <div class="text-[10px] text-[#2962ff] font-bold">Nifty Alpha: +14.2%</div>
+        <div class="bg-tv-secondary p-3 rounded-lg border border-tv-border">
+          <div class="text-[10px] text-tv-muted uppercase">Annual Return / Alpha</div>
+          <div class="font-mono text-base font-bold text-white">28.4% <span class="text-xs text-tv-bullish font-semibold">vs 14.2%</span></div>
+          <div class="text-[10px] text-tv-accent font-bold">Nifty Alpha: +14.2%</div>
         </div>
 
-        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
-          <div class="text-[10px] text-[#787b86] uppercase">Sharpe & Sortino</div>
-          <div class="font-mono text-base font-bold text-white">2.14 <span class="text-xs text-[#787b86]">/</span> 3.42</div>
-          <div class="text-[10px] text-[#089981]">Calmar Ratio: 3.94</div>
+        <div class="bg-tv-secondary p-3 rounded-lg border border-tv-border">
+          <div class="text-[10px] text-tv-muted uppercase">Sharpe & Sortino</div>
+          <div class="font-mono text-base font-bold text-white">2.14 <span class="text-xs text-tv-muted">/</span> 3.42</div>
+          <div class="text-[10px] text-tv-bullish">Calmar Ratio: 3.94</div>
         </div>
 
-        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
-          <div class="text-[10px] text-[#787b86] uppercase">Max Drawdown</div>
-          <div class="font-mono text-base font-bold text-[#f23645]">-7.2%</div>
-          <div class="text-[10px] text-[#787b86]">DD Duration: 14 sessions</div>
+        <div class="bg-tv-secondary p-3 rounded-lg border border-tv-border">
+          <div class="text-[10px] text-tv-muted uppercase">Max Drawdown</div>
+          <div class="font-mono text-base font-bold text-tv-bearish">-7.2%</div>
+          <div class="text-[10px] text-tv-muted">DD Duration: 14 sessions</div>
         </div>
 
-        <div class="bg-[#1e222d] p-3 rounded-lg border border-[#2a2e39]">
-          <div class="text-[10px] text-[#787b86] uppercase">Win Rate & Profit Factor</div>
-          <div class="font-mono text-base font-bold text-white">62.5% <span class="text-xs text-[#787b86]">/</span> 2.18</div>
-          <div class="text-[10px] text-[#089981]">80 Win / 48 Loss</div>
+        <div class="bg-tv-secondary p-3 rounded-lg border border-tv-border">
+          <div class="text-[10px] text-tv-muted uppercase">Win Rate & Profit Factor</div>
+          <div class="font-mono text-base font-bold text-white">62.5% <span class="text-xs text-tv-muted">/</span> 2.18</div>
+          <div class="text-[10px] text-tv-bullish">80 Win / 48 Loss</div>
         </div>
       </div>
 
       <!-- Tabbed Views: Equity Curves, Jesse Monte Carlo, Trade Ledger, Friction -->
-      <div class="bg-[#1e222d] border border-[#2a2e39] rounded-lg overflow-hidden">
-        <div class="flex items-center border-b border-[#2a2e39] bg-[#181b24] text-xs">
-          <button data-sim-tab="equity" class="px-4 py-2.5 text-white border-b-2 border-[#2962ff] bg-[#2a2e39]/40 font-semibold transition">
+      <div class="bg-tv-secondary border border-tv-border rounded-lg overflow-hidden">
+        <div class="flex items-center border-b border-tv-border bg-tv-primary text-xs">
+          <button data-sim-tab="equity" class="px-4 py-2.5 text-white border-b-2 border-tv-accent bg-tv-tertiary/40 font-semibold transition">
             📈 Equity & Underwater Drawdown
           </button>
-          <button data-sim-tab="montecarlo" class="px-4 py-2.5 text-[#787b86] hover:text-white transition">
+          <button data-sim-tab="montecarlo" class="px-4 py-2.5 text-tv-muted hover:text-white transition">
             🎲 Jesse Monte Carlo (1,000 Resamples)
           </button>
-          <button data-sim-tab="trades" class="px-4 py-2.5 text-[#787b86] hover:text-white transition">
+          <button data-sim-tab="trades" class="px-4 py-2.5 text-tv-muted hover:text-white transition">
             📋 Full Trade Ledger (128)
           </button>
-          <button data-sim-tab="taxes" class="px-4 py-2.5 text-[#787b86] hover:text-white transition">
+          <button data-sim-tab="taxes" class="px-4 py-2.5 text-tv-muted hover:text-white transition">
             🏛 Indian Taxes & Friction Breakdown
           </button>
         </div>
@@ -174,22 +174,22 @@
           <!-- Panel 1: Equity & Drawdown Curves -->
           <div data-sim-panel="equity" data-widget="widget-sim-equity-curves" class="space-y-4">
             <!-- Cumulative Equity -->
-            <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+            <div class="bg-tv-primary p-3 rounded border border-tv-border">
               <div class="flex items-center justify-between mb-2 text-xs">
                 <span class="font-bold text-white">Cumulative Equity vs NIFTY 50 Total Return</span>
                 <div class="flex items-center space-x-3 text-[11px] font-mono">
-                  <span class="text-[#089981] font-bold">● Strategy Portfolio (+28.4%)</span>
-                  <span class="text-[#787b86]">-- Nifty TR Benchmark (+14.2%)</span>
+                  <span class="text-tv-bullish font-bold">● Strategy Portfolio (+28.4%)</span>
+                  <span class="text-tv-muted">-- Nifty TR Benchmark (+14.2%)</span>
                 </div>
               </div>
               <canvas id="sim-equity-canvas" width="1200" height="150" class="w-full h-40 block"></canvas>
             </div>
 
             <!-- Underwater Drawdown Area Chart -->
-            <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+            <div class="bg-tv-primary p-3 rounded border border-tv-border">
               <div class="flex items-center justify-between mb-2 text-xs">
                 <span class="font-bold text-white">Underwater Drawdown (% from Peak)</span>
-                <span class="font-mono text-xs text-[#f23645] font-bold">Peak Drawdown: -7.2%</span>
+                <span class="font-mono text-xs text-tv-bearish font-bold">Peak Drawdown: -7.2%</span>
               </div>
               <canvas id="sim-drawdown-canvas" width="1200" height="80" class="w-full h-20 block"></canvas>
             </div>
@@ -198,36 +198,36 @@
           <!-- Panel 2: Jesse Monte Carlo Simulation -->
           <div data-sim-panel="montecarlo" data-widget="widget-monte-carlo" class="hidden space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86]">Median Annual CAGR (95% CI)</div>
-                <div class="font-mono text-lg font-bold text-[#089981] mt-1">+26.8%</div>
-                <div class="text-[10px] text-[#787b86]">Range: +18.2% to +36.4%</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted">Median Annual CAGR (95% CI)</div>
+                <div class="font-mono text-lg font-bold text-tv-bullish mt-1">+26.8%</div>
+                <div class="text-[10px] text-tv-muted">Range: +18.2% to +36.4%</div>
               </div>
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86]">Worst Simulated Max DD</div>
-                <div class="font-mono text-lg font-bold text-[#f23645] mt-1">-11.4%</div>
-                <div class="text-[10px] text-[#787b86]">Across 1,000 reshuffled runs</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted">Worst Simulated Max DD</div>
+                <div class="font-mono text-lg font-bold text-tv-bearish mt-1">-11.4%</div>
+                <div class="text-[10px] text-tv-muted">Across 1,000 reshuffled runs</div>
               </div>
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86]">Value at Risk (99% VaR)</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted">Value at Risk (99% VaR)</div>
                 <div class="font-mono text-lg font-bold text-white mt-1">₹42,500</div>
-                <div class="text-[10px] text-[#787b86]">Single session max adverse risk</div>
+                <div class="text-[10px] text-tv-muted">Single session max adverse risk</div>
               </div>
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86]">Probability of Ruin (Ruin Risk)</div>
-                <div class="font-mono text-lg font-bold text-[#089981] mt-1">&lt; 0.01%</div>
-                <div class="text-[10px] text-[#089981] font-semibold">Zero bankruptcy probability</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted">Probability of Ruin (Ruin Risk)</div>
+                <div class="font-mono text-lg font-bold text-tv-bullish mt-1">&lt; 0.01%</div>
+                <div class="text-[10px] text-tv-bullish font-semibold">Zero bankruptcy probability</div>
               </div>
             </div>
 
             <!-- Monte Carlo Fan Chart -->
-            <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
+            <div class="bg-tv-primary p-3 rounded border border-tv-border">
               <div class="flex items-center justify-between mb-2 text-xs">
                 <span class="font-bold text-white">Jesse-Style 1,000 Monte Carlo Resampled Paths</span>
                 <div class="flex items-center space-x-3 text-[11px] font-mono">
-                  <span class="text-[#089981]">Top 95th Percentile</span>
-                  <span class="text-[#2962ff] font-bold">Median Expectation</span>
-                  <span class="text-[#f23645]">Worst 5th Percentile</span>
+                  <span class="text-tv-bullish">Top 95th Percentile</span>
+                  <span class="text-tv-accent font-bold">Median Expectation</span>
+                  <span class="text-tv-bearish">Worst 5th Percentile</span>
                 </div>
               </div>
               <canvas id="sim-monte-carlo-canvas" width="1200" height="200" class="w-full h-52 block"></canvas>
@@ -238,7 +238,7 @@
           <div data-sim-panel="trades" data-widget="widget-sim-trades" class="hidden overflow-x-auto">
             <table class="w-full text-left font-mono text-xs">
               <thead>
-                <tr class="bg-[#131722] text-[#787b86] uppercase text-[10px] border-b border-[#2a2e39]">
+                <tr class="bg-tv-primary text-tv-muted uppercase text-[10px] border-b border-tv-border">
                   <th class="p-2">#ID</th>
                   <th class="p-2">Entry Time</th>
                   <th class="p-2">Exit Time</th>
@@ -253,62 +253,62 @@
                   <th class="p-2 text-center">Exit Trigger</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[#2a2e39]/50">
-                <tr class="hover:bg-[#2a2e39]/40">
-                  <td class="p-2 text-[#787b86]">#TR-128</td>
+              <tbody class="divide-y divide-tv-border/50">
+                <tr class="hover:bg-tv-tertiary/40">
+                  <td class="p-2 text-tv-muted">#TR-128</td>
                   <td class="p-2 text-white">2026-09-23 09:25</td>
                   <td class="p-2 text-white">2026-09-23 14:15</td>
                   <td class="p-2 text-white font-sans font-semibold">NIFTY ALPHA 50</td>
-                  <td class="p-2 text-[#089981] font-bold">BUY</td>
+                  <td class="p-2 text-tv-bullish font-bold">BUY</td>
                   <td class="p-2 text-right text-white">7,972.95</td>
                   <td class="p-2 text-right text-white">8,124.60</td>
                   <td class="p-2 text-right text-white">50</td>
-                  <td class="p-2 text-right text-[#089981] font-bold">+₹7,582.50</td>
-                  <td class="p-2 text-right text-[#787b86]">₹124.20</td>
-                  <td class="p-2 text-right text-[#089981] font-bold">+₹7,458.30</td>
-                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-[#089981]/20 text-[#089981] text-[10px] font-bold">TAKE_PROFIT</span></td>
+                  <td class="p-2 text-right text-tv-bullish font-bold">+₹7,582.50</td>
+                  <td class="p-2 text-right text-tv-muted">₹124.20</td>
+                  <td class="p-2 text-right text-tv-bullish font-bold">+₹7,458.30</td>
+                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-tv-bullish/20 text-tv-bullish text-[10px] font-bold">TAKE_PROFIT</span></td>
                 </tr>
-                <tr class="hover:bg-[#2a2e39]/40">
-                  <td class="p-2 text-[#787b86]">#TR-127</td>
+                <tr class="hover:bg-tv-tertiary/40">
+                  <td class="p-2 text-tv-muted">#TR-127</td>
                   <td class="p-2 text-white">2026-09-22 10:15</td>
                   <td class="p-2 text-white">2026-09-22 13:40</td>
                   <td class="p-2 text-white font-sans font-semibold">NIFTY ALPHA 50</td>
-                  <td class="p-2 text-[#089981] font-bold">BUY</td>
+                  <td class="p-2 text-tv-bullish font-bold">BUY</td>
                   <td class="p-2 text-right text-white">7,890.10</td>
                   <td class="p-2 text-right text-white">7,945.00</td>
                   <td class="p-2 text-right text-white">50</td>
-                  <td class="p-2 text-right text-[#089981] font-bold">+₹2,745.00</td>
-                  <td class="p-2 text-right text-[#787b86]">₹118.50</td>
-                  <td class="p-2 text-right text-[#089981] font-bold">+₹2,626.50</td>
-                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-[#089981]/20 text-[#089981] text-[10px] font-bold">TAKE_PROFIT</span></td>
+                  <td class="p-2 text-right text-tv-bullish font-bold">+₹2,745.00</td>
+                  <td class="p-2 text-right text-tv-muted">₹118.50</td>
+                  <td class="p-2 text-right text-tv-bullish font-bold">+₹2,626.50</td>
+                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-tv-bullish/20 text-tv-bullish text-[10px] font-bold">TAKE_PROFIT</span></td>
                 </tr>
-                <tr class="hover:bg-[#2a2e39]/40">
-                  <td class="p-2 text-[#787b86]">#TR-126</td>
+                <tr class="hover:bg-tv-tertiary/40">
+                  <td class="p-2 text-tv-muted">#TR-126</td>
                   <td class="p-2 text-white">2026-09-21 11:30</td>
                   <td class="p-2 text-white">2026-09-21 15:15</td>
                   <td class="p-2 text-white font-sans font-semibold">NIFTY ALPHA 50</td>
-                  <td class="p-2 text-[#f23645] font-bold">SELL</td>
+                  <td class="p-2 text-tv-bearish font-bold">SELL</td>
                   <td class="p-2 text-right text-white">7,920.00</td>
                   <td class="p-2 text-right text-white">7,955.50</td>
                   <td class="p-2 text-right text-white">50</td>
-                  <td class="p-2 text-right text-[#f23645] font-bold">-₹1,775.00</td>
-                  <td class="p-2 text-right text-[#787b86]">₹119.00</td>
-                  <td class="p-2 text-right text-[#f23645] font-bold">-₹1,894.00</td>
-                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] text-[10px] font-bold">MIS_SQUARE_OFF</span></td>
+                  <td class="p-2 text-right text-tv-bearish font-bold">-₹1,775.00</td>
+                  <td class="p-2 text-right text-tv-muted">₹119.00</td>
+                  <td class="p-2 text-right text-tv-bearish font-bold">-₹1,894.00</td>
+                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold">MIS_SQUARE_OFF</span></td>
                 </tr>
-                <tr class="hover:bg-[#2a2e39]/40">
-                  <td class="p-2 text-[#787b86]">#TR-125</td>
+                <tr class="hover:bg-tv-tertiary/40">
+                  <td class="p-2 text-tv-muted">#TR-125</td>
                   <td class="p-2 text-white">2026-09-20 09:40</td>
                   <td class="p-2 text-white">2026-09-20 10:20</td>
                   <td class="p-2 text-white font-sans font-semibold">NIFTY ALPHA 50</td>
-                  <td class="p-2 text-[#089981] font-bold">BUY</td>
+                  <td class="p-2 text-tv-bullish font-bold">BUY</td>
                   <td class="p-2 text-right text-white">7,850.00</td>
                   <td class="p-2 text-right text-white">7,810.00</td>
                   <td class="p-2 text-right text-white">50</td>
-                  <td class="p-2 text-right text-[#f23645] font-bold">-₹2,000.00</td>
-                  <td class="p-2 text-right text-[#787b86]">₹116.00</td>
-                  <td class="p-2 text-right text-[#f23645] font-bold">-₹2,116.00</td>
-                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-[#f23645]/20 text-[#f23645] text-[10px] font-bold">STOP_LOSS</span></td>
+                  <td class="p-2 text-right text-tv-bearish font-bold">-₹2,000.00</td>
+                  <td class="p-2 text-right text-tv-muted">₹116.00</td>
+                  <td class="p-2 text-right text-tv-bearish font-bold">-₹2,116.00</td>
+                  <td class="p-2 text-center"><span class="px-2 py-0.5 rounded bg-tv-bearish/20 text-tv-bearish text-[10px] font-bold">STOP_LOSS</span></td>
                 </tr>
               </tbody>
             </table>
@@ -318,25 +318,25 @@
           <div data-sim-panel="taxes" data-widget="widget-tax-breakdown" class="hidden space-y-3 font-mono text-xs">
             <h3 class="font-sans font-bold text-white text-sm">Indian Market Real Friction Deductions (128 Trades)</h3>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86] text-[10px]">Securities Transaction Tax (STT)</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted text-[10px]">Securities Transaction Tax (STT)</div>
                 <div class="text-white font-bold text-base mt-1">₹8,450.00</div>
-                <div class="text-[10px] text-[#787b86]">Budget 2024 Rates Applied</div>
+                <div class="text-[10px] text-tv-muted">Budget 2024 Rates Applied</div>
               </div>
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86] text-[10px]">Exchange Turnover Charges (NSE)</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted text-[10px]">Exchange Turnover Charges (NSE)</div>
                 <div class="text-white font-bold text-base mt-1">₹1,842.60</div>
-                <div class="text-[10px] text-[#787b86]">0.00297% turnover fee</div>
+                <div class="text-[10px] text-tv-muted">0.00297% turnover fee</div>
               </div>
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86] text-[10px]">GST & Stamp Duty</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted text-[10px]">GST & Stamp Duty</div>
                 <div class="text-white font-bold text-base mt-1">₹3,920.40</div>
-                <div class="text-[10px] text-[#787b86]">18% GST on brokerage + Stamp</div>
+                <div class="text-[10px] text-tv-muted">18% GST on brokerage + Stamp</div>
               </div>
-              <div class="bg-[#131722] p-3 rounded border border-[#2a2e39]">
-                <div class="text-[#787b86] text-[10px]">Total Real-World Friction</div>
-                <div class="text-[#f23645] font-bold text-base mt-1">₹14,213.00</div>
-                <div class="text-[10px] text-[#089981]">Net Strategy Profit: ₹2,84,500</div>
+              <div class="bg-tv-primary p-3 rounded border border-tv-border">
+                <div class="text-tv-muted text-[10px]">Total Real-World Friction</div>
+                <div class="text-tv-bearish font-bold text-base mt-1">₹14,213.00</div>
+                <div class="text-[10px] text-tv-bullish">Net Strategy Profit: ₹2,84,500</div>
               </div>
             </div>
           </div>

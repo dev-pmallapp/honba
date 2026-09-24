@@ -53,6 +53,6 @@ honba/
 │   │   ├── mcp/                        # Model Context Protocol server
 │   │   ├── cli/                        # Interactive CLI (Typer + Rich)
 │   │   └── server/                     # FastAPI / WebSockets backend
-├── web/                                # Web UI (React + Tailwind + Lightweight Charts)
+├── web2/                               # TradingView Multi-App Suite (Screener, WorkBench, AlgoDesigner, Simulator, Researcher)
 └── src-tauri/                          # Tauri 2.0 desktop shell & OS keyring
 ```

@@ -242,27 +242,49 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* Market Status Telemetry Pill */
+.tv-market-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tv-market-status-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bullish);
+}
+
 /* Refresh Control */
 .tv-refresh-control {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
 .tv-refresh-control:hover {
   background: var(--bg-surface-hover);
+  border-color: var(--border-medium);
 }
 
 .tv-currency-pill {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
@@ -281,6 +303,99 @@
   gap: 8px;
   user-select: none;
   flex-shrink: 0;
+}
+
+/* Row 1: Screener Header Toolbar */
+.screener-header-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.screener-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.screener-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tv-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-subtle);
+  margin: 0 2px;
+}
+
+/* Screener Header Search (Next to Currency / INR label) */
+.screener-search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 4px 0 8px;
+  height: 26px;
+  min-width: 210px;
+  max-width: 260px;
+  transition: all var(--transition-fast);
+}
+
+.screener-search-wrapper:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-subtle);
+}
+
+.screener-search-icon {
+  color: var(--text-muted);
+  margin-right: 5px;
+  flex-shrink: 0;
+}
+
+.screener-search-input {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  color: var(--text-primary);
+  font-size: 11px;
+  width: 100%;
+  padding: 2px 0;
+}
+
+.screener-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.screener-action-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+}
+
+.screener-action-btn svg {
+  color: var(--text-muted);
+}
+
+.screener-action-btn:hover svg {
+  color: var(--text-primary);
 }
 
 /* Row 1: TradingView Filter Pills */

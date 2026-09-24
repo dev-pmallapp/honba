@@ -1,43 +1,21 @@
 /**
- * TradingView Exact Replica Top Navigation Bar
- * Product Switcher, Screens Selector, Symbol Search, Market Country Pill,
- * Timeframe interval pills, Auto-refresh, Currency, Split View toggle, and Theme Presets.
+ * TradingView Clean Platform Global Navigation Bar
+ * Product Switcher, Market Country Selector,
+ * Theme & Typography Presets, Market Status Telemetry, Fullscreen mode.
  */
 
 import { HONBA_APPS, dataLayer, AppId } from '../core/data-layer';
-import { themeEngine, ColorPalette, TypographyPreset, LayoutPreset } from '../core/theme-engine';
+import { themeEngine, ColorPalette, TypographyPreset } from '../core/theme-engine';
 import { CountryCode } from '../core/market-data';
 
 export interface AppNavHandlers {
-  onSearch: (query: string) => void;
-  onSelectScreenPreset: (presetId: string) => void;
-  onToggleDetailDrawer: () => void;
-  onOpenColumnsModal: () => void;
-  onExportCSV: () => void;
+  onSearch?: (query: string) => void;
 }
-
-export const SCREEN_PRESETS = [
-  { id: 'all', name: 'All Instruments', icon: '📋' },
-  { id: 'gainers', name: 'Top Gainers', icon: '▲' },
-  { id: 'losers', name: 'Top Losers', icon: '▼' },
-  { id: 'most_active', name: 'Most Active (Volume)', icon: '🔥' },
-  { id: 'high52', name: '52-Week High', icon: '📈' },
-  { id: 'oversold', name: 'Oversold RSI (<35)', icon: '📉' },
-  { id: 'overbought', name: 'Overbought RSI (>70)', icon: '⚡' },
-  { id: 'dividend', name: 'High Dividend Yield (>1.5%)', icon: '💰' },
-  { id: 'value', name: 'Value Stocks (P/E < 25)', icon: '💎' },
-  { id: 'momentum', name: 'Bullish Momentum', icon: '🚀' },
-];
 
 export class AppNav {
   private container: HTMLElement;
   private currentAppId: AppId;
   private handlers: AppNavHandlers;
-  private currentScreenId: string = 'all';
-  private currentTimeframe: string = '1D';
-  private autoRefreshInterval: number | null = null;
-  private autoRefreshSeconds: number = 10;
-  private isAutoRefreshActive: boolean = true;
 
   constructor(
     container: HTMLElement,
@@ -47,26 +25,11 @@ export class AppNav {
     this.container = container;
     this.currentAppId = currentAppId;
     this.handlers = {
-      onSearch: () => {},
-      onSelectScreenPreset: () => {},
-      onToggleDetailDrawer: () => {},
-      onOpenColumnsModal: () => {},
-      onExportCSV: () => {},
       ...handlers,
     };
 
     this.render();
     this.setupListeners();
-    this.startAutoRefresh();
-  }
-
-  public setCurrentScreen(screenId: string) {
-    this.currentScreenId = screenId;
-    const labelEl = this.container.querySelector('#active-screen-label');
-    const preset = SCREEN_PRESETS.find((p) => p.id === screenId);
-    if (labelEl && preset) {
-      labelEl.textContent = preset.name;
-    }
   }
 
   public render() {
@@ -74,11 +37,10 @@ export class AppNav {
     const allMarkets = dataLayer.getSupportedMarkets();
     const currentTheme = themeEngine.getConfig();
     const currentApp = HONBA_APPS.find((a) => a.id === this.currentAppId) || HONBA_APPS[0];
-    const currentScreen = SCREEN_PRESETS.find((p) => p.id === this.currentScreenId) || SCREEN_PRESETS[0];
 
     this.container.innerHTML = `
       <header class="app-header tv-topbar">
-        <!-- Left Section: App Logo, Screen Title Breadcrumb & Dropdown, Quick Tools -->
+        <!-- Left Section: App Logo, Brand Switcher -->
         <div class="header-left">
           <!-- TradingView Styled Brand & App Switcher -->
           <div class="app-switcher-wrapper" id="app-switcher-container">
@@ -99,7 +61,7 @@ export class AppNav {
                     </svg>
                   </div>
                   <div class="app-menu-info">
-                    <div class="app-menu-title">${app.name}</div>
+                    <div class="app-menu-title">${app.name} <span class="app-menu-jp">${app.jpName}</span></div>
                     <div class="app-menu-desc">${app.tagline}</div>
                   </div>
                 </a>
@@ -107,59 +69,17 @@ export class AppNav {
               ).join('')}
             </div>
           </div>
+        </div>
 
-          <div class="tv-topbar-divider"></div>
-
-          <!-- Screens Selector (TradingView Style: Breadcrumb + Large Bold Dropdown) -->
-          <div class="tv-screen-heading-wrapper">
-            <div class="tv-screen-breadcrumb">Stock Screener</div>
-            <div class="dropdown-wrapper" id="screen-dropdown-container">
-              <button class="tv-screen-main-btn" id="screen-selector-btn" title="Saved Screens & Popular Presets">
-                <span id="active-screen-label">${currentScreen.name}</span>
-                <span class="app-caret" style="font-size: 8px;">▼</span>
-              </button>
-              <div class="honba-dropdown-menu" id="screen-menu" style="width: 250px;">
-                <div class="app-menu-header">Popular Screener Presets</div>
-                ${SCREEN_PRESETS.map(
-                  (preset) => `
-                  <div class="market-item ${preset.id === this.currentScreenId ? 'active' : ''}" data-screen-id="${preset.id}">
-                    <div class="market-item-left">
-                      <span>${preset.icon}</span>
-                      <span style="font-weight: 500;">${preset.name}</span>
-                    </div>
-                  </div>
-                `
-                ).join('')}
-              </div>
-            </div>
+        <!-- Right Section: Live Telemetry, Market Country, Theme, Fullscreen -->
+        <div class="header-right">
+          <!-- Real-Time Market Telemetry Status -->
+          <div class="tv-market-status-pill" title="Real-time Market Telemetry & Data Layer Active">
+            <span class="status-dot"></span>
+            <span class="tv-market-status-text">Live Feed</span>
           </div>
 
-          <!-- Quick Tools (Undo, Redo, Settings) -->
-          <div class="tv-quick-tools">
-            <button class="tv-tool-btn" id="nav-undo-btn" title="Undo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/></svg></button>
-            <button class="tv-tool-btn" id="nav-redo-btn" title="Redo"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3L21 13"/></svg></button>
-            <button class="tv-tool-btn" id="nav-settings-btn" title="Screener Settings"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
-          </div>
-
-          <div class="tv-topbar-divider"></div>
-
-          <!-- Quick Symbol / Company Search Bar -->
-          <div class="tv-search-container">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="tv-search-icon">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input 
-              type="text" 
-              class="tv-search-input" 
-              id="top-symbol-search-input" 
-              placeholder="Search ticker, company... (/)" 
-              autocomplete="off"
-            />
-            <span class="kbd-shortcut" style="margin-right: 6px;">/</span>
-          </div>
-
-          <!-- Market Country Selector Pill (Default: India) -->
+          <!-- Market Country Selector Pill -->
           <div class="market-selector-wrapper" id="market-selector-container">
             <button class="tv-market-pill" id="market-selector-btn" title="Select Market Country & Exchange">
               <span class="market-flag">${market.flag}</span>
@@ -188,58 +108,7 @@ export class AppNav {
             </div>
           </div>
 
-          <!-- Timeframe Selector Pills -->
-          <div class="tv-timeframe-group">
-            <button class="tv-timeframe-btn ${this.currentTimeframe === '1D' ? 'active' : ''}" data-tf="1D">1D</button>
-            <button class="tv-timeframe-btn ${this.currentTimeframe === '1W' ? 'active' : ''}" data-tf="1W">1W</button>
-            <button class="tv-timeframe-btn ${this.currentTimeframe === '1M' ? 'active' : ''}" data-tf="1M">1M</button>
-            <button class="tv-timeframe-btn ${this.currentTimeframe === '1h' ? 'active' : ''}" data-tf="1h">1h</button>
-          </div>
-        </div>
-
-        <!-- Right Section: Auto-Refresh, Currency, Split Drawer Toggle, Columns, Export, Theme, Fullscreen -->
-        <div class="header-right">
-          <!-- Real-Time Auto-Refresh Control -->
-          <div class="tv-refresh-control" id="refresh-control" title="Toggle Auto-Refresh (Click to trigger manual refresh)">
-            <span class="status-dot ${this.isAutoRefreshActive ? '' : 'paused'}"></span>
-            <span id="refresh-label" style="font-size: 11px; font-weight: 500;">
-              ${this.isAutoRefreshActive ? `Live (${this.autoRefreshSeconds}s)` : 'Manual'}
-            </span>
-          </div>
-
-          <!-- Currency Selector Pill -->
-          <div class="tv-currency-pill" title="Active Base Currency">
-            <span>${market.currencySymbol}</span>
-            <span>${market.currency}</span>
-          </div>
-
-          <!-- Split View / Detail Drawer Toggle -->
-          <button class="nav-icon-btn" id="toggle-drawer-btn" title="Toggle Symbol Detail Preview Drawer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-              <line x1="15" y1="3" x2="15" y2="21"/>
-            </svg>
-            <span>Panel</span>
-          </button>
-
-          <!-- Columns Customizer -->
-          <button class="nav-icon-btn" id="top-columns-btn" title="Customize Screener Columns">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="18"></rect>
-              <rect x="14" y="3" width="7" height="18"></rect>
-            </svg>
-            <span>Columns</span>
-          </button>
-
-          <!-- Export CSV -->
-          <button class="nav-icon-btn" id="top-export-btn" title="Export Screener to CSV">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span>Export</span>
-          </button>
+          <div class="tv-topbar-divider"></div>
 
           <!-- Theme & Palette Switcher -->
           <div class="dropdown-wrapper" id="theme-dropdown-container">
@@ -307,39 +176,6 @@ export class AppNav {
       appSwitcherContainer?.classList.toggle('open');
     });
 
-    // Screen Presets dropdown
-    const screenContainer = this.container.querySelector('#screen-dropdown-container');
-    this.container.querySelector('#screen-selector-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.closeAllDropdowns(screenContainer);
-      screenContainer?.classList.toggle('open');
-    });
-
-    this.container.querySelectorAll('.market-item[data-screen-id]').forEach((el) => {
-      el.addEventListener('click', () => {
-        const id = el.getAttribute('data-screen-id');
-        if (id) {
-          this.setCurrentScreen(id);
-          this.handlers.onSelectScreenPreset(id);
-          screenContainer?.classList.remove('open');
-        }
-      });
-    });
-
-    // Top Search Input
-    const searchInput = this.container.querySelector<HTMLInputElement>('#top-symbol-search-input');
-    searchInput?.addEventListener('input', () => {
-      this.handlers.onSearch(searchInput.value.trim());
-    });
-
-    // Shortcut '/' for search
-    document.addEventListener('keydown', (e) => {
-      if (e.key === '/' && document.activeElement !== searchInput) {
-        e.preventDefault();
-        searchInput?.focus();
-      }
-    });
-
     // Market selector
     const marketContainer = this.container.querySelector('#market-selector-container');
     this.container.querySelector('#market-selector-btn')?.addEventListener('click', (e) => {
@@ -357,49 +193,6 @@ export class AppNav {
           this.setupListeners();
         }
       });
-    });
-
-    // Timeframe toggle
-    this.container.querySelectorAll('.tv-timeframe-btn').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const tf = btn.getAttribute('data-tf');
-        if (tf) {
-          this.currentTimeframe = tf;
-          this.container.querySelectorAll('.tv-timeframe-btn').forEach((b) => b.classList.remove('active'));
-          btn.classList.add('active');
-        }
-      });
-    });
-
-    // Auto-refresh control (click toggles or triggers manual)
-    this.container.querySelector('#refresh-control')?.addEventListener('click', () => {
-      this.isAutoRefreshActive = !this.isAutoRefreshActive;
-      const label = this.container.querySelector('#refresh-label');
-      const dot = this.container.querySelector('.status-dot');
-      if (this.isAutoRefreshActive) {
-        if (label) label.textContent = `Live (${this.autoRefreshSeconds}s)`;
-        dot?.classList.remove('paused');
-        this.startAutoRefresh();
-      } else {
-        if (label) label.textContent = 'Manual';
-        dot?.classList.add('paused');
-        if (this.autoRefreshInterval) clearInterval(this.autoRefreshInterval);
-      }
-    });
-
-    // Drawer toggle
-    this.container.querySelector('#toggle-drawer-btn')?.addEventListener('click', () => {
-      this.handlers.onToggleDetailDrawer();
-    });
-
-    // Columns modal
-    this.container.querySelector('#top-columns-btn')?.addEventListener('click', () => {
-      this.handlers.onOpenColumnsModal();
-    });
-
-    // Export CSV
-    this.container.querySelector('#top-export-btn')?.addEventListener('click', () => {
-      this.handlers.onExportCSV();
     });
 
     // Theme dropdown
@@ -447,32 +240,6 @@ export class AppNav {
     });
   }
 
-  private startAutoRefresh() {
-    if (this.autoRefreshInterval) clearInterval(this.autoRefreshInterval);
-    if (!this.isAutoRefreshActive) return;
-
-    this.autoRefreshInterval = window.setInterval(() => {
-      // Simulate real-time tick injection via dataLayer
-      const instruments = dataLayer.getInstruments();
-      if (instruments.length > 0) {
-        const randomInst = instruments[Math.floor(Math.random() * instruments.length)];
-        const delta = (Math.random() - 0.48) * (randomInst.price * 0.006);
-        const newPrice = Math.max(1, randomInst.price + delta);
-        const change = newPrice - (randomInst.price - randomInst.change);
-        const changePercent = (change / (newPrice - change)) * 100;
-
-        dataLayer.emitTick({
-          symbol: randomInst.symbol,
-          price: newPrice,
-          change: change,
-          changePercent: changePercent,
-          volume: randomInst.volume + Math.floor(Math.random() * 5000),
-          timestamp: Date.now(),
-        });
-      }
-    }, 1500);
-  }
-
   private closeAllDropdowns(except?: Element | null) {
     this.container.querySelectorAll('.app-switcher-wrapper, .market-selector-wrapper, .dropdown-wrapper').forEach((d) => {
       if (d !== except) d.classList.remove('open');
@@ -497,6 +264,6 @@ export class AppNav {
   }
 
   public destroy() {
-    if (this.autoRefreshInterval) clearInterval(this.autoRefreshInterval);
+    // cleanup
   }
 }

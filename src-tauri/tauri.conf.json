@@ -5,9 +5,9 @@
   "identifier": "com.marketcalls.honba",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5174",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../web/dist"
+    "frontendDist": "../web2/dist"
   },
   "app": {
     "windows": [

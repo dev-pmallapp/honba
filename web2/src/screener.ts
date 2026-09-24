@@ -83,32 +83,17 @@ class ScreenerApp {
       () => this.columnModal?.open()
     );
 
-    // 5. Top Navigation Bar
-    this.nav = new AppNav(navContainer, 'screener', {
-      onSearch: (query) => {
-        this.filterBar?.setSearch(query);
-      },
-      onSelectScreenPreset: (presetId) => {
-        this.filterBar?.setQuickPreset(presetId);
-      },
-      onToggleDetailDrawer: () => {
-        this.detailDrawer?.toggleCollapse();
-      },
-      onOpenColumnsModal: () => {
-        this.columnModal?.open();
-      },
-      onExportCSV: () => {
-        this.exportCSV();
-      },
-    });
+    // 5. Top Navigation Bar (Global Platform Nav)
+    this.nav = new AppNav(navContainer, 'screener');
 
-    // 6. Secondary Filter & Controls Bar
+    // 6. Screener Filter & Action Toolbar (Header, Presets, Columns, Export, Drawer, Filters)
     this.filterBar = new FilterBar(
       filterContainer,
       (criteria) => this.handleFilterChange(criteria),
       () => this.filtersModal?.open(this.filterBar?.getCriteria().advanced),
       () => this.columnModal?.open(),
-      () => this.detailDrawer?.toggleCollapse()
+      () => this.detailDrawer?.toggleCollapse(),
+      () => this.exportCSV()
     );
 
     // 7. Signature TradingView Bottom Dock Bar
@@ -133,10 +118,6 @@ class ScreenerApp {
   }
 
   private handleFilterChange(criteria: ScreenerFilterCriteria) {
-    // Synchronize nav screens dropdown
-    if (criteria.quickPreset) {
-      this.nav?.setCurrentScreen(criteria.quickPreset);
-    }
 
     // Adapt visible columns based on category tab
     if (criteria.tab === 'valuation') {

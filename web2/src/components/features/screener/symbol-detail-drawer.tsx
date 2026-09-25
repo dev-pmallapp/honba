@@ -288,11 +288,42 @@ export const SymbolDetailDrawer: React.FC = () => {
       ? paddingY + chartH - ((activeCandle.close - minPrice) / priceRange) * chartH
       : null;
 
-  // 52-Week range percentage
-  const range52Min = inst.low52;
-  const range52Max = inst.high52;
-  const range52Delta = range52Max - range52Min || 1;
-  const range52Pct = Math.max(0, Math.min(100, ((inst.price - range52Min) / range52Delta) * 100));
+  // Range calculation based on selected chart timeline (1D, 5D, 1M, 1Y)
+  const rangeData = useMemo(() => {
+    let title = '52-Week Range';
+    let min = inst.low52;
+    let max = inst.high52;
+
+    if (chartRange === '1D') {
+      title = "Day's Range";
+      min = minPrice;
+      max = maxPrice;
+    } else if (chartRange === '5D') {
+      title = '5-Day Range';
+      min = minPrice;
+      max = maxPrice;
+    } else if (chartRange === '1M') {
+      title = '1-Month Range';
+      min = minPrice;
+      max = maxPrice;
+    } else {
+      title = '52-Week Range';
+      min = inst.low52 ? Math.min(inst.low52, minPrice) : minPrice;
+      max = inst.high52 ? Math.max(inst.high52, maxPrice) : maxPrice;
+    }
+
+    const effectiveMin = Math.min(min, inst.price);
+    const effectiveMax = Math.max(max, inst.price);
+    const delta = effectiveMax - effectiveMin || 1;
+    const pct = Math.max(0, Math.min(100, ((inst.price - effectiveMin) / delta) * 100));
+
+    return {
+      title,
+      min: effectiveMin,
+      max: effectiveMax,
+      pct,
+    };
+  }, [chartRange, minPrice, maxPrice, inst.low52, inst.high52, inst.price]);
 
   const renderPerfRow = (label: string, val?: number) => {
     if (val === undefined || val === null) return null;
@@ -610,22 +641,31 @@ export const SymbolDetailDrawer: React.FC = () => {
           </div>
         </div>
 
-        {/* 52-Week Range Bar */}
+        {/* Dynamic Range Bar based on chart timeline (1D, 5D, 1M, 1Y) */}
         <div className="drawer-section">
           <div className="drawer-section-header">
-            <div className="drawer-section-title">52-Week Range</div>
+            <div className="drawer-section-title">{rangeData.title}</div>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
+              {chartRange}
+            </span>
           </div>
           <div className="range52-wrapper">
             <div className="range52-endpoints">
-              <span>{market.currencySymbol}{formatNumber(range52Min)}</span>
+              <span className="range-endpoint">
+                <span className="range-tag range-tag-low">LOW</span>
+                <span>{market.currencySymbol}{formatNumber(rangeData.min)}</span>
+              </span>
               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                 Current: {market.currencySymbol}{formatNumber(inst.price)}
               </span>
-              <span>{market.currencySymbol}{formatNumber(range52Max)}</span>
+              <span className="range-endpoint">
+                <span className="range-tag range-tag-high">HIGH</span>
+                <span>{market.currencySymbol}{formatNumber(rangeData.max)}</span>
+              </span>
             </div>
             <div className="range52-track">
-              <div className="range52-fill" style={{ width: `${range52Pct}%` }} />
-              <div className="range52-pip" style={{ left: `${range52Pct}%` }} />
+              <div className="range52-fill" style={{ width: `${rangeData.pct}%` }} />
+              <div className="range52-pip" style={{ left: `${rangeData.pct}%` }} />
             </div>
           </div>
         </div>

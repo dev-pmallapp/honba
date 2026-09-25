@@ -1785,9 +1785,38 @@
 .range52-endpoints {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.range-endpoint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.range-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+  line-height: 1.2;
+}
+
+.range-tag-low {
+  color: var(--bearish);
+  border-color: rgba(242, 54, 69, 0.25);
+  background: rgba(242, 54, 69, 0.08);
+}
+
+.range-tag-high {
+  color: var(--bullish);
+  border-color: rgba(8, 153, 129, 0.25);
+  background: rgba(8, 153, 129, 0.08);
 }
 
 .range52-track {

@@ -262,12 +262,14 @@ export class SymbolDetailDrawer {
             </div>
           </div>
 
-          <!-- 52-Week Range Bar -->
-          <div class="drawer-section">
+          <!-- Range Bar -->
+          <div class="drawer-section" id="drawer-range-section">
             <div class="drawer-section-header">
-              <div class="drawer-section-title">52-Week Range</div>
+              <div class="drawer-section-title" id="drawer-range-title">${this.getRangeTitle(this.chartRange)}</div>
             </div>
-            ${this.render52WeekBar(inst, market.currencySymbol)}
+            <div id="drawer-range-container">
+              ${this.render52WeekBar(inst, market.currencySymbol)}
+            </div>
           </div>
 
           <!-- Key Financials & Valuation -->
@@ -357,6 +359,15 @@ export class SymbolDetailDrawer {
       if (chartBox) {
         chartBox.innerHTML = this.renderChartSvg(this.currentInstrument);
         this.attachChartInteractions();
+      }
+      const rangeTitle = this.container.querySelector('#drawer-range-title');
+      if (rangeTitle) {
+        rangeTitle.textContent = this.getRangeTitle(range);
+      }
+      const rangeContainer = this.container.querySelector('#drawer-range-container');
+      if (rangeContainer) {
+        const market = dataLayer.getCurrentMarketInfo();
+        rangeContainer.innerHTML = this.render52WeekBar(this.currentInstrument, market.currencySymbol, range);
       }
     }
   }
@@ -690,19 +701,53 @@ export class SymbolDetailDrawer {
     `;
   }
 
-  private render52WeekBar(inst: Instrument, currency: string): string {
-    const min = inst.low52;
-    const max = inst.high52;
+  private getRangeTitle(range: ChartRange): string {
+    switch (range) {
+      case '1D':
+        return "Day's Range";
+      case '5D':
+        return '5-Day Range';
+      case '1M':
+        return '1-Month Range';
+      case '1Y':
+      default:
+        return '52-Week Range';
+    }
+  }
+
+  private render52WeekBar(inst: Instrument, currency: string, range: ChartRange = this.chartRange): string {
+    const candles = this.getCandlesForRange(inst, range);
+    const minPrice = Math.min(...candles.map((c) => c.low));
+    const maxPrice = Math.max(...candles.map((c) => c.high));
+
+    let min = inst.low52;
+    let max = inst.high52;
+    if (range === '1D' || range === '5D' || range === '1M') {
+      min = minPrice;
+      max = maxPrice;
+    } else {
+      min = inst.low52 ? Math.min(inst.low52, minPrice) : minPrice;
+      max = inst.high52 ? Math.max(inst.high52, maxPrice) : maxPrice;
+    }
+
+    const effectiveMin = Math.min(min, inst.price);
+    const effectiveMax = Math.max(max, inst.price);
     const curr = inst.price;
-    const range = max - min || 1;
-    const pct = Math.max(0, Math.min(100, ((curr - min) / range) * 100));
+    const rDelta = effectiveMax - effectiveMin || 1;
+    const pct = Math.max(0, Math.min(100, ((curr - effectiveMin) / rDelta) * 100));
 
     return `
       <div class="range52-wrapper">
         <div class="range52-endpoints">
-          <span>${currency}${this.formatNumber(min)}</span>
+          <span class="range-endpoint">
+            <span class="range-tag range-tag-low">LOW</span>
+            <span>${currency}${this.formatNumber(effectiveMin)}</span>
+          </span>
           <span style="font-size: 10px; color: var(--text-muted);">Current: ${currency}${this.formatNumber(curr)}</span>
-          <span>${currency}${this.formatNumber(max)}</span>
+          <span class="range-endpoint">
+            <span class="range-tag range-tag-high">HIGH</span>
+            <span>${currency}${this.formatNumber(effectiveMax)}</span>
+          </span>
         </div>
         <div class="range52-track">
           <div class="range52-fill" style="width: ${pct}%;"></div>

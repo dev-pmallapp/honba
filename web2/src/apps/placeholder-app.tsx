@@ -37,7 +37,6 @@ export const PlaceholderApp: React.FC<PlaceholderProps> = ({ appId }) => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>{appMeta.name}</h1>
-              <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>{appMeta.jpName}</span>
               <span className="badge badge-bullish" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <Sparkles size={11} /> Connected to Data Layer
               </span>
@@ -77,10 +76,11 @@ export const PlaceholderApp: React.FC<PlaceholderProps> = ({ appId }) => {
               justifyContent: 'center',
               color: 'var(--primary)',
               fontSize: 22,
+              fontWeight: 800,
               marginBottom: 16,
             }}
           >
-            相
+            H
           </div>
           <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
             {appMeta.name} Modern Workspace

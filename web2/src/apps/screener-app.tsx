@@ -19,6 +19,7 @@ import { FiltersModal } from '../components/features/screener/filters-modal';
 
 import { useLayoutStore } from '../layouts/use-layout-store';
 import { ScreenerHeatmap } from '../components/features/screener/screener-heatmap';
+import { instrumentBelongsToIndex } from '../core/indices';
 
 export const ScreenerApp: React.FC = () => {
   const instruments = useScreenerStore((state) => state.instruments);
@@ -59,6 +60,12 @@ export const ScreenerApp: React.FC = () => {
       // 3. Advanced Filters
       if (advanced.sector !== 'all' && inst.sector !== advanced.sector) return false;
       if (advanced.exchange !== 'all' && inst.exchange !== advanced.exchange) return false;
+
+      // Index Filter (Multi-select)
+      if (advanced.indices && advanced.indices.length > 0) {
+        const matchesIndex = advanced.indices.some((idxCode) => instrumentBelongsToIndex(inst, idxCode));
+        if (!matchesIndex) return false;
+      }
 
       if (advanced.marketCapTier !== 'all') {
         const cap = inst.marketCap;

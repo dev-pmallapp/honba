@@ -21,6 +21,8 @@ import {
   Check,
   X,
 } from 'lucide-react';
+import { IndexDrawer } from './index-drawer';
+import { getIndicesForMarket } from '../../../core/indices';
 
 export const SCREEN_PRESETS = [
   { id: 'all', name: 'All stocks', icon: '📋' },
@@ -345,36 +347,30 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </PillDropdown>
         </div>
 
-        {/* Index Pill */}
+        {/* Index Pill (TradingView Index Drawer) */}
         <div className="tv-filter-pill-wrapper">
           <button
             ref={indexBtnRef}
-            className={`tv-filter-pill ${advanced.exchange !== 'all' ? 'active' : ''}`}
+            className={`tv-filter-pill ${advanced.indices && advanced.indices.length > 0 ? 'active' : ''}`}
             onClick={() => toggleDropdown('index')}
           >
-            <span>Index: {advanced.exchange === 'all' ? 'All' : advanced.exchange}</span>
+            <span>
+              {advanced.indices && advanced.indices.length === 1
+                ? `Index: ${getIndicesForMarket(currentMarket).find((i) => i.code === advanced.indices[0])?.name || advanced.indices[0]}`
+                : advanced.indices && advanced.indices.length > 1
+                ? `Index: ${advanced.indices.length} selected`
+                : 'Index: All'}
+            </span>
             <ChevronDown size={11} style={{ opacity: 0.6 }} />
           </button>
-          <PillDropdown
+          <IndexDrawer
             isOpen={activeDropdown === 'index'}
             onClose={() => setActiveDropdown(null)}
             triggerRef={indexBtnRef}
-            width={180}
-          >
-            {['all', 'NSE', 'BSE', 'NIFTY50'].map((idx) => (
-              <div
-                key={idx}
-                className={`tv-pill-option ${advanced.exchange === idx ? 'selected' : ''}`}
-                onClick={() => {
-                  setAdvanced({ exchange: idx });
-                  setActiveDropdown(null);
-                }}
-              >
-                <span>{idx === 'all' ? 'All Indices' : idx}</span>
-                {advanced.exchange === idx && <Check size={13} />}
-              </div>
-            ))}
-          </PillDropdown>
+            selectedIndices={advanced.indices || []}
+            onSelectIndices={(indices) => setAdvanced({ indices })}
+            country={currentMarket}
+          />
         </div>
 
         {/* Price Pill */}

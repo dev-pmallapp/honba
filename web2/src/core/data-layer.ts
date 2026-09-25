@@ -21,7 +21,7 @@ export type AppId = 'screener' | 'workbench' | 'algodesigner' | 'simulator' | 'r
 export interface AppMetadata {
   id: AppId;
   name: string;
-  jpName: string;
+  jpName?: string;
   tagline: string;
   url: string;
   icon: string;
@@ -31,7 +31,6 @@ export const HONBA_APPS: AppMetadata[] = [
   {
     id: 'screener',
     name: 'Screener',
-    jpName: '選別 (Sembetsu)',
     tagline: 'Multi-Market Quantitative Scanner & Filter',
     url: '/index.html',
     icon: 'filter',
@@ -39,7 +38,6 @@ export const HONBA_APPS: AppMetadata[] = [
   {
     id: 'workbench',
     name: 'WorkBench',
-    jpName: '作業台 (Sagyouba)',
     tagline: 'Multi-chart Analysis & Tactical Orderbook',
     url: '/workbench.html',
     icon: 'layout',
@@ -47,7 +45,6 @@ export const HONBA_APPS: AppMetadata[] = [
   {
     id: 'algodesigner',
     name: 'AlgoDesigner',
-    jpName: '設計 (Sekkei)',
     tagline: 'Visual Flow & Python Strategy Composer',
     url: '/algodesigner.html',
     icon: 'cpu',
@@ -55,7 +52,6 @@ export const HONBA_APPS: AppMetadata[] = [
   {
     id: 'simulator',
     name: 'Simulator',
-    jpName: '試行 (Shikou)',
     tagline: 'Nautilus Event-driven Tick Backtester',
     url: '/simulator.html',
     icon: 'play-circle',
@@ -63,7 +59,6 @@ export const HONBA_APPS: AppMetadata[] = [
   {
     id: 'researcher',
     name: 'Researcher',
-    jpName: '研究 (Kenkyuu)',
     tagline: 'Jesse AI Hypothesis & Robustness Lab',
     url: '/researcher.html',
     icon: 'book-open',

@@ -98,7 +98,7 @@ export const AppNav: React.FC<AppNavProps> = ({ currentAppId = 'screener' }) => 
             }}
             title="Honba Financial Suite"
           >
-            <span className="tv-brand-icon">相</span>
+            <span className="tv-brand-icon">H</span>
             <span className="tv-brand-name">HONBA</span>
             <span className="tv-app-tag">{currentApp.name}</span>
             <ChevronDown size={11} style={{ opacity: 0.7, marginLeft: 2 }} />
@@ -116,7 +116,7 @@ export const AppNav: React.FC<AppNavProps> = ({ currentAppId = 'screener' }) => 
                   <div className="app-menu-icon">{getAppIcon(app.icon)}</div>
                   <div className="app-menu-info">
                     <div className="app-menu-title">
-                      {app.name} <span className="app-menu-jp">{app.jpName}</span>
+                      {app.name}
                     </div>
                     <div className="app-menu-desc">{app.tagline}</div>
                   </div>

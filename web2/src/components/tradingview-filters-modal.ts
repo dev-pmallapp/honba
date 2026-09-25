@@ -8,6 +8,7 @@ export interface AdvancedFilterState {
   sector: string;
   marketCapTier: string;
   exchange: string;
+  indices: string[];
   minPrice: number | null;
   maxPrice: number | null;
   minChangePercent?: number | null;
@@ -30,6 +31,7 @@ export const DEFAULT_ADVANCED_FILTERS: AdvancedFilterState = {
   sector: 'all',
   marketCapTier: 'all',
   exchange: 'all',
+  indices: [],
   minPrice: null,
   maxPrice: null,
   minChangePercent: null,

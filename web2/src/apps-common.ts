@@ -49,7 +49,6 @@ export function initHonbaApp(appId: AppId) {
           <div>
             <div style="display: flex; align-items: center; gap: 10px;">
               <h1 style="font-size: 22px; font-weight: 700; color: var(--text-primary);">${appMeta.name}</h1>
-              <span style="font-size: 14px; color: var(--text-muted);">${appMeta.jpName}</span>
               <span class="badge badge-bullish">Connected to Data Layer</span>
             </div>
             <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">${appMeta.tagline}</p>

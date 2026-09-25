@@ -25,6 +25,7 @@ export const FiltersModal: React.FC = () => {
     if (filters.sector !== 'all') count++;
     if (filters.marketCapTier !== 'all') count++;
     if (filters.exchange !== 'all') count++;
+    if (filters.indices && filters.indices.length > 0) count++;
     if (filters.minPrice !== null || filters.maxPrice !== null) count++;
     if (filters.peMin !== null || filters.peMax !== null) count++;
     if (filters.minDividendYield !== null) count++;

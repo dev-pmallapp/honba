@@ -45,7 +45,7 @@ export class AppNav {
           <!-- TradingView Styled Brand & App Switcher -->
           <div class="app-switcher-wrapper" id="app-switcher-container">
             <button class="tv-brand-btn" id="app-switcher-btn" title="Honba Financial Suite">
-              <span class="tv-brand-icon">相</span>
+              <span class="tv-brand-icon">H</span>
               <span class="tv-brand-name">HONBA</span>
               <span class="tv-app-tag">${currentApp.name}</span>
               <span class="app-caret" style="font-size: 8px;">▼</span>
@@ -61,7 +61,7 @@ export class AppNav {
                     </svg>
                   </div>
                   <div class="app-menu-info">
-                    <div class="app-menu-title">${app.name} <span class="app-menu-jp">${app.jpName}</span></div>
+                    <div class="app-menu-title">${app.name}</div>
                     <div class="app-menu-desc">${app.tagline}</div>
                   </div>
                 </a>

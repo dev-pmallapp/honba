@@ -771,3 +771,6 @@ export const SymbolDetailDrawer: React.FC = () => {
     </aside>
   );
 };
+
+export const HbSymbolDetailDrawer = SymbolDetailDrawer;
+

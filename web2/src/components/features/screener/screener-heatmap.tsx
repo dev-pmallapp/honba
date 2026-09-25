@@ -141,3 +141,6 @@ export const ScreenerHeatmap: React.FC<ScreenerHeatmapProps> = ({ instruments })
     </div>
   );
 };
+
+export const HbScreenerHeatmap = ScreenerHeatmap;
+

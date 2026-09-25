@@ -305,3 +305,6 @@ export const IndexDrawer: React.FC<IndexDrawerProps> = ({
     </PillDropdown>
   );
 };
+
+export const HbIndexDrawer = IndexDrawer;
+

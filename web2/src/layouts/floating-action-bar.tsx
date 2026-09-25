@@ -1,6 +1,8 @@
 import React from 'react';
 import { useScreenerStore } from '../core/store/use-screener-store';
 import { ExternalLink, Play, Trash2 } from 'lucide-react';
+import { HbButton } from '../components/ui/hb-button';
+import { HbBubble } from '../components/ui/hb-bubble';
 
 export const FloatingActionBar: React.FC = () => {
   const shortlistedSymbols = useScreenerStore((state) => state.shortlistedSymbols);
@@ -19,37 +21,44 @@ export const FloatingActionBar: React.FC = () => {
   };
 
   return (
-    <div className="shortlist-action-bar visible" id="floating-action-bar">
+    <div className="shortlist-action-bar hb-floating-action-bar visible" id="floating-action-bar">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span className="shortlist-count-badge">{shortlistedSymbols.length}</span>
+        <HbBubble variant="accent" size="sm">
+          {shortlistedSymbols.length}
+        </HbBubble>
         <span style={{ fontSize: 12, fontWeight: 600 }}>Selected</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          className="shortlist-btn shortlist-btn-primary"
+        <HbButton
+          variant="primary"
+          size="sm"
           onClick={handleOpenWorkbench}
+          iconRight={<ExternalLink size={13} />}
           title="Open selected symbols in WorkBench"
         >
-          <span>Open in WorkBench</span>
-          <ExternalLink size={13} style={{ marginLeft: 4 }} />
-        </button>
-        <button
-          className="shortlist-btn shortlist-btn-secondary"
+          Open in WorkBench
+        </HbButton>
+        <HbButton
+          variant="secondary"
+          size="sm"
           onClick={handleOpenSim}
+          icon={<Play size={12} />}
           title="Open in Nautilus Simulator"
         >
-          <Play size={12} style={{ marginRight: 4 }} />
-          <span>Simulate</span>
-        </button>
-        <button
-          className="shortlist-btn shortlist-btn-secondary shortlist-btn-danger"
+          Simulate
+        </HbButton>
+        <HbButton
+          variant="danger"
+          size="sm"
           onClick={clearShortlist}
+          icon={<Trash2 size={12} />}
           title="Clear all selections"
         >
-          <Trash2 size={12} style={{ marginRight: 4 }} />
-          <span>Clear</span>
-        </button>
+          Clear
+        </HbButton>
       </div>
     </div>
   );
 };
+
+export const HbFloatingActionBar = FloatingActionBar;

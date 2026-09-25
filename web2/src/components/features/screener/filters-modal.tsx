@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useScreenerStore } from '../../../core/store/use-screener-store';
-import { AdvancedFilterState, DEFAULT_ADVANCED_FILTERS } from '../../tradingview-filters-modal';
+import { AdvancedFilterState, DEFAULT_ADVANCED_FILTERS } from '../../../core/filters';
 import { X, RotateCcw, Check } from 'lucide-react';
+import { HbBubble } from '../../ui/hb-bubble';
 
 export const FiltersModal: React.FC = () => {
   const isOpen = useScreenerStore((state) => state.isFilterModalOpen);
@@ -53,15 +54,17 @@ export const FiltersModal: React.FC = () => {
   return (
     <div className="modal-overlay open" onClick={() => setOpen(false)}>
       <div
-        className="modal-dialog tv-filters-dialog"
+        className="modal-dialog hb-filters-dialog tv-filters-dialog"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div className="modal-title">Filters</div>
+            <div className="modal-title">Honba Screener Filters</div>
             {activeCount > 0 && (
-              <span className="tv-filter-count-badge">{activeCount} active</span>
+              <HbBubble variant="accent" size="sm" dot>
+                {activeCount} active
+              </HbBubble>
             )}
           </div>
           <button
@@ -74,11 +77,11 @@ export const FiltersModal: React.FC = () => {
         </div>
 
         {/* Body Split */}
-        <div className="tv-filters-body">
+        <div className="hb-filters-body tv-filters-body">
           {/* Sidebar */}
-          <aside className="tv-filters-sidebar">
+          <aside className="hb-filters-sidebar tv-filters-sidebar">
             <button
-              className={`tv-filter-cat-btn ${activeCat === 'descriptive' ? 'active' : ''}`}
+              className={`hb-filter-cat-btn tv-filter-cat-btn ${activeCat === 'descriptive' ? 'active' : ''}`}
               onClick={() => setActiveCat('descriptive')}
             >
               <span>Descriptive</span>
@@ -87,7 +90,7 @@ export const FiltersModal: React.FC = () => {
               </div>
             </button>
             <button
-              className={`tv-filter-cat-btn ${activeCat === 'financials' ? 'active' : ''}`}
+              className={`hb-filter-cat-btn tv-filter-cat-btn ${activeCat === 'financials' ? 'active' : ''}`}
               onClick={() => setActiveCat('financials')}
             >
               <span>Financials & Valuation</span>
@@ -96,7 +99,7 @@ export const FiltersModal: React.FC = () => {
               </div>
             </button>
             <button
-              className={`tv-filter-cat-btn ${activeCat === 'technicals' ? 'active' : ''}`}
+              className={`hb-filter-cat-btn tv-filter-cat-btn ${activeCat === 'technicals' ? 'active' : ''}`}
               onClick={() => setActiveCat('technicals')}
             >
               <span>Technicals & Momentum</span>
@@ -107,7 +110,7 @@ export const FiltersModal: React.FC = () => {
           </aside>
 
           {/* Content Area */}
-          <main className="tv-filters-content-area" style={{ maxHeight: 420, overflowY: 'auto' }}>
+          <main className="hb-filters-content-area tv-filters-content-area" style={{ maxHeight: 420, overflowY: 'auto' }}>
             {activeCat === 'descriptive' && (
               <div className="filter-category-panel">
                 <div className="filter-field-row">
@@ -385,7 +388,7 @@ export const FiltersModal: React.FC = () => {
             <button className="nav-icon-btn cancel-filters-btn" onClick={() => setOpen(false)}>
               Close
             </button>
-            <button className="shortlist-btn shortlist-btn-primary apply-tv-filters-btn" onClick={handleApply}>
+            <button className="shortlist-btn shortlist-btn-primary hb-button hb-button--primary apply-hb-filters-btn apply-tv-filters-btn" onClick={handleApply}>
               <Check size={14} style={{ marginRight: 4 }} />
               <span>Apply Filters {activeCount > 0 ? `(${activeCount})` : ''}</span>
             </button>
@@ -395,3 +398,5 @@ export const FiltersModal: React.FC = () => {
     </div>
   );
 };
+
+export const HbFiltersModal = FiltersModal;

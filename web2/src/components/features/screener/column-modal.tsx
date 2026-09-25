@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useScreenerStore } from '../../../core/store/use-screener-store';
-import { ALL_COLUMNS, ColumnDef } from '../../column-modal';
+import { ALL_COLUMNS, ColumnDef } from '../../../core/columns';
 import { X, RotateCcw, Check } from 'lucide-react';
 
 export const ColumnModal: React.FC = () => {
@@ -123,3 +123,5 @@ export const ColumnModal: React.FC = () => {
     </div>
   );
 };
+
+export const HbColumnModal = ColumnModal;

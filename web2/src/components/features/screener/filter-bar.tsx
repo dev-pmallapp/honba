@@ -38,7 +38,7 @@ export const SCREEN_PRESETS = [
   { id: 'overbought', name: 'Overbought RSI (>70)', icon: '⚡' },
 ];
 
-export const TRADINGVIEW_TABS = [
+export const HONBA_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'performance', label: 'Performance' },
   { id: 'technicals', label: 'Technicals' },
@@ -347,7 +347,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </PillDropdown>
         </div>
 
-        {/* Index Pill (TradingView Index Drawer) */}
+        {/* Index Pill (Honba Index Drawer) */}
         <div className="tv-filter-pill-wrapper">
           <button
             ref={indexBtnRef}
@@ -872,7 +872,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
           {/* View Category Tabs */}
           <div className="tv-tabs-group">
-            {TRADINGVIEW_TABS.map((tab) => (
+            {HONBA_TABS.map((tab) => (
               <button
                 key={tab.id}
                 className={`tv-category-tab ${activeTab === tab.id ? 'active' : ''}`}
@@ -920,3 +920,5 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     </div>
   );
 };
+
+export const HbFilterBar = FilterBar;

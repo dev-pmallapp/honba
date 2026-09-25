@@ -7,8 +7,8 @@
 import { create } from 'zustand';
 import { Instrument, CountryCode } from '../market-data';
 import { dataLayer } from '../data-layer';
-import { ALL_COLUMNS, ColumnDef, TAB_COLUMN_PRESETS } from '../../components/column-modal';
-import { AdvancedFilterState, DEFAULT_ADVANCED_FILTERS } from '../../components/tradingview-filters-modal';
+import { ALL_COLUMNS, ColumnDef, TAB_COLUMN_PRESETS } from '../columns';
+import { AdvancedFilterState, DEFAULT_ADVANCED_FILTERS } from '../filters';
 
 export interface ScreenerState {
   // Market & Instruments

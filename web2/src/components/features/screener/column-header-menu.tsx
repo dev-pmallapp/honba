@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ColumnDef } from '../../column-modal';
+import { ColumnDef } from '../../../core/columns';
 import { useScreenerStore } from '../../../core/store/use-screener-store';
-import { AdvancedFilterState } from '../../tradingview-filters-modal';
+import { AdvancedFilterState } from '../../../core/filters';
 import {
   Filter,
   ArrowUp,

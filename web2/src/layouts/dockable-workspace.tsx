@@ -93,3 +93,6 @@ export const DockableWorkspace: React.FC<DockableWorkspaceProps> = ({
     </div>
   );
 };
+
+export const HbDockableWorkspace = DockableWorkspace;
+

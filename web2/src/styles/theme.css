@@ -1,12 +1,12 @@
 /**
- * Honba & TradingView Design System Tokens
- * Exact replica of TradingView UI aesthetics, with support for customizable themes.
+ * Honba Design System Tokens
+ * Highly refined dark and light themes, typography stacks, and layout view modes.
  */
 
 :root,
-[data-theme='tradingview-dark'],
+[data-theme='honba-dark'],
 [data-theme='dark'] {
-  /* Default: TradingView Dark */
+  /* Default: Honba Dark */
   --bg-app: #131722;
   --bg-surface: #1e222d;
   --bg-surface-elevated: #2a2e39;
@@ -59,8 +59,8 @@
   --transition-normal: 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* TradingView Authentic Clean Light */
-[data-theme='tradingview-light'],
+/* Honba Clean Light */
+[data-theme='honba-light'],
 [data-theme='light'] {
   --bg-app: #ffffff;
   --bg-surface: #f0f3fa;
@@ -184,7 +184,7 @@
 }
 
 /* Typography presets */
-[data-typography='tradingview-sans'] {
+[data-typography='honba-sans'] {
   --font-family-sans: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
   --font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }

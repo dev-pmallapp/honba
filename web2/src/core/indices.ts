@@ -1,7 +1,7 @@
 /**
  * Market Indices & Benchmarks Registry
  * Provides comprehensive index definitions (Nifty 50, Sensex, Bank Nifty, Nifty 500, Sectoral, etc.)
- * and intelligent instrument-to-index matching identical to TradingView screener.
+ * and intelligent instrument-to-index matching for multi-market screening.
  */
 
 import { CountryCode, Instrument } from './market-data';

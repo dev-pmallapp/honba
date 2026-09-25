@@ -1,6 +1,6 @@
 /**
- * TradingView Screener Styles
- * Exact replica of TradingView's screener table, right detail pane, mini charts,
+ * Honba Screener Styles
+ * Styling for screener table, right detail pane, mini charts,
  * speedometer gauge, and responsive split workspace.
  */
 
@@ -23,7 +23,7 @@
   transition: all var(--transition-normal);
 }
 
-/* ================= TRADINGVIEW AUTHENTIC SCREENER HEADER & CONTROLS ================= */
+/* ================= HONBA SCREENER HEADER & CONTROLS ================= */
 .tv-screener-header-container {
   display: flex;
   flex-direction: column;
@@ -239,7 +239,7 @@
   background: var(--accent-subtle);
 }
 
-/* TradingView Index Drawer Styles */
+/* Honba Index Drawer Styles */
 .tv-index-drawer-container {
   display: flex;
   flex-direction: column;
@@ -641,7 +641,7 @@
   padding: 0 4px;
 }
 
-/* ================= TRADINGVIEW COMPACT AUTHENTIC TABLE ================= */
+/* ================= HONBA COMPACT TABLE ================= */
 .tv-table-wrapper {
   flex: 1;
   overflow: auto;
@@ -743,7 +743,7 @@
   margin-top: 1px;
 }
 
-/* Active Search Input inside Symbol Header (TradingView Replica) */
+/* Active Search Input inside Symbol Header */
 .tv-th-symbol-search-active {
   display: flex;
   align-items: center;
@@ -937,7 +937,7 @@
   font-weight: 500;
 }
 
-/* Analyst Ratings with Up/Down arrows (Clean TradingView style) */
+/* Analyst Ratings with Up/Down arrows */
 .tv-analyst-badge {
   display: inline-flex;
   align-items: center;
@@ -1174,7 +1174,7 @@
   white-space: nowrap;
 }
 
-/* Dividend Tag (Like TradingView's compact 'D' badge) */
+/* Dividend Tag (Compact 'D' badge) */
 .dividend-tag {
   font-size: 9px;
   font-weight: 800;
@@ -1196,7 +1196,7 @@
   font-family: var(--font-family-mono);
 }
 
-/* TradingView Double-Chevron Analyst & Technical Rating */
+/* Double-Chevron Analyst & Technical Rating */
 .tv-rating-badge {
   display: inline-flex;
   align-items: center;
@@ -1369,7 +1369,7 @@
   border: 1px solid var(--bearish);
 }
 
-/* ================= TRADINGVIEW DETAIL DRAWER & SECONDARY PANEL ================= */
+/* ================= HONBA DETAIL DRAWER & SECONDARY PANEL ================= */
 .workspace-secondary-panel {
   display: flex;
   flex-direction: column;
@@ -2028,7 +2028,7 @@
   border-color: var(--accent-primary);
 }
 
-/* ================= TRADINGVIEW COLUMN HEADER POPOVER & FILTER MENU ================= */
+/* ================= HONBA COLUMN HEADER POPOVER & FILTER MENU ================= */
 .tv-col-menu-popover {
   background: var(--bg-surface-elevated, #1e222d);
   border: 1px solid var(--border-medium, #2a2e39);
@@ -2302,7 +2302,7 @@
   margin-left: 3px;
 }
 
-/* ================= TRADINGVIEW STOCK HEATMAP VIEW ================= */
+/* ================= HONBA STOCK HEATMAP VIEW ================= */
 .tv-heatmap-container {
   display: flex;
   flex-direction: column;

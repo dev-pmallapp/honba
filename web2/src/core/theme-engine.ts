@@ -1,17 +1,20 @@
 /**
  * Honba Theme & Layout Engine
- * Manages authentic TradingView palettes and Honba Shibui presets,
+ * Manages Honba design tokens, color palettes,
  * typography stacks, and layout view modes.
  */
 
 export type ColorPalette =
-  | 'tradingview-dark'
-  | 'tradingview-light'
   | 'honba-dark'
+  | 'honba-light'
   | 'tokyo-midnight'
   | 'kyoto-mist';
 
-export type TypographyPreset = 'tradingview-sans' | 'inter-mono' | 'jakarta-fira' | 'system-pro';
+export type TypographyPreset =
+  | 'honba-sans'
+  | 'inter-mono'
+  | 'jakarta-fira'
+  | 'system-pro';
 export type LayoutPreset = 'default' | 'full-table' | 'compact-matrix';
 
 export interface ThemeConfig {
@@ -21,8 +24,8 @@ export interface ThemeConfig {
 }
 
 const DEFAULT_THEME_CONFIG: ThemeConfig = {
-  palette: 'tradingview-dark',
-  typography: 'tradingview-sans',
+  palette: 'honba-dark',
+  typography: 'honba-sans',
   layout: 'default',
 };
 

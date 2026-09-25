@@ -21,34 +21,34 @@ export const BottomBar: React.FC = () => {
   const market = dataLayer.getCurrentMarketInfo();
 
   return (
-    <footer className="tradingview-bottom-bar" id="bottom-bar-container">
+    <footer className="hb-bottom-bar" id="bottom-bar-container">
       <div className="bottom-bar-left">
-        <button className="tv-bottom-tab active" data-tab="screener">
+        <button className="hb-bottom-tab tv-bottom-tab active" data-tab="screener">
           <SlidersHorizontal size={13} style={{ marginRight: 6 }} />
           <span>Stock Screener</span>
         </button>
-        <a href="/algodesigner.html" className="tv-bottom-tab" data-tab="pine">
+        <a href="/algodesigner.html" className="hb-bottom-tab tv-bottom-tab" data-tab="algodesigner">
           <Code2 size={13} style={{ marginRight: 6 }} />
-          <span>Pine Editor</span>
+          <span>Algo Designer</span>
         </a>
-        <a href="/simulator.html" className="tv-bottom-tab" data-tab="strategy">
+        <a href="/simulator.html" className="hb-bottom-tab tv-bottom-tab" data-tab="simulator">
           <PlayCircle size={13} style={{ marginRight: 6 }} />
-          <span>Strategy Tester</span>
+          <span>Backtest Simulator</span>
         </a>
-        <a href="/workbench.html" className="tv-bottom-tab" data-tab="trading">
+        <a href="/workbench.html" className="hb-bottom-tab tv-bottom-tab" data-tab="workbench">
           <BarChart3 size={13} style={{ marginRight: 6 }} />
-          <span>Trading Panel</span>
+          <span>WorkBench</span>
         </a>
       </div>
 
       <div className="bottom-bar-right">
         {shortlistedSymbols.length > 0 && (
-          <div className="tv-status-item tv-highlight" style={{ cursor: 'pointer' }}>
+          <div className="hb-status-item tv-status-item tv-highlight" style={{ cursor: 'pointer' }}>
             <span>Selected: {shortlistedSymbols.length}</span>
           </div>
         )}
         <div
-          className="tv-status-item"
+          className="hb-status-item tv-status-item"
           style={{ cursor: 'pointer' }}
           onClick={toggleLiveTicks}
           title={isLive ? 'Live Ticks Active (Click to Pause)' : 'Paused (Click to Resume)'}
@@ -56,16 +56,19 @@ export const BottomBar: React.FC = () => {
           <span className={`status-dot ${isLive ? 'live-pulsing' : ''}`} style={{ background: isLive ? 'var(--bullish)' : 'var(--text-muted)' }} />
           <span>{isLive ? 'Live Feed' : 'Market Closed'} ({market.primaryExchanges[0]})</span>
         </div>
-        <div className="tv-status-item">
+        <div className="hb-status-item tv-status-item">
           <span>Latency: <strong style={{ color: 'var(--bullish)' }}>12ms</strong></span>
         </div>
-        <div className="tv-status-item" id="bottom-clock-display">
+        <div className="hb-status-item tv-status-item" id="bottom-clock-display">
           {timeStr}
         </div>
-        <div className="tv-status-item" style={{ color: 'var(--text-muted)' }}>
+        <div className="hb-status-item tv-status-item" style={{ color: 'var(--text-muted)' }}>
           <span>UTC+5:30</span>
         </div>
       </div>
     </footer>
   );
 };
+
+export const HbBottomBar = BottomBar;
+

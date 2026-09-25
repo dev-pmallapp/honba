@@ -16,7 +16,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { ColumnHeaderMenu, isColumnFiltered } from './column-header-menu';
-import { ColumnDef } from '../../column-modal';
+import { ColumnDef } from '../../../core/columns';
 
 interface ScreenerTableProps {
   instruments: Instrument[];
@@ -631,7 +631,7 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
         </div>
       </div>
 
-      {/* TradingView Column Header Filter & Sort Popover Menu */}
+      {/* Honba Column Header Filter & Sort Popover Menu */}
       {activeMenuCol && (
         <ColumnHeaderMenu
           column={activeMenuCol.col}
@@ -643,3 +643,6 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
     </div>
   );
 };
+
+export const HbScreenerTable = ScreenerTable;
+

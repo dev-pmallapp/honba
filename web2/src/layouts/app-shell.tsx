@@ -21,3 +21,6 @@ export const AppShell: React.FC<AppShellProps> = ({ currentAppId, children }) =>
     </div>
   );
 };
+
+export const HbAppShell = AppShell;
+

@@ -204,29 +204,20 @@ export const AppNav: React.FC<AppNavProps> = ({ currentAppId = 'screener' }) => 
               className="honba-dropdown-menu"
               style={{ width: 250, right: 0, left: 'auto', display: 'block' }}
             >
-              <div className="app-menu-header">TradingView Themes</div>
-              <div
-                className={`market-item ${themeConfig.palette === 'tradingview-dark' ? 'active' : ''}`}
-                onClick={() => handlePaletteChange('tradingview-dark')}
-              >
-                <span>TradingView Dark</span>
-                <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#131722', border: '1px solid #363a45', display: 'inline-block' }} />
-              </div>
-              <div
-                className={`market-item ${themeConfig.palette === 'tradingview-light' ? 'active' : ''}`}
-                onClick={() => handlePaletteChange('tradingview-light')}
-              >
-                <span>TradingView Light</span>
-                <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffffff', border: '1px solid #d1d4dc', display: 'inline-block' }} />
-              </div>
-
-              <div className="app-menu-header" style={{ marginTop: 6 }}>Honba Custom Palettes</div>
+              <div className="app-menu-header">Honba Color Palettes</div>
               <div
                 className={`market-item ${themeConfig.palette === 'honba-dark' ? 'active' : ''}`}
                 onClick={() => handlePaletteChange('honba-dark')}
               >
-                <span>Honba Shibui (Slate)</span>
-                <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#38bdf8', display: 'inline-block' }} />
+                <span>Honba Dark</span>
+                <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#131722', border: '1px solid #363a45', display: 'inline-block' }} />
+              </div>
+              <div
+                className={`market-item ${themeConfig.palette === 'honba-light' ? 'active' : ''}`}
+                onClick={() => handlePaletteChange('honba-light')}
+              >
+                <span>Honba Light</span>
+                <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffffff', border: '1px solid #d1d4dc', display: 'inline-block' }} />
               </div>
               <div
                 className={`market-item ${themeConfig.palette === 'tokyo-midnight' ? 'active' : ''}`}
@@ -245,10 +236,10 @@ export const AppNav: React.FC<AppNavProps> = ({ currentAppId = 'screener' }) => 
 
               <div className="app-menu-header" style={{ marginTop: 6 }}>Typography Stack</div>
               <div
-                className={`market-item ${themeConfig.typography === 'tradingview-sans' ? 'active' : ''}`}
-                onClick={() => handleTypographyChange('tradingview-sans')}
+                className={`market-item ${themeConfig.typography === 'honba-sans' ? 'active' : ''}`}
+                onClick={() => handleTypographyChange('honba-sans')}
               >
-                <span>TradingView System Sans</span>
+                <span>Honba System Sans</span>
               </div>
               <div
                 className={`market-item ${themeConfig.typography === 'inter-mono' ? 'active' : ''}`}
@@ -278,3 +269,6 @@ export const AppNav: React.FC<AppNavProps> = ({ currentAppId = 'screener' }) => 
     </header>
   );
 };
+
+export const HbAppNav = AppNav;
+

@@ -31,6 +31,8 @@
   border-bottom: 1px solid var(--border-subtle);
   user-select: none;
   flex-shrink: 0;
+  position: relative;
+  z-index: 50;
 }
 
 /* Row 1: Breadcrumb, Main Title ("All stocks ⌵"), Undo/Redo & Settings */
@@ -40,6 +42,8 @@
   justify-content: space-between;
   padding: 14px 20px 8px;
   background: var(--bg-app);
+  position: relative;
+  z-index: 52;
 }
 
 .tv-title-left {
@@ -122,6 +126,8 @@
   overflow-x: auto;
   scrollbar-width: none;
   background: var(--bg-app);
+  position: relative;
+  z-index: 51;
 }
 
 .tv-filter-pills-row::-webkit-scrollbar {
@@ -192,10 +198,24 @@
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  z-index: 100;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 9999;
   min-width: 190px;
   padding: 6px 0;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: tvDropdownFadeIn 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes tvDropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .tv-pill-option {
@@ -228,6 +248,8 @@
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-app);
   min-height: 42px;
+  position: relative;
+  z-index: 49;
 }
 
 .tv-tabs-left {
@@ -387,7 +409,7 @@
   top: 0;
   z-index: 20;
   background: var(--bg-app);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-medium);
   height: 44px;
   padding: 0 12px;
   font-size: 12px;
@@ -411,7 +433,8 @@
   left: 0;
   z-index: 30;
   background: var(--bg-app);
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-table-row);
+  border-bottom: 1px solid var(--border-medium);
   text-align: left;
   min-width: 280px;
   max-width: 340px;
@@ -422,6 +445,7 @@
   flex-direction: column;
   justify-content: center;
   height: 100%;
+  cursor: pointer;
 }
 
 .tv-th-symbol-title-row {
@@ -433,6 +457,15 @@
   color: var(--text-secondary);
 }
 
+.tv-th-symbol-label {
+  cursor: pointer;
+  transition: color 0.1s ease;
+}
+
+.tv-th-symbol-label:hover {
+  color: var(--text-primary);
+}
+
 .tv-th-search-btn {
   color: var(--text-muted);
   cursor: pointer;
@@ -441,10 +474,11 @@
   background: transparent;
   border: none;
   padding: 0;
+  transition: color 0.1s ease;
 }
 
 .tv-th-search-btn:hover {
-  color: var(--text-primary);
+  color: var(--accent-primary);
 }
 
 .tv-th-count-row {
@@ -453,6 +487,62 @@
   color: var(--text-muted);
   line-height: 1.1;
   margin-top: 1px;
+}
+
+/* Active Search Input inside Symbol Header (TradingView Replica) */
+.tv-th-symbol-search-active {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+  height: 30px;
+}
+
+.tv-th-search-icon-inside {
+  position: absolute;
+  left: 8px;
+  color: var(--accent-primary);
+  pointer-events: none;
+}
+
+.tv-th-search-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 28px 0 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-primary);
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--accent-primary);
+  font-family: inherit;
+}
+
+.tv-th-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.tv-th-search-close-btn {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+
+.tv-th-search-close-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
 }
 
 .tv-screener-table th.tv-th-add-col {
@@ -471,14 +561,13 @@
 /* Table Rows */
 .tv-screener-table tbody tr {
   height: 44px;
-  border-bottom: 1px solid var(--border-subtle);
   cursor: pointer;
   transition: background 0.1s ease;
 }
 
 .tv-screener-table tbody tr td {
   padding: 0 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-table-row);
   color: var(--text-primary);
   white-space: nowrap;
   background: var(--bg-app);
@@ -506,7 +595,8 @@
   left: 0;
   z-index: 10;
   background: var(--bg-app);
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-table-row);
+  border-bottom: 1px solid var(--border-table-row);
   text-align: left;
 }
 
@@ -606,24 +696,39 @@
   padding: 0 !important;
 }
 
-.tv-analyst-badge.rating-strong-buy,
 .tv-analyst-badge.rating-buy {
   color: #089981 !important;
-  background: transparent !important;
-  border: none !important;
+  font-weight: 500;
+}
+
+.tv-analyst-badge.rating-strong-buy {
+  color: #089981 !important;
+  font-weight: 700 !important;
 }
 
 .tv-analyst-badge.rating-neutral {
   color: var(--text-secondary) !important;
-  background: transparent !important;
-  border: none !important;
+  font-weight: 500;
 }
 
-.tv-analyst-badge.rating-sell,
+.tv-analyst-badge.rating-sell {
+  color: #f23645 !important;
+  font-weight: 500;
+}
+
 .tv-analyst-badge.rating-strong-sell {
   color: #f23645 !important;
-  background: transparent !important;
-  border: none !important;
+  font-weight: 700 !important;
+}
+
+.tv-analyst-badge.rating-strong {
+  font-weight: 700 !important;
+}
+
+.tv-analyst-badge.rating-strong .tv-rating-arrow {
+  font-weight: 900;
+  display: inline-block;
+  transform: scale(1.2);
 }
 
 .tv-rating-arrow {
@@ -719,7 +824,8 @@
   z-index: 30;
   background: var(--bg-surface);
   text-align: left;
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-table-row);
+  border-bottom: 1px solid var(--border-table-row);
   min-width: 260px;
 }
 
@@ -729,7 +835,8 @@
   z-index: 10;
   background: var(--bg-surface);
   text-align: left;
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-table-row);
+  border-bottom: 1px solid var(--border-table-row);
 }
 
 /* Table Rows & Cells */
@@ -753,8 +860,8 @@
 }
 
 .tv-screener-table td {
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-table-row);
   color: var(--text-primary);
   white-space: nowrap;
   background: var(--bg-app);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Instrument } from '../../../core/market-data';
 import { useScreenerStore } from '../../../core/store/use-screener-store';
 import { useLayoutStore } from '../../../layouts/use-layout-store';
@@ -127,8 +127,15 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
   const setColumnModalOpen = useScreenerStore((state) => state.setColumnModalOpen);
 
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const searchQuery = useScreenerStore((state) => state.searchQuery);
   const setSearchQuery = useScreenerStore((state) => state.setSearchQuery);
+
+  useEffect(() => {
+    if (headerSearchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [headerSearchOpen]);
 
   const market = dataLayer.getCurrentMarketInfo();
   const visibleColumns = useMemo(() => columns.filter((c) => c.visible), [columns]);
@@ -323,8 +330,13 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
         const rating = inst.technicalRating;
         const isBullish = rating.includes('Buy');
         const isBearish = rating.includes('Sell');
+        const isStrong = rating.startsWith('Strong');
         const arrow = isBullish ? '⌃' : isBearish ? '⌄' : '—';
-        const ratingClass = isBullish ? 'rating-buy' : isBearish ? 'rating-sell' : 'rating-neutral';
+        const ratingClass = isBullish
+          ? (isStrong ? 'rating-strong-buy rating-strong' : 'rating-buy')
+          : isBearish
+          ? (isStrong ? 'rating-strong-sell rating-strong' : 'rating-sell')
+          : 'rating-neutral';
         const formattedRating =
           rating === 'Strong Buy' ? 'Strong buy' : rating === 'Strong Sell' ? 'Strong sell' : rating;
         return (
@@ -430,56 +442,71 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
           <tr>
             {visibleColumns.map((col) => {
               if (col.id === 'symbol') {
+                const isSearchActive = headerSearchOpen || searchQuery.trim() !== '';
+
                 return (
                   <th key={col.id} className="tv-th-symbol">
-                    <div className="tv-th-symbol-inner">
-                      <div className="tv-th-symbol-title-row">
-                        <button
-                          className="tv-th-search-btn"
-                          onClick={() => setHeaderSearchOpen(!headerSearchOpen)}
-                          title="Search ticker..."
-                        >
-                          <Search size={13} />
-                        </button>
-                        <span onClick={() => handleSortToggle('symbol')} style={{ cursor: 'pointer' }}>
-                          Symbol
-                        </span>
-                        {renderSortIndicator('symbol')}
-                      </div>
-
-                      {headerSearchOpen ? (
-                        <div style={{ display: 'flex', alignItems: 'center', marginTop: 2 }}>
-                          <input
-                            type="text"
-                            autoFocus
-                            placeholder="Type to filter..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            style={{
-                              fontSize: 11,
-                              padding: '2px 4px',
-                              borderRadius: 3,
-                              border: '1px solid var(--accent-primary)',
-                              background: 'var(--bg-surface-elevated)',
-                              color: 'var(--text-primary)',
-                              outline: 'none',
-                              width: '100%',
-                            }}
-                          />
-                          <button
-                            onClick={() => {
+                    {isSearchActive ? (
+                      <div className="tv-th-symbol-search-active">
+                        <Search size={13} className="tv-th-search-icon-inside" />
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          placeholder="Search"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
                               setHeaderSearchOpen(false);
                               setSearchQuery('');
+                            }
+                          }}
+                          className="tv-th-search-input"
+                        />
+                        <button
+                          className="tv-th-search-close-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setHeaderSearchOpen(false);
+                            setSearchQuery('');
+                          }}
+                          title="Clear search (Esc)"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="tv-th-symbol-inner"
+                        onClick={() => setHeaderSearchOpen(true)}
+                        title="Click to search tickers"
+                      >
+                        <div className="tv-th-symbol-title-row">
+                          <button
+                            className="tv-th-search-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHeaderSearchOpen(true);
                             }}
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                            title="Search ticker..."
                           >
-                            <X size={12} />
+                            <Search size={13} />
                           </button>
+                          <span
+                            className="tv-th-symbol-label"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSortToggle('symbol');
+                            }}
+                            title="Sort by symbol"
+                          >
+                            Symbol
+                          </span>
+                          {renderSortIndicator('symbol')}
                         </div>
-                      ) : (
                         <div className="tv-th-count-row">{totalItems.toLocaleString()}</div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </th>
                 );
               }

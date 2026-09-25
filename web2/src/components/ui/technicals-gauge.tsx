@@ -46,9 +46,9 @@ export const TechnicalsGauge: React.FC<TechnicalsGaugeProps> = ({ rating }) => {
       </svg>
 
       <div className="gauge-labels-row">
-        <span style={{ color: '#f23645' }}>Strong Sell</span>
-        <span style={{ color: '#787b86' }}>Neutral</span>
-        <span style={{ color: '#089981' }}>Strong Buy</span>
+        <span style={{ color: '#f23645', fontWeight: 700 }}>Strong Sell</span>
+        <span style={{ color: '#787b86', fontWeight: 500 }}>Neutral</span>
+        <span style={{ color: '#089981', fontWeight: 700 }}>Strong Buy</span>
       </div>
     </div>
   );

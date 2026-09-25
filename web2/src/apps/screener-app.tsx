@@ -17,11 +17,15 @@ import { SymbolDetailDrawer } from '../components/features/screener/symbol-detai
 import { ColumnModal } from '../components/features/screener/column-modal';
 import { FiltersModal } from '../components/features/screener/filters-modal';
 
+import { useLayoutStore } from '../layouts/use-layout-store';
+import { ScreenerHeatmap } from '../components/features/screener/screener-heatmap';
+
 export const ScreenerApp: React.FC = () => {
   const instruments = useScreenerStore((state) => state.instruments);
   const searchQuery = useScreenerStore((state) => state.searchQuery);
   const quickPreset = useScreenerStore((state) => state.quickPreset);
   const advanced = useScreenerStore((state) => state.advancedFilters);
+  const viewMode = useLayoutStore((state) => state.viewMode);
 
   useEffect(() => {
     themeEngine.applyToDOM();
@@ -66,6 +70,9 @@ export const ScreenerApp: React.FC = () => {
 
       if (advanced.minPrice !== null && inst.price < advanced.minPrice) return false;
       if (advanced.maxPrice !== null && inst.price > advanced.maxPrice) return false;
+      if (advanced.minChangePercent !== undefined && advanced.minChangePercent !== null && inst.changePercent < advanced.minChangePercent) return false;
+      if (advanced.maxChangePercent !== undefined && advanced.maxChangePercent !== null && inst.changePercent > advanced.maxChangePercent) return false;
+      if (advanced.minVolume !== undefined && advanced.minVolume !== null && inst.volume < advanced.minVolume) return false;
       if (advanced.peMin !== null && (!inst.pe || inst.pe < advanced.peMin)) return false;
       if (advanced.peMax !== null && (!inst.pe || inst.pe > advanced.peMax)) return false;
       if (advanced.minDividendYield !== null && (!inst.dividendYield || inst.dividendYield < advanced.minDividendYield)) return false;
@@ -128,7 +135,13 @@ export const ScreenerApp: React.FC = () => {
 
       {/* Main Dockable Workspace: Resizable Split View with Screener Table & Symbol Detail Drawer */}
       <DockableWorkspace
-        primaryContent={<ScreenerTable instruments={filteredInstruments} />}
+        primaryContent={
+          viewMode === 'matrix' ? (
+            <ScreenerHeatmap instruments={filteredInstruments} />
+          ) : (
+            <ScreenerTable instruments={filteredInstruments} />
+          )
+        }
         secondaryContent={<SymbolDetailDrawer />}
       />
 

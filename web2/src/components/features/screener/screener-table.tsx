@@ -13,7 +13,10 @@ import {
   ChevronRight,
   Search,
   X,
+  Filter,
 } from 'lucide-react';
+import { ColumnHeaderMenu, isColumnFiltered } from './column-header-menu';
+import { ColumnDef } from '../../column-modal';
 
 interface ScreenerTableProps {
   instruments: Instrument[];
@@ -130,6 +133,8 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchQuery = useScreenerStore((state) => state.searchQuery);
   const setSearchQuery = useScreenerStore((state) => state.setSearchQuery);
+  const advancedFilters = useScreenerStore((state) => state.advancedFilters);
+  const [activeMenuCol, setActiveMenuCol] = useState<{ col: ColumnDef; anchorEl: HTMLElement } | null>(null);
 
   useEffect(() => {
     if (headerSearchOpen && searchInputRef.current) {
@@ -511,16 +516,23 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
                 );
               }
 
+              const isFiltered = isColumnFiltered(col.id, advancedFilters);
+
               return (
                 <th
                   key={col.id}
-                  className="sortable"
-                  onClick={() => handleSortToggle(col.id)}
-                  title={`Sort by ${col.label}`}
+                  className={`sortable ${isFiltered ? 'has-active-filter' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveMenuCol({ col, anchorEl: e.currentTarget });
+                  }}
+                  title={`Click to filter, sort, or configure ${col.label}`}
                 >
-                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                    {isFiltered && <Filter size={10} className="tv-th-filter-active-icon" />}
                     {renderSortIndicator(col.id)}
                     <span>{col.label}</span>
+                    <ChevronDown size={10} className="tv-th-filter-icon" />
                   </div>
                 </th>
               );
@@ -618,6 +630,16 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
           </div>
         </div>
       </div>
+
+      {/* TradingView Column Header Filter & Sort Popover Menu */}
+      {activeMenuCol && (
+        <ColumnHeaderMenu
+          column={activeMenuCol.col}
+          isOpen={Boolean(activeMenuCol)}
+          onClose={() => setActiveMenuCol(null)}
+          anchorEl={activeMenuCol.anchorEl}
+        />
+      )}
     </div>
   );
 };

@@ -6,25 +6,29 @@ export interface LayoutState {
   preset: LayoutPreset;
   drawerWidth: number; // in pixels
   isDrawerOpen: boolean;
+  viewMode: 'table' | 'chart' | 'matrix';
 
   setPreset: (preset: LayoutPreset) => void;
   setDrawerWidth: (width: number) => void;
   toggleDrawer: () => void;
   setDrawerOpen: (open: boolean) => void;
+  setViewMode: (mode: 'table' | 'chart' | 'matrix') => void;
   resetLayout: () => void;
 }
 
-const DEFAULT_DRAWER_WIDTH = 330;
-const MIN_DRAWER_WIDTH = 260;
-const MAX_DRAWER_WIDTH = 640;
+const DEFAULT_DRAWER_WIDTH = 380;
+const MIN_DRAWER_WIDTH = 300;
+const MAX_DRAWER_WIDTH = 750;
 
 const getStoredLayout = (): { preset: LayoutPreset; drawerWidth: number } => {
   try {
     const savedPreset = localStorage.getItem('honba_layout_preset_v2') as LayoutPreset | null;
     const savedWidth = localStorage.getItem('honba_drawer_width_v2');
+    const parsedWidth = savedWidth ? Number(savedWidth) : DEFAULT_DRAWER_WIDTH;
+    const cleanWidth = parsedWidth > 600 || parsedWidth < MIN_DRAWER_WIDTH ? DEFAULT_DRAWER_WIDTH : parsedWidth;
     return {
       preset: savedPreset && ['default', 'focus', 'split'].includes(savedPreset) ? savedPreset : 'focus',
-      drawerWidth: savedWidth ? Math.max(MIN_DRAWER_WIDTH, Math.min(MAX_DRAWER_WIDTH, Number(savedWidth))) : DEFAULT_DRAWER_WIDTH,
+      drawerWidth: cleanWidth,
     };
   } catch {
     return { preset: 'focus', drawerWidth: DEFAULT_DRAWER_WIDTH };
@@ -38,6 +42,21 @@ export const useLayoutStore = create<LayoutState>((set) => {
     preset: initial.preset,
     drawerWidth: initial.drawerWidth,
     isDrawerOpen: initial.preset !== 'focus',
+    viewMode: 'table',
+
+    setViewMode: (viewMode: 'table' | 'chart' | 'matrix') => {
+      if (viewMode === 'chart') {
+        set((state) => ({
+          viewMode,
+          isDrawerOpen: true,
+          drawerWidth: state.drawerWidth > 600 || state.drawerWidth < MIN_DRAWER_WIDTH ? DEFAULT_DRAWER_WIDTH : state.drawerWidth,
+        }));
+      } else if (viewMode === 'table') {
+        set({ viewMode, isDrawerOpen: false });
+      } else {
+        set({ viewMode, isDrawerOpen: false });
+      }
+    },
 
     setPreset: (preset: LayoutPreset) => {
       try {
@@ -47,11 +66,10 @@ export const useLayoutStore = create<LayoutState>((set) => {
       if (preset === 'focus') {
         set({ preset, isDrawerOpen: false });
       } else if (preset === 'split') {
-        const halfWidth = Math.floor(window.innerWidth * 0.45);
         set({
           preset,
           isDrawerOpen: true,
-          drawerWidth: Math.max(MIN_DRAWER_WIDTH, Math.min(MAX_DRAWER_WIDTH, halfWidth)),
+          drawerWidth: 420,
         });
       } else {
         // default

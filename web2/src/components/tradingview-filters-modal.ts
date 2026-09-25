@@ -10,6 +10,9 @@ export interface AdvancedFilterState {
   exchange: string;
   minPrice: number | null;
   maxPrice: number | null;
+  minChangePercent?: number | null;
+  maxChangePercent?: number | null;
+  minVolume?: number | null;
   peMin: number | null;
   peMax: number | null;
   minDividendYield: number | null;
@@ -29,6 +32,9 @@ export const DEFAULT_ADVANCED_FILTERS: AdvancedFilterState = {
   exchange: 'all',
   minPrice: null,
   maxPrice: null,
+  minChangePercent: null,
+  maxChangePercent: null,
+  minVolume: null,
   peMin: null,
   peMax: null,
   minDividendYield: null,

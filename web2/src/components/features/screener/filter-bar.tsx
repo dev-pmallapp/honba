@@ -5,8 +5,6 @@ import { dataLayer } from '../../../core/data-layer';
 import { CountryCode } from '../../../core/market-data';
 import { PillDropdown } from '../../ui/pill-dropdown';
 import {
-  SlidersHorizontal,
-  Columns3,
   Download,
   RotateCcw,
   Search,
@@ -20,7 +18,6 @@ import {
   Sparkles,
   Undo2,
   Redo2,
-  Settings,
   Check,
   X,
 } from 'lucide-react';
@@ -80,14 +77,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   const shortlistedSymbols = useScreenerStore((state) => state.shortlistedSymbols);
 
   const isDrawerOpen = useLayoutStore((state) => state.isDrawerOpen);
-  const toggleDrawer = useLayoutStore((state) => state.toggleDrawer);
+  const viewMode = useLayoutStore((state) => state.viewMode);
+  const setViewMode = useLayoutStore((state) => state.setViewMode);
   const setFilterModalOpen = useScreenerStore((state) => state.setFilterModalOpen);
   const setColumnModalOpen = useScreenerStore((state) => state.setColumnModalOpen);
 
   // Active Dropdown Pill
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [viewMode, setViewMode] = useState<'table' | 'chart' | 'matrix'>('table');
   const [showAiSearch, setShowAiSearch] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
 
@@ -126,27 +123,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   const allMarkets = dataLayer.getSupportedMarkets();
   const currentPresetObj = SCREEN_PRESETS.find((p) => p.id === quickPreset) || SCREEN_PRESETS[0];
 
-  // Count active filters
-  const countActiveFilters = (): number => {
-    let count = 0;
-    if (quickPreset !== 'all') count++;
-    if (searchQuery.trim() !== '') count++;
-    if (advanced.sector !== 'all') count++;
-    if (advanced.marketCapTier !== 'all') count++;
-    if (advanced.exchange !== 'all') count++;
-    if (advanced.minPrice !== null || advanced.maxPrice !== null) count++;
-    if (advanced.peMin !== null || advanced.peMax !== null) count++;
-    if (advanced.minDividendYield !== null) count++;
-    if (advanced.minRoce !== null) count++;
-    if (advanced.minNetMargin !== null) count++;
-    if (advanced.technicalRating !== 'all') count++;
-    if (advanced.rsiMin !== null || advanced.rsiMax !== null) count++;
-    if (advanced.priceAbove200Sma) count++;
-    if (advanced.near52WeekHigh) count++;
-    return count;
-  };
 
-  const activeCount = countActiveFilters();
 
   const toggleDropdown = (id: string) => {
     setActiveDropdown((prev) => (prev === id ? null : id));
@@ -237,20 +214,13 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
-        {/* Right toolbar icons: Undo, Redo, Settings */}
+        {/* Right toolbar icons: Undo, Redo */}
         <div className="tv-header-actions">
           <button className="tv-icon-circle-btn" title="Undo (Ctrl+Z)" disabled>
             <Undo2 size={14} />
           </button>
           <button className="tv-icon-circle-btn" title="Redo (Ctrl+Y)" disabled>
             <Redo2 size={14} />
-          </button>
-          <button
-            className="tv-icon-circle-btn"
-            title="Screener Settings"
-            onClick={() => setFilterModalOpen(true)}
-          >
-            <Settings size={14} />
           </button>
         </div>
       </div>
@@ -877,7 +847,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className={`tv-view-btn ${viewMode === 'table' && !isDrawerOpen ? 'active' : ''}`}
               onClick={() => {
                 setViewMode('table');
-                useLayoutStore.getState().setDrawerOpen(false);
               }}
               title="Table View (Full Screen)"
             >
@@ -886,16 +855,20 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <button
               className={`tv-view-btn ${isDrawerOpen ? 'active' : ''}`}
               onClick={() => {
-                toggleDrawer();
+                if (isDrawerOpen) {
+                  useLayoutStore.getState().setDrawerOpen(false);
+                } else {
+                  setViewMode('chart');
+                }
               }}
-              title="Split View / Symbol Chart Preview"
+              title="Split View / Symbol Details & Chart Preview"
             >
               <LineChart size={14} />
             </button>
             <button
               className={`tv-view-btn ${viewMode === 'matrix' ? 'active' : ''}`}
-              onClick={() => setViewMode('matrix')}
-              title="Heatmap View"
+              onClick={() => setViewMode(viewMode === 'matrix' ? 'table' : 'matrix')}
+              title="Stock Heatmap View"
             >
               <LayoutGrid size={14} />
             </button>
@@ -915,29 +888,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
-        {/* Right Toolbar: Filters (N), Columns, Refresh, Fullscreen */}
+        {/* Right Toolbar: Export, Refresh, Fullscreen */}
         <div className="tv-tabs-right">
-          {/* Prominent Filters Dialog Button */}
-          <button
-            className={`tv-prominent-filters-btn ${activeCount > 0 ? 'active' : ''}`}
-            onClick={() => setFilterModalOpen(true)}
-            title="Open Detailed Filter Settings"
-          >
-            <SlidersHorizontal size={13} />
-            <span>Filters</span>
-            {activeCount > 0 && <span className="tv-filter-count-badge">{activeCount}</span>}
-          </button>
-
-          {/* Columns Button */}
-          <button
-            className="tv-icon-circle-btn"
-            onClick={() => setColumnModalOpen(true)}
-            title="Customize Visible Columns"
-            style={{ width: 28, height: 28 }}
-          >
-            <Columns3 size={13} />
-          </button>
-
           {/* Export CSV */}
           <button
             className="tv-icon-circle-btn"

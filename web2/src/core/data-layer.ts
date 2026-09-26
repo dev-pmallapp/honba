@@ -6,6 +6,7 @@
  * - AlgoDesigner
  * - Simulator
  * - Researcher
+ * - Instrument Detail Pages
  */
 
 import {
@@ -14,6 +15,8 @@ import {
   INSTRUMENTS_DATABASE,
   SUPPORTED_MARKETS,
   MarketCountry,
+  CandleData,
+  AssetType,
 } from './market-data';
 
 // Re-export application registry definitions from dedicated apps module
@@ -26,6 +29,91 @@ export interface DataLayerState {
   watchlist: string[];
   searchQuery: string;
   activeTab: string;
+  isBackendConnected: boolean;
+}
+
+export interface PeerComparison {
+  symbol: string;
+  name: string;
+  price: number;
+  pe: number;
+  marketCap: number;
+  changePercent: number;
+}
+
+export interface ShareholdingPattern {
+  promoter: number;
+  fii: number;
+  dii: number;
+  public: number;
+  others: number;
+}
+
+export interface QuarterlyFinancial {
+  period: string;
+  revenue: number; // in Cr INR
+  netProfit: number;
+  operatingMargin: number; // %
+  eps: number;
+}
+
+export interface IndexConstituent {
+  symbol: string;
+  name: string;
+  weight: number; // %
+  price: number;
+  changePercent: number;
+  sector: string;
+}
+
+export interface MutualFundHolding {
+  symbol: string;
+  name: string;
+  sector: string;
+  weight: number; // %
+  assetClass: string;
+}
+
+export interface IpoDetails {
+  status: string; // 'upcoming' | 'open' | 'closed' | 'listed'
+  priceBand: string;
+  lotSize: number;
+  minInvestment: number;
+  issueSizeCr: number;
+  freshIssueCr: number;
+  ofsCr: number;
+  openDate: string;
+  closeDate: string;
+  allotmentDate: string;
+  listingDate: string;
+  gmpPrice: number;
+  gmpPercent: number;
+  subscriptionQib: number;
+  subscriptionNii: number;
+  subscriptionRetail: number;
+  subscriptionTotal: number;
+  leadManagers: string[];
+}
+
+export interface InstrumentDetailResponse {
+  instrument: Instrument;
+  candles: CandleData[];
+  about: string;
+  peers: PeerComparison[];
+  shareholding?: ShareholdingPattern;
+  quarterly: QuarterlyFinancial[];
+  constituents?: IndexConstituent[];
+  sectorWeights?: Record<string, number>;
+  advances?: number;
+  declines?: number;
+  mfHoldings?: MutualFundHolding[];
+  aumCr?: number;
+  expenseRatio?: number;
+  fundManager?: string;
+  categoryAvgReturn1Y?: number;
+  cagr3Y?: number;
+  cagr5Y?: number;
+  ipoDetails?: IpoDetails;
 }
 
 const STORAGE_KEY = 'honba_shared_state_v1';
@@ -41,34 +129,138 @@ class CommonDataLayer {
   private watchlist: Set<string> = new Set(['RELIANCE', 'TCS', 'HDFCBANK', 'NVDA']);
   private searchQuery: string = '';
   private activeTab: string = 'overview';
+  private isBackendConnected: boolean = false;
   
   private listeners: Listener[] = [];
   private tickListeners: TickListener[] = [];
   private tickInterval: number | null = null;
+  private pollInterval: number | null = null;
+  private ws: WebSocket | null = null;
+  private wsReconnectTimer: number | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
 
   constructor() {
     this.restoreFromStorage();
     this.initBroadcastChannel();
     this.loadLiveInstruments(this.currentMarket);
-    // Live tick simulation is NOT started by default (screener need not be live by default)
+    this.startPeriodicSync();
+    this.initWebSocket();
   }
 
   public async loadLiveInstruments(country: CountryCode = 'IN') {
-    if (country !== 'IN') return;
     try {
-      const res = await fetch(`/api/instruments?country=${country}&limit=3500`);
+      const res = await fetch(`/api/instruments?country=${country}&limit=4000`);
       if (res.ok) {
-        const liveData: Instrument[] = await res.json();
+        const liveData: any[] = await res.json();
         if (Array.isArray(liveData) && liveData.length > 0) {
-          const nonIn = this.instruments.filter((i) => i.country !== 'IN');
-          this.instruments = [...liveData, ...nonIn];
+          this.isBackendConnected = true;
+          // Normalize instruments to have sparkline & history
+          const normalized: Instrument[] = liveData.map((item) => {
+            const price = Number(item.price);
+            const chgPct = Number(item.changePercent || 0);
+            return {
+              ...item,
+              sparkline: item.sparkline || [
+                price * (1 - chgPct * 0.015),
+                price * (1 - chgPct * 0.008),
+                price * (1 + chgPct * 0.004),
+                price,
+              ],
+              history: item.history || [],
+              description: item.description || `${item.name} (${item.symbol}) listed on ${item.exchange}.`,
+            };
+          });
+
+          // Merge: keep non-matching markets
+          const otherMarkets = this.instruments.filter((i) => i.country !== country);
+          this.instruments = [...normalized, ...otherMarkets];
           this.notify();
         }
       }
     } catch {
       // Backend offline: silently keep bundled offline instruments
+      this.isBackendConnected = false;
     }
+  }
+
+  private startPeriodicSync() {
+    // Background polling every 18 seconds to ensure latest bhavcopy and quotes sync
+    if (typeof window !== 'undefined') {
+      this.pollInterval = window.setInterval(() => {
+        this.loadLiveInstruments(this.currentMarket);
+      }, 18000);
+    }
+  }
+
+  private initWebSocket() {
+    if (typeof window === 'undefined') return;
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/market`;
+      this.ws = new WebSocket(wsUrl);
+
+      this.ws.onopen = () => {
+        this.isBackendConnected = true;
+        this.notify();
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const tick = JSON.parse(event.data);
+          if (tick.symbol && typeof tick.price === 'number') {
+            this.emitTick(tick);
+          }
+        } catch {}
+      };
+
+      this.ws.onerror = () => {
+        // Will trigger onclose and attempt reconnect
+      };
+
+      this.ws.onclose = () => {
+        if (!this.wsReconnectTimer) {
+          this.wsReconnectTimer = window.setTimeout(() => {
+            this.wsReconnectTimer = null;
+            this.initWebSocket();
+          }, 4000);
+        }
+      };
+    } catch {
+      // Fallback to HTTP polling
+    }
+  }
+
+  public async fetchInstrumentDetail(symbol: string): Promise<InstrumentDetailResponse | null> {
+    try {
+      const res = await fetch(`/api/instruments/${encodeURIComponent(symbol)}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+
+    // Fallback: Generate local synthesis from loaded instrument
+    const inst = this.getInstrument(symbol);
+    if (!inst) return null;
+
+    return {
+      instrument: inst,
+      candles: inst.history || [],
+      about: inst.description || `${inst.name} is a leading security in ${inst.sector}.`,
+      peers: [],
+      quarterly: [],
+    };
+  }
+
+  public async fetchInstrumentCandles(symbol: string, timeframe: string = '1M'): Promise<CandleData[]> {
+    try {
+      const res = await fetch(`/api/instruments/${encodeURIComponent(symbol)}/candles?timeframe=${timeframe}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+
+    const inst = this.getInstrument(symbol);
+    return inst?.history || [];
   }
 
   private initBroadcastChannel() {
@@ -114,6 +306,7 @@ class CommonDataLayer {
         watchlist: Array.from(this.watchlist),
         searchQuery: this.searchQuery,
         activeTab: this.activeTab,
+        isBackendConnected: this.isBackendConnected,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       this.broadcastChannel?.postMessage({ type: 'STATE_SYNC', payload: state });
@@ -138,6 +331,7 @@ class CommonDataLayer {
       watchlist: Array.from(this.watchlist),
       searchQuery: this.searchQuery,
       activeTab: this.activeTab,
+      isBackendConnected: this.isBackendConnected,
     };
   }
 
@@ -164,7 +358,7 @@ class CommonDataLayer {
 
   public getInstruments(country?: CountryCode, screenerType: string = 'stocks'): Instrument[] {
     const targetCountry = country || this.currentMarket;
-    if (screenerType === 'etf' || screenerType === 'bonds' || screenerType === 'mf') {
+    if (screenerType === 'etf' || screenerType === 'bonds' || screenerType === 'mf' || screenerType === 'index' || screenerType === 'ipo') {
       const match = this.instruments.filter((i) => i.assetType === screenerType && i.country === targetCountry);
       if (match.length > 0) return match;
       return this.instruments.filter((i) => i.assetType === screenerType);
@@ -172,8 +366,17 @@ class CommonDataLayer {
     return this.instruments.filter((i) => (!i.assetType || i.assetType === 'stocks') && i.country === targetCountry);
   }
 
+  public getInstrumentsByAssetType(assetType: AssetType): Instrument[] {
+    return this.instruments.filter((i) => i.assetType === assetType);
+  }
+
+  public getAllInstruments(): Instrument[] {
+    return this.instruments;
+  }
+
   public getInstrument(symbol: string): Instrument | undefined {
-    return this.instruments.find((i) => i.symbol === symbol);
+    const clean = symbol.toUpperCase().trim();
+    return this.instruments.find((i) => i.symbol.toUpperCase() === clean);
   }
 
   public setActiveSymbol(symbol: string) {
@@ -248,14 +451,13 @@ class CommonDataLayer {
   public startLiveTickSimulation() {
     if (this.tickInterval) return;
     this.tickInterval = window.setInterval(() => {
-      // Pick 1-2 random stocks in current market to tick
       const marketInstruments = this.getInstruments();
       if (marketInstruments.length === 0) return;
       
       const randomIdx = Math.floor(Math.random() * marketInstruments.length);
       const inst = marketInstruments[randomIdx];
       
-      const deltaPercent = (Math.random() - 0.49) * 0.4; // +/- 0.2%
+      const deltaPercent = (Math.random() - 0.49) * 0.4;
       const oldPrice = inst.price;
       const priceDelta = Number((oldPrice * (deltaPercent / 100)).toFixed(2));
       const newPrice = Number(Math.max(1, oldPrice + priceDelta).toFixed(2));
@@ -265,7 +467,6 @@ class CommonDataLayer {
       inst.changePercent = Number(((inst.change / (inst.price - inst.change)) * 100).toFixed(2));
       inst.volume += Math.floor(100 + Math.random() * 900);
       
-      // Update sparkline last point
       if (inst.sparkline.length > 0) {
         inst.sparkline[inst.sparkline.length - 1] = newPrice;
       }
@@ -276,7 +477,7 @@ class CommonDataLayer {
         change: inst.change,
         changePercent: inst.changePercent,
       }));
-    }, 2800);
+    }, 2500);
   }
 
   public stopLiveTickSimulation() {
@@ -287,7 +488,7 @@ class CommonDataLayer {
   }
 
   public isLiveSimulationActive(): boolean {
-    return this.tickInterval !== null;
+    return this.tickInterval !== null || this.isBackendConnected;
   }
 
   public emitTick(tick: { symbol: string; price: number; change: number; changePercent: number; volume?: number; timestamp?: number }) {

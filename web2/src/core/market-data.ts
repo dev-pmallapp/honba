@@ -49,7 +49,7 @@ export const SUPPORTED_MARKETS: MarketCountry[] = [
   },
 ];
 
-export type AssetType = 'stocks' | 'etf' | 'bonds' | 'mf';
+export type AssetType = 'stocks' | 'etf' | 'bonds' | 'mf' | 'index' | 'ipo';
 export type TechnicalRating = 'Strong Buy' | 'Buy' | 'Neutral' | 'Sell' | 'Strong Sell';
 export type MarketCapTier = 'mega' | 'large' | 'mid' | 'small';
 
@@ -98,6 +98,8 @@ export interface Instrument {
   roce: number; // %
   roe: number; // %
   debtToEquity: number;
+  deliverableQty?: number;
+  deliveryPct?: number;
   sparkline: number[];
   history: CandleData[];
   description: string;

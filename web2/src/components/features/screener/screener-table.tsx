@@ -14,6 +14,7 @@ import {
   Search,
   X,
   Filter,
+  ExternalLink,
 } from 'lucide-react';
 import { ColumnHeaderMenu, isColumnFiltered } from './column-header-menu';
 import { ColumnDef } from '../../../core/columns';
@@ -269,7 +270,20 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
               {logo.label}
             </div>
             <div className="tv-symbol-details">
-              <span className="tv-symbol-ticker">{inst.symbol}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span className="tv-symbol-ticker">{inst.symbol}</span>
+                <a
+                  href={`/instrument.html?symbol=${encodeURIComponent(inst.symbol)}`}
+                  className="tv-symbol-open-icon"
+                  title="Open Dedicated Instrument Page"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-muted)', transition: 'color var(--transition-fast)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-primary)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                >
+                  <ExternalLink size={10} />
+                </a>
+              </div>
               <span className="tv-symbol-name" title={inst.name}>
                 {inst.name}
               </span>
@@ -596,6 +610,10 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
                   key={inst.symbol}
                   className={`tv-row ${isSelected ? 'row-selected' : ''}`}
                   onClick={() => handleRowClick(inst)}
+                  onDoubleClick={() => {
+                    window.location.href = `/instrument.html?symbol=${encodeURIComponent(inst.symbol)}`;
+                  }}
+                  title="Click to preview drawer, double-click for dedicated Instrument page"
                 >
                   {visibleColumns.map((col) => (
                     <td

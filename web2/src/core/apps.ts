@@ -21,6 +21,13 @@ export const HONBA_APPS = [
     icon: 'filter',
   },
   {
+    id: 'instrument',
+    name: 'Instruments',
+    tagline: 'Deep Asset Pages: Equities, Indices, Mutual Funds & IPOs',
+    url: '/instrument.html',
+    icon: 'activity',
+  },
+  {
     id: 'workbench',
     name: 'WorkBench',
     tagline: 'Multi-chart Analysis & Tactical Orderbook',

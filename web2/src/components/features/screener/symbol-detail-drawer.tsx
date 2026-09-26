@@ -415,28 +415,28 @@ export const SymbolDetailDrawer: React.FC = () => {
         {/* Primary Action Buttons (Top) */}
         <div className="drawer-action-top-group">
           <a
-            href={`/workbench.html?symbol=${encodeURIComponent(inst.symbol)}`}
+            href={`/instrument.html?symbol=${encodeURIComponent(inst.symbol)}`}
             className="shortlist-btn shortlist-btn-primary"
-            style={{ width: '100%', justifyContent: 'center', padding: '7px 12px', fontSize: 12, textDecoration: 'none' }}
+            style={{ width: '100%', justifyContent: 'center', padding: '8px 12px', fontSize: 12, textDecoration: 'none', background: 'var(--accent-primary)', color: '#fff', fontWeight: 600 }}
           >
-            <span>Open in WorkBench</span>
+            <span>Open Dedicated Instrument Page</span>
             <ExternalLink size={12} style={{ marginLeft: 4 }} />
           </a>
           <div style={{ display: 'flex', gap: 8, width: '100%' }}>
             <a
+              href={`/workbench.html?symbol=${encodeURIComponent(inst.symbol)}`}
+              className="shortlist-btn shortlist-btn-secondary"
+              style={{ flex: 1, justifyContent: 'center', padding: '6px 8px', textDecoration: 'none', fontSize: 11 }}
+            >
+              WorkBench
+            </a>
+            <a
               href={`/simulator.html?symbol=${encodeURIComponent(inst.symbol)}`}
               className="shortlist-btn shortlist-btn-secondary"
-              style={{ flex: 1, justifyContent: 'center', padding: '5px 8px', textDecoration: 'none', fontSize: 11 }}
+              style={{ flex: 1, justifyContent: 'center', padding: '6px 8px', textDecoration: 'none', fontSize: 11 }}
             >
               <Play size={11} style={{ marginRight: 4 }} />
               Simulate
-            </a>
-            <a
-              href={`/simulator.html?symbol=${encodeURIComponent(inst.symbol)}&mode=algo`}
-              className="shortlist-btn shortlist-btn-secondary"
-              style={{ flex: 1, justifyContent: 'center', padding: '5px 8px', textDecoration: 'none', fontSize: 11 }}
-            >
-              Algo Test
             </a>
           </div>
         </div>

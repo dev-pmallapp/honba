@@ -32,6 +32,7 @@ export default defineConfig({
         algodesigner: resolve(__dirname, 'algodesigner.html'),
         simulator: resolve(__dirname, 'simulator.html'),
         researcher: resolve(__dirname, 'researcher.html'),
+        instrument: resolve(__dirname, 'instrument.html'),
       },
     },
   },

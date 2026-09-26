@@ -6,7 +6,7 @@ import '../styles/base.css';
 import '../styles/components.css';
 
 import { themeEngine } from '../core/theme-engine';
-import { AppId, HONBA_APPS } from '../core/data-layer';
+import { AppId, HONBA_APPS } from '../core/apps';
 import { AppShell } from '../layouts/app-shell';
 import { ArrowLeft, Sparkles } from 'lucide-react';
 

@@ -24,6 +24,13 @@ import {
 import { IndexDrawer } from './index-drawer';
 import { getIndicesForMarket } from '../../../core/indices';
 
+export const SCREENER_TYPES = [
+  { id: 'stocks', name: 'Stock Screener', defaultPresetTitle: 'All stocks' },
+  { id: 'etf', name: 'ETF Screener', defaultPresetTitle: 'All ETFs' },
+  { id: 'bonds', name: 'Bond Screener', defaultPresetTitle: 'All bonds' },
+  { id: 'mf', name: 'MF Screener', defaultPresetTitle: 'All mutual funds' },
+];
+
 export const SCREEN_PRESETS = [
   { id: 'all', name: 'All stocks', icon: '📋' },
   { id: 'most_capitalized', name: 'Most capitalized', icon: '👑' },
@@ -66,6 +73,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 }) => {
   const activeTab = useScreenerStore((state) => state.activeTab);
   const setActiveTab = useScreenerStore((state) => state.setActiveTab);
+  const screenerType = useScreenerStore((state) => state.screenerType || 'stocks');
+  const setScreenerType = useScreenerStore((state) => state.setScreenerType);
+  const autosave = useScreenerStore((state) => state.autosave);
+  const setAutosave = useScreenerStore((state) => state.setAutosave);
   const quickPreset = useScreenerStore((state) => state.quickPreset);
   const setQuickPreset = useScreenerStore((state) => state.setQuickPreset);
   const searchQuery = useScreenerStore((state) => state.searchQuery);
@@ -93,6 +104,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Button refs for anchoring floating dropdowns
+  const screenerTypeBtnRef = useRef<HTMLButtonElement>(null);
   const presetsBtnRef = useRef<HTMLButtonElement>(null);
   const marketBtnRef = useRef<HTMLButtonElement>(null);
   const watchlistBtnRef = useRef<HTMLButtonElement>(null);
@@ -123,7 +135,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const marketInfo = dataLayer.getCurrentMarketInfo();
   const allMarkets = dataLayer.getSupportedMarkets();
+  const currentScreenerObj = SCREENER_TYPES.find((s) => s.id === screenerType) || SCREENER_TYPES[0];
   const currentPresetObj = SCREEN_PRESETS.find((p) => p.id === quickPreset) || SCREEN_PRESETS[0];
+  const currentScreenTitle = quickPreset === 'all' ? currentScreenerObj.defaultPresetTitle : currentPresetObj.name;
 
 
 
@@ -167,24 +181,68 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       {/* Row 1: Stock Screener Breadcrumb, All stocks ⌵, Undo/Redo & Settings */}
       <div className="tv-header-title-row">
         <div className="tv-title-left">
-          <div
-            className="tv-screen-breadcrumb"
-            onClick={() => toggleDropdown('presets')}
-            title="Stock Screener Presets"
-          >
-            <span>Stock Screener</span>
-            <ChevronDown size={11} style={{ opacity: 0.7 }} />
+          {/* Instrument Screener Selector (Stock Screener ⌵, ETF Screener ⌵, etc.) */}
+          <div style={{ position: 'relative', display: 'inline-block' }}>
+            <button
+              ref={screenerTypeBtnRef}
+              className={`tv-screener-type-btn ${activeDropdown === 'screenerType' ? 'active' : ''}`}
+              onClick={() => toggleDropdown('screenerType')}
+              title="Select Screener Instrument"
+            >
+              <span>{currentScreenerObj.name}</span>
+              <ChevronDown
+                size={12}
+                style={{
+                  transform: activeDropdown === 'screenerType' ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 0.15s ease',
+                  opacity: 0.75,
+                }}
+              />
+            </button>
+
+            <PillDropdown
+              isOpen={activeDropdown === 'screenerType'}
+              onClose={() => setActiveDropdown(null)}
+              triggerRef={screenerTypeBtnRef}
+              width={200}
+            >
+              <div className="tv-screener-type-dropdown">
+                {SCREENER_TYPES.map((type) => (
+                  <div
+                    key={type.id}
+                    className={`tv-pill-option ${type.id === screenerType ? 'selected' : ''}`}
+                    onClick={() => {
+                      setScreenerType(type.id);
+                      setActiveDropdown(null);
+                    }}
+                  >
+                    <span style={{ fontWeight: type.id === screenerType ? 600 : 400 }}>
+                      {type.name}
+                    </span>
+                    {type.id === screenerType && <Check size={14} />}
+                  </div>
+                ))}
+              </div>
+            </PillDropdown>
           </div>
 
+          {/* Screen Preset Title & Options (All stocks ⌵) */}
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <button
               ref={presetsBtnRef}
-              className="tv-screen-title-btn"
+              className={`tv-screen-title-btn ${activeDropdown === 'presets' ? 'active' : ''}`}
               onClick={() => toggleDropdown('presets')}
               title="Click to switch saved screen"
             >
-              <span>{currentPresetObj.name}</span>
-              <ChevronDown size={18} style={{ opacity: 0.8 }} />
+              <span>{currentScreenTitle}</span>
+              <ChevronDown
+                size={18}
+                style={{
+                  transform: activeDropdown === 'presets' ? 'rotate(180deg)' : 'none',
+                  transition: 'transform 0.15s ease',
+                  opacity: 0.8,
+                }}
+              />
             </button>
 
             <PillDropdown
@@ -193,6 +251,43 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               triggerRef={presetsBtnRef}
               width={280}
             >
+              <div className="tv-screen-menu-header">
+                <div className="tv-menu-switch-row">
+                  <span>Autosave</span>
+                  <button
+                    type="button"
+                    className={`tv-toggle-switch ${autosave ? 'active' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAutosave(!autosave);
+                    }}
+                    title={autosave ? 'Autosave enabled' : 'Autosave disabled'}
+                  >
+                    <div className="tv-toggle-thumb" />
+                  </button>
+                </div>
+                <div
+                  className="tv-pill-option"
+                  onClick={() => {
+                    navigator.clipboard?.writeText?.(window.location.href);
+                    setActiveDropdown(null);
+                  }}
+                >
+                  <span>Share screen</span>
+                </div>
+                <div
+                  className="tv-pill-option"
+                  onClick={() => {
+                    onExportCSV();
+                    setActiveDropdown(null);
+                  }}
+                >
+                  <span>Download results as CSV</span>
+                </div>
+              </div>
+
+              <div className="tv-pill-divider" />
+
               <div style={{ padding: '8px 14px 4px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                 Popular Screens
               </div>

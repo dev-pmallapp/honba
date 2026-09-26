@@ -58,6 +58,21 @@ const BRAND_LOGOS: Record<string, { bg: string; color: string; label?: string }>
   KSCL: { bg: '#10b981', color: '#ffffff', label: 'K' },
   MCX: { bg: '#0f172a', color: '#38bdf8', label: 'M' },
   BSE: { bg: '#1e40af', color: '#ffffff', label: 'BSE' },
+  NIFTYBEES: { bg: '#f97316', color: '#ffffff', label: 'NB' },
+  BANKBEES: { bg: '#2563eb', color: '#ffffff', label: 'BB' },
+  GOLDBEES: { bg: '#eab308', color: '#000000', label: 'GB' },
+  SPY: { bg: '#1e3a8a', color: '#ffffff', label: 'SPY' },
+  QQQ: { bg: '#4338ca', color: '#ffffff', label: 'QQQ' },
+  PPFAS_FLEXI: { bg: '#1e3a8a', color: '#ffffff', label: 'PP' },
+  HDFC_MIDCAP: { bg: '#004c8f', color: '#ed1c24', label: 'HD' },
+  NIPPON_SMALLCAP: { bg: '#dc2626', color: '#ffffff', label: 'NI' },
+  MIRAE_LARGE: { bg: '#ea580c', color: '#ffffff', label: 'MA' },
+  SBI_CONTRA: { bg: '#0284c7', color: '#ffffff', label: 'SBI' },
+  ICICI_BLUECHIP: { bg: '#991b1b', color: '#ffffff', label: 'IC' },
+  VFIAX: { bg: '#991b1b', color: '#ffffff', label: 'VG' },
+  FCNTX: { bg: '#15803d', color: '#ffffff', label: 'FD' },
+  GS2034: { bg: '#047857', color: '#ffffff', label: 'GS' },
+  US10Y: { bg: '#0369a1', color: '#ffffff', label: '10Y' },
 };
 
 const KNOWN_SECTORS: Record<string, string> = {
@@ -127,7 +142,17 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
   const setPage = useScreenerStore((state) => state.setPage);
   const pageSize = useScreenerStore((state) => state.pageSize);
   const setPageSize = useScreenerStore((state) => state.setPageSize);
+  const screenerType = useScreenerStore((state) => state.screenerType || 'stocks');
   const setColumnModalOpen = useScreenerStore((state) => state.setColumnModalOpen);
+
+  const itemLabel =
+    screenerType === 'etf'
+      ? 'ETFs'
+      : screenerType === 'bonds'
+      ? 'bonds'
+      : screenerType === 'mf'
+      ? 'funds'
+      : 'stocks';
 
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -591,7 +616,7 @@ export const ScreenerTable: React.FC<ScreenerTableProps> = ({ instruments }) => 
       {/* Pagination Footer */}
       <div className="table-pagination-footer">
         <div className="pagination-info">
-          Page <strong>{validPage}</strong> of <strong>{maxPage}</strong> ({totalItems.toLocaleString()} stocks)
+          Page <strong>{validPage}</strong> of <strong>{maxPage}</strong> ({totalItems.toLocaleString()} {itemLabel})
         </div>
 
         <div className="pagination-controls">

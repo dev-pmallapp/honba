@@ -16,54 +16,8 @@ import {
   MarketCountry,
 } from './market-data';
 
-export type AppId = 'screener' | 'workbench' | 'algodesigner' | 'simulator' | 'researcher';
-
-export interface AppMetadata {
-  id: AppId;
-  name: string;
-  jpName?: string;
-  tagline: string;
-  url: string;
-  icon: string;
-}
-
-export const HONBA_APPS: AppMetadata[] = [
-  {
-    id: 'screener',
-    name: 'Screener',
-    tagline: 'Multi-Market Quantitative Scanner & Filter',
-    url: '/index.html',
-    icon: 'filter',
-  },
-  {
-    id: 'workbench',
-    name: 'WorkBench',
-    tagline: 'Multi-chart Analysis & Tactical Orderbook',
-    url: '/workbench.html',
-    icon: 'layout',
-  },
-  {
-    id: 'algodesigner',
-    name: 'AlgoDesigner',
-    tagline: 'Visual Flow & Python Strategy Composer',
-    url: '/algodesigner.html',
-    icon: 'cpu',
-  },
-  {
-    id: 'simulator',
-    name: 'Simulator',
-    tagline: 'Nautilus Event-driven Tick Backtester',
-    url: '/simulator.html',
-    icon: 'play-circle',
-  },
-  {
-    id: 'researcher',
-    name: 'Researcher',
-    tagline: 'Jesse AI Hypothesis & Robustness Lab',
-    url: '/researcher.html',
-    icon: 'book-open',
-  },
-];
+// Re-export application registry definitions from dedicated apps module
+export * from './apps';
 
 export interface DataLayerState {
   currentMarket: CountryCode;
@@ -208,9 +162,14 @@ class CommonDataLayer {
     }
   }
 
-  public getInstruments(country?: CountryCode): Instrument[] {
+  public getInstruments(country?: CountryCode, screenerType: string = 'stocks'): Instrument[] {
     const targetCountry = country || this.currentMarket;
-    return this.instruments.filter((i) => i.country === targetCountry);
+    if (screenerType === 'etf' || screenerType === 'bonds' || screenerType === 'mf') {
+      const match = this.instruments.filter((i) => i.assetType === screenerType && i.country === targetCountry);
+      if (match.length > 0) return match;
+      return this.instruments.filter((i) => i.assetType === screenerType);
+    }
+    return this.instruments.filter((i) => (!i.assetType || i.assetType === 'stocks') && i.country === targetCountry);
   }
 
   public getInstrument(symbol: string): Instrument | undefined {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { HONBA_APPS, AppId, dataLayer } from '../core/data-layer';
+import { dataLayer } from '../core/data-layer';
+import { HONBA_APPS, AppId } from '../core/apps';
 import { themeEngine, ColorPalette, TypographyPreset } from '../core/theme-engine';
 import { CountryCode } from '../core/market-data';
 import { useScreenerStore } from '../core/store/use-screener-store';

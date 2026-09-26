@@ -20,6 +20,8 @@ export interface ScreenerState {
   isLive: boolean;
 
   // Tabs & Filters
+  screenerType: string; // 'stocks' | 'etf' | 'bonds' | 'crypto' | 'cex' | 'dex'
+  autosave: boolean;
   activeTab: string; // 'overview' | 'performance' | 'valuation' | 'technicals' | 'fundamentals'
   quickPreset: string; // 'all' | 'gainers' | 'losers' | 'most_active' | etc.
   advancedFilters: AdvancedFilterState;
@@ -38,6 +40,8 @@ export interface ScreenerState {
   isColumnModalOpen: boolean;
 
   // Actions
+  setScreenerType: (screenerType: string) => void;
+  setAutosave: (autosave: boolean) => void;
   setMarket: (market: CountryCode) => void;
   setActiveSymbol: (symbol: string) => void;
   toggleShortlist: (symbol: string) => void;
@@ -84,6 +88,8 @@ export const useScreenerStore = create<ScreenerState>((set, get) => {
     searchQuery: initialDataLayerState.searchQuery || '',
     isLive: dataLayer.isLiveSimulationActive(),
 
+    screenerType: 'stocks',
+    autosave: true,
     activeTab: 'overview',
     quickPreset: 'all',
     advancedFilters: { ...DEFAULT_ADVANCED_FILTERS },
@@ -99,9 +105,27 @@ export const useScreenerStore = create<ScreenerState>((set, get) => {
     isFilterModalOpen: false,
     isColumnModalOpen: false,
 
+    setScreenerType: (screenerType: string) => {
+      const currentMarket = get().currentMarket;
+      const instruments = dataLayer.getInstruments(currentMarket, screenerType);
+      const active = instruments[0]?.symbol || '';
+      if (active) dataLayer.setActiveSymbol(active);
+      set({
+        screenerType,
+        instruments,
+        activeSymbol: active,
+        currentPage: 1,
+      });
+    },
+
+    setAutosave: (autosave: boolean) => {
+      set({ autosave });
+    },
+
     setMarket: (market: CountryCode) => {
       dataLayer.setMarket(market);
-      const instruments = dataLayer.getInstruments(market);
+      const screenerType = get().screenerType || 'stocks';
+      const instruments = dataLayer.getInstruments(market, screenerType);
       const active = instruments[0]?.symbol || '';
       if (active) dataLayer.setActiveSymbol(active);
       set({
@@ -223,7 +247,8 @@ export const useScreenerStore = create<ScreenerState>((set, get) => {
 
     refreshFromDataLayer: () => {
       const state = dataLayer.getState();
-      const instruments = dataLayer.getInstruments(state.currentMarket);
+      const screenerType = get().screenerType || 'stocks';
+      const instruments = dataLayer.getInstruments(state.currentMarket, screenerType);
       set({
         currentMarket: state.currentMarket,
         instruments,

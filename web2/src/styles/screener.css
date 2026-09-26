@@ -52,19 +52,89 @@
   gap: 2px;
 }
 
-.tv-screen-breadcrumb {
+.tv-screen-breadcrumb,
+.tv-screener-type-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
   letter-spacing: 0.1px;
+  line-height: 1.2;
+  transition: all 0.15s ease;
 }
 
-.tv-screen-breadcrumb:hover {
+.tv-screen-breadcrumb:hover,
+.tv-screener-type-btn:hover,
+.tv-screener-type-btn.active {
+  background: var(--bg-tertiary);
   color: var(--text-primary);
+}
+
+.tv-screener-type-dropdown {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.tv-screen-menu-header {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.tv-menu-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.tv-toggle-switch {
+  width: 34px;
+  height: 18px;
+  border-radius: 10px;
+  background: var(--border-subtle);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s ease;
+  padding: 0;
+  outline: none;
+}
+
+.tv-toggle-switch.active {
+  background: var(--accent);
+}
+
+.tv-toggle-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+}
+
+.tv-toggle-switch.active .tv-toggle-thumb {
+  transform: translateX(16px);
+}
+
+.tv-pill-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
 }
 
 .tv-screen-title-btn {
@@ -73,17 +143,22 @@
   gap: 8px;
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text-primary);
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.3px;
   line-height: 1.2;
+  transition: background 0.15s ease;
 }
 
-.tv-screen-title-btn:hover {
-  opacity: 0.9;
+.tv-screen-title-btn:hover,
+.tv-screen-title-btn.active {
+  background: var(--bg-tertiary);
+  opacity: 0.95;
 }
 
 .tv-header-actions {

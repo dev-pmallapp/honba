@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppId } from '../core/data-layer';
+import { AppId } from '../core/apps';
 import { AppNav } from './app-nav';
 import { BottomBar } from './bottom-bar';
 import { FloatingActionBar } from './floating-action-bar';

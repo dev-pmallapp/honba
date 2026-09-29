@@ -1,3 +1,6 @@
+// pyo3 0.22 `#[pyfunction]` expansion triggers this lint on `PyResult` returns.
+#![allow(clippy::useless_conversion)]
+
 use pyo3::prelude::*;
 
 mod backtest;

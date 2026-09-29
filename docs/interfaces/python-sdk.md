@@ -537,12 +537,30 @@ Python in `honba.mcp.tools.HonbaTools`, usable (and tested) without the SDK.
 | `overfit_audit(run_id)` | DSR / PBO of a sweep through a backend hook (below) |
 
 The workspace is the sandbox: agents import files only from `imports/` (absolute paths and `..`
-are refused), strategies are loaded only from `strategies/`, and every saved or loaded strategy
-passes a static guard (`honba.mcp.sandbox`): imports limited to `honba`, numpy, pandas and pure
-stdlib modules, no `eval` / `exec` / `open` / `getattr` / dunder access / pandas or numpy file I/O,
-exactly one `Strategy` subclass, `honba.data` unavailable. This stops accidents and casual abuse;
-it is not a security boundary against a determined adversary (strategy code runs in the server
-process), so run the server in a container for untrusted agents.
+are refused) and strategies are loaded only from `strategies/`. Every saved or loaded strategy
+passes a static AST allowlist (`honba.mcp.sandbox.check_strategy_source`):
+
+- imports only at top level and only of listed module paths (`honba`, `honba.strategy.indicators`,
+  `numpy`, `numpy.random` / `.linalg` / `.fft`, `pandas`, `pandas.tseries.offsets`, `math`,
+  `statistics`, `datetime`, `dataclasses`, `typing`, `collections(.abc)`, `itertools`,
+  `functools`, `enum`, `decimal`); every imported name, and every attribute read off an imported
+  module, is resolved against the real module and must be on that module's name allowlist (or,
+  for numpy / pandas, be defined inside numpy / pandas), so re-exports such as
+  `from pandas.io.common import os` or `from honba.research.report import Path` are refused;
+  modules can only be attribute receivers (never passed around, rebound or assigned to);
+- no `eval` / `exec` / `open` / `type` / `getattr` & co, no dunder names or attributes, no frame /
+  generator / `mro` introspection, no private attributes except the strategy's own `self._x`, no
+  pandas / numpy file I/O (`read_*`, `to_*` writers, `save`, `load`, ...), no `pd.set_option`;
+- no `str.format` field access (`'{0.__class__}'`) and `.format` only on string literals; pandas
+  `agg` / `apply` / `transform` take a lambda, a function or a listed reduction name only;
+- exactly one `Strategy` subclass.
+
+`write_strategy` never runs agent code in the server: the class is loaded in a `python -I`
+subprocess with a stripped environment, a timeout and CPU / memory / file-size (zero) limits.
+`run_backtest` / `run_sweep` do execute the re-checked strategy in the server process. The guard is
+defence in depth, not a security boundary: treat an agent that can write strategies as able to
+run code as the server user, and for untrusted agents run the server in a container or VM with no
+credentials, no network and a read-only filesystem outside `$HONBA_HOME`.
 
 Overfit hook: `overfit_audit` calls the backend given to `honba.mcp.register_overfit_backend(fn)`
 (`fn(sweep_frame) -> dict`; the frame has `attrs["n_trials"]` and `attrs["results"]`), else

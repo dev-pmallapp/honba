@@ -34,7 +34,7 @@ from honba.data import (
     load_parquet,
 )
 
-from .sandbox import check_strategy_source, compile_strategy, strategy_path
+from .sandbox import compile_strategy, introspect_strategy, strategy_path
 
 __all__ = ["HonbaTools", "Workspace", "register_overfit_backend"]
 
@@ -266,31 +266,20 @@ class HonbaTools:
         return {"strategies": sorted(p.stem for p in self.ws.strategies.glob("*.py"))}
 
     def write_strategy(self, name: str, code: str, overwrite: bool = True) -> dict[str, Any]:
-        """Validate ``code`` (static guard + import + class check) and save it as ``name``.
+        """Validate ``code`` (static guard + isolated load + class check) and save it as ``name``.
 
         Only ``honba``, numpy, pandas and a few stdlib modules may be imported; file, network and
-        introspection primitives are rejected. Nothing is written when validation fails.
+        introspection primitives are rejected. The class is loaded in a resource-limited
+        subprocess, never in the server process. Nothing is written when validation fails.
         """
         path = strategy_path(self.ws.strategies, name)
         if path.exists() and not overwrite:
             raise FileExistsError(f"strategy {name!r} exists (pass overwrite=true)")
-        class_name = check_strategy_source(code)
-        cls = compile_strategy(code, str(path))
+        info = introspect_strategy(code, str(path))
         tmp = path.with_suffix(".tmp")
         tmp.write_text(code)
         os.replace(tmp, path)
-        declared = {
-            k: {"default": p.default, "low": p.low, "high": p.high} for k, p in cls.params().items()
-        }
-        return _jsonable(
-            {
-                "name": name,
-                "class": class_name,
-                "path": str(path),
-                "timeframe": getattr(cls, "timeframe", None),
-                "params": declared,
-            }
-        )
+        return _jsonable({"name": name, "path": str(path), **info})
 
     def run_backtest(
         self,

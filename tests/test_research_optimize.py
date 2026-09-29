@@ -263,6 +263,24 @@ def test_walk_forward_rolling_and_anchored_windows():
         hb.walk_forward(SmaCross, DATA, train_bars=250, test_bars=20, engine="simple")
 
 
+def test_walk_forward_rejects_overlapping_test_windows():
+    for step in (0, 1, 39):
+        with pytest.raises(ValueError, match=r"step \(\d+\) must be >= test_bars"):
+            hb.walk_forward(
+                SmaCross, DATA, CFG, train_bars=100, test_bars=40, step=step, engine="simple"
+            )
+
+
+@needs_optuna
+def test_walk_forward_step_beyond_test_bars_leaves_gaps_without_overlap():
+    wf = hb.walk_forward(
+        SmaCross, DATA, CFG, train_bars=100, test_bars=30, step=50, n_trials=3, seed=1,
+        engine="simple",
+    )  # fmt: skip
+    _check_folds(wf, 260, 100, 30)
+    assert wf.equity.index.is_unique
+
+
 @needs_core
 @needs_optuna
 def test_walk_forward_on_the_barter_engine():

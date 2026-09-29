@@ -338,7 +338,8 @@ wf.metrics, wf.efficiency, wf.in_sample, wf.out_of_sample
 Trials run sequentially (strategy callbacks hold the GIL); repeated suggestions are backtested
 once. `direction` defaults to maximise (minimise for `max_drawdown`-like metrics). Walk-forward
 test windows replay their train window as warm-up, so no test bar is seen during its fold's
-optimisation. `honba.research.overfit` exposes the statistics directly: `dsr(sr, n_trials,
+optimisation; `step` defaults to `test_bars` and smaller values are refused (overlapping
+out-of-sample windows would be stitched twice). `honba.research.overfit` exposes the statistics directly: `dsr(sr, n_trials,
 var_trials, n_obs, skew, kurtosis)`, `deflated_sharpe(returns, n_trials=, trial_sharpes=)`,
 `pbo(is_perf, oos_perf)`, `cscv_pbo(returns_matrix, n_splits=8)`, `overfit_backend()`. The Rust
 code is resolved by name (`honba.research._barter_adapter:OverfitCore`), so the module stays

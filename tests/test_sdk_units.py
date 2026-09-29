@@ -845,3 +845,46 @@ def test_square_off_coverage_warning_for_mis():
 
     with pytest.warns(UserWarning, match="square_off"):
         hb.backtest(M, {"X": short}, hb.BacktestConfig(session=NSE))
+
+
+# ------------------------------------- order lifecycle bookkeeping
+
+
+def test_first_terminal_state_wins_and_late_events_do_not_relabel_an_order():
+    class Q(hb.Strategy):
+        def on_bar(self, ctx): ...
+
+    runner = StrategyRunner(Q, ["X"])
+    s = runner.strategy
+    fill = mkfill(1, "buy", 10, 100.0)
+    late_reject = hb.strategy.Reject(2, fill.order_id, "X", None, 0.0, "order_closed")
+    late_cancel = hb.strategy.Cancel("cancel", 3, fill.order_id, "X", "oco")
+    runner(_ctx(1, events=[fill]))
+    runner(_ctx(2, events=[late_reject]))
+    runner(_ctx(3, events=[late_cancel]))
+    assert s._status_of(fill.order_id) == "filled"
+
+
+def test_modify_of_a_filled_entry_is_rejected_by_the_engine_and_reaches_on_reject():
+    pytest.importorskip("honba._core")
+    seen = {}
+
+    class M(hb.Strategy):
+        def on_reject(self, reject):
+            seen["reject"] = reject
+
+        def on_bar(self, ctx):
+            n = len(self.history())
+            if n == 2:
+                self.h = self.buy(5)
+            if n == 4:
+                seen["status_before"] = self.h.status
+                self.h.modify(qty=3)  # the entry filled long ago
+
+    res = hb.backtest(M, {"X": daily(flat(100, 6))}, hb.BacktestConfig(capital=10_000.0))
+    assert seen["status_before"] == "filled"
+    # the exact reason is the engine's business (currently unknown_order; order_closed is
+    # what the contract documents); the SDK's job is to deliver it and keep the order's status
+    assert seen["reject"].reason in ("order_closed", "not_an_entry", "unknown_order")
+    assert res.rejected.reason.tolist() == [seen["reject"].reason]
+    assert res.orders.set_index("id").loc["s1", "status"] == "filled"

@@ -141,17 +141,17 @@ class StrategyRunner:
     def _dispatch(self, event: Any) -> None:
         s = self.strategy
         if isinstance(event, Fill):
-            s._terminal[event.order_id] = "filled"
+            s._terminal.setdefault(event.order_id, "filled")
             s.on_fill(event)
             for trip in self._tracker.push(event):
                 self.round_trips.append(trip)
                 s.on_exit(trip)
         elif isinstance(event, Cancel):
-            s._terminal[event.id] = "cancelled" if event.kind == "cancel" else "expired"
+            s._terminal.setdefault(event.id, "cancelled" if event.kind == "cancel" else "expired")
             s.on_cancel(event)
         elif isinstance(event, Reject):
             if event.id:
-                s._terminal[event.id] = "rejected"
+                s._terminal.setdefault(event.id, "rejected")
             s.on_reject(event)
 
     def validate(self, actions: Iterable[Action]) -> None:

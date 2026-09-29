@@ -1,10 +1,8 @@
-"""
-Terminal Command-Line Interface for Honba.
-"""
+"""Terminal Command-Line Interface for Honba."""
 
+import typer
 from rich.console import Console
 from rich.table import Table
-import typer
 
 app = typer.Typer(help="Honba: Quantitative Research & Anti-Overfitting CLI")
 console = Console()

@@ -7,6 +7,8 @@ replaces the Jesse/OpenAlgo look-alike draft in `python/honba/strategy` and
 
 Update: the P0 SDK below is implemented (`docs/interfaces/python-sdk.md`); the sketches in section 3 were adapted (`self.history(tf=)` instead of `self.bars(tf)`, `PortfolioStrategy` folded into the single multi-symbol `Strategy`, `trail_stop` replaced by engine-native `Trail`).
 
+Update (P1 research depth): J16, J17, J21, J25, J30, J31, J32 and O4 are implemented in the SDK (`python-sdk.md`, Research depth); `PortfolioStrategy` returns as a `Strategy` subclass adding a universe, a rebalance schedule and `rebalance(weights)`.
+
 Direction: the SDK does not copy Jesse's or OpenAlgo's API shape or naming. It must cover
 their **features**. The existing `Strategy` (Jesse lifecycle) and `BarContext.placeorder`
 (OpenAlgo names) drafts become thin compatibility shims at most (P2) or are dropped.
@@ -55,23 +57,23 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | J13 | Position lifecycle hooks (`on_open_position`, `on_close_position`, `on_increased/reduced_position`, `on_cancel`) | done | Bridge (fills in ctx) + SDK | P0 | Needs per-bar fill/cancel events in the bar context. Today SDK guesses entry price. |
 | J14 | Position details (avg entry, pnl, `average_stop_loss`, `trades`, `orders`) | done | Engine (report in ctx) | P0 | Engine must send avg price, realised pnl, product per position and open orders. |
 | J15 | Hyperparameters (typed, ranges) + DNA | done | SDK | P0 | Declared params with bounds/types feed sweep and optimizer. |
-| J16 | Optimisation (Optuna + Ray, objective: sharpe/calmar/sortino/omega/serenity/smart ratios, train/test split) | draft (grid `sweep` with bounds, constraints, process pool; no Optuna) | SDK | P1 | Optuna in Python; parallelism via processes (Python callbacks hold the GIL, so Rust `run_sweep` concurrency does not help for Python strategies). Must record trial count for DSR. |
-| J17 | Monte Carlo on trades (shuffle / resample) | none | SDK | P1 | Pure post-processing of the trade list. |
+| J16 | Optimisation (Optuna + Ray, objective: sharpe/calmar/sortino/omega/serenity/smart ratios, train/test split) | done (`hb.optimize` Optuna TPE / random / grid, train/test split, `hb.walk_forward`, DSR + CSCV PBO on results; sequential, no Ray) | SDK | P1 | Optuna in Python; parallelism via processes (Python callbacks hold the GIL, so Rust `run_sweep` concurrency does not help for Python strategies). Must record trial count for DSR. |
+| J17 | Monte Carlo on trades (shuffle / resample) | done (`result.monte_carlo`: shuffle / resample / block) | SDK | P1 | Pure post-processing of the trade list. |
 | J18 | Monte Carlo on candles (block bootstrap, gaussian noise/resampler pipelines) | none | SDK | P2 | Python generates synthetic candles, reruns backtests. Respect circuit bands when perturbing. |
 | J19 | Rule significance test (bootstrap) | none | SDK | P2 | Complements honba DSR/PBO. |
 | J20 | Metrics (expectancy, avg win/loss, streaks, holding periods, long/short split, omega, serenity, largest win/loss, underwater period, trades/day) | done | SDK (from trades/equity) | P0 | Derive in Python from fills/round trips and equity; keep Rust report lean. Annualise with ~250 NSE sessions, not 365. |
-| J21 | Charts / reports (equity, drawdown, monthly returns, benchmark, candle chart with trades, custom lines) | none | SDK | P1 | Benchmark default NIFTY 50 / NIFTY 500 TRI. Plotly/HTML tearsheet; web2 can reuse JSON. |
+| J21 | Charts / reports (equity, drawdown, monthly returns, benchmark, candle chart with trades, custom lines) | done (`result.tearsheet` HTML, Plotly or SVG; `result.to_json`; benchmark alpha / beta / IR; no candle chart with trades yet) | SDK | P1 | Benchmark default NIFTY 50 / NIFTY 500 TRI. Plotly/HTML tearsheet; web2 can reuse JSON. |
 | J22 | Import candles (exchange drivers) + candle store | draft (frame ingest + validation, no loaders) | SDK + `honba-dhan` | P1 | Dhan historical API, CSV/Parquet catalog. Validate against session calendar (overnight/holiday gaps are not missing data). Corporate-action adjustment (splits/bonus) for equity. |
 | J23 | Candle validation (contiguous, monotonic) | done | SDK | P0 | Session-aware gap check, duplicate timestamps, OHLC sanity (low <= open/close <= high). |
 | J24 | Research API (`research.backtest` with in-memory candles) | done | SDK | P0 | Current `backtest()`; to be reshaped (section 3). |
-| J25 | Filters (`filters()` gates entries) | none | SDK | P1 | Trivial in Python. |
+| J25 | Filters (`filters()` gates entries) | done (`Strategy.filters()`) | SDK | P1 | Trivial in Python. |
 | J26 | Trading hours / `is_trading_hours` | done | Engine | P0 | NSE 09:15-15:30 IST, pre-open 09:00-09:08, holiday calendar, muhurat session. Engine must know sessions for MIS square-off and DAY TIF. |
 | J27 | Fees (maker/taker) | done | Engine | P0 | Wire `IndianTaxCalculator` per fill (see 1.3). |
 | J28 | Leverage / futures margin / liquidation | partial (margin config: MIS leverage, NRML / short margin %, `insufficient_margin`; no SPAN, no liquidation engine) | Engine | P2 | India: MIS intraday leverage (broker-defined, ~5x equity), NRML SPAN+exposure. No liquidation engine; broker auto-square-off on margin shortfall. |
 | J29 | Shorting | done | Engine | P0 | Equity cash shorts are intraday (MIS) only; must be squared off same day. Overnight shorts only via F&O (NRML). |
-| J30 | Portfolio rebalance / universes | none | SDK | P1 | Universe = index constituents (NIFTY 50/100/500) with point-in-time membership (P2). |
-| J31 | Shared vars across routes | none | SDK | P1 | Replaced by portfolio-level strategy. |
-| J32 | Logging (`self.log`), debug mode | done (`Strategy.log`) | SDK | P1 | Log lines tagged with bar time into the result. |
+| J30 | Portfolio rebalance / universes | done (`PortfolioStrategy`: universe, schedule, `rebalance(weights)`; no point-in-time index membership) | SDK | P1 | Universe = index constituents (NIFTY 50/100/500) with point-in-time membership (P2). |
+| J31 | Shared vars across routes | done (one instance per run; `PortfolioStrategy.state`) | SDK | P1 | Replaced by portfolio-level strategy. |
+| J32 | Logging (`self.log`), debug mode | done (`Strategy.log`, `result.log_frame`, in JSON / tearsheet) | SDK | P1 | Log lines tagged with bar time into the result. |
 | J33 | Live / paper trading parity (same strategy code) | none | Engine (barter live) + `honba-dhan` | P2 | Same `Strategy` class runs on a live runner: barter engine + Dhan execution client + Dhan websocket data. Daily token expiry / re-login. |
 | J34 | Notifications (Telegram/Discord/Slack) | none | Out (P2) | P2 | Live only. |
 | J35 | ML pipeline (`record_features`, `ml_predict`, export) | none | SDK | P2 | Feature/label recording hook in strategy; fits with `docs/research/llm-ml-enhancement.md`. |
@@ -85,7 +87,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O1 | Order types MARKET / LIMIT / SL / SL-M | done | Engine | P0 | Same machinery as J8/J11. SL = stop-limit, SL-M = stop-market. Tick rounding. |
 | O2 | Product types CNC / MIS / NRML (MTF) | done | Engine | P0 | Drives costs (STT differs MIS vs CNC), short rules, auto square-off, settlement. |
 | O3 | Smart order (target position size) | done | SDK | P0 | Pure delta computation; must account for open orders to avoid double-sending. |
-| O4 | Basket order (many orders at once) | draft (list of actions) | SDK | P1 | Actions are already a list per bar; add tag/group for reporting. |
+| O4 | Basket order (many orders at once) | done (`group=` / `with self.group(...)`, `result.groups`) | SDK | P1 | Actions are already a list per bar; add tag/group for reporting. |
 | O5 | Split order (slice large qty) | none | SDK | P1 | Needed for F&O freeze quantity (exchange max qty per order); slices must be lot multiples. |
 | O6 | Modify order / cancel order / cancel all | done | Engine | P0 | Contract ops `modify`, `cancel`, `cancel_all`. |
 | O7 | Close position / close all | done | SDK | P0 | Smart order to 0; `close_all` iterates positions. |

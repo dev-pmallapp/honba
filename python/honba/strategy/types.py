@@ -6,10 +6,11 @@ These are the SDK's own vocabulary. Engines translate to and from them (the bart
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 __all__ = [
     "CNC",
@@ -24,12 +25,14 @@ __all__ = [
     "Costs",
     "Fill",
     "FillReason",
+    "Leg",
     "Order",
     "Position",
     "Reject",
     "RejectReason",
     "RoundTrip",
     "SessionState",
+    "StopUpdate",
     "Trail",
     "TrailUpdate",
 ]
@@ -83,6 +86,7 @@ class CancelReason(StrEnum):
     OCO = "oco"
     POSITION_CLOSED = "position_closed"
     PARENT_CLOSED = "parent_closed"
+    REPLACED = "replaced"  # an exit leg superseded by a new list of legs (modify)
     SQUARE_OFF = "square_off"
     END_OF_DATA = "end_of_data"
     DAY = "day"
@@ -190,6 +194,43 @@ class Trail:
     ) -> Trail:
         """Trail ``mult`` x ATR(``period``) behind the best price."""
         return cls("atr", mult, atr_period=period, activation=activation, step=step)
+
+
+@dataclass(frozen=True, slots=True)
+class Leg:
+    """One leg of a scaled (partial) exit: ``stop_loss=[Leg(95, qty=5), Leg(90)]``.
+
+    ``price`` is the leg's level. ``qty`` is an absolute quantity (a multiple of the lot size)
+    or ``pct`` a percent of the entry quantity (rounded down to lots); a leg with neither takes
+    whatever the other legs leave (at most one per list). Dicts with the same keys are accepted
+    wherever legs are (``take_profit=[{"price": 110, "pct": 50}, {"price": 120}]``).
+    """
+
+    price: float
+    qty: float | None = None
+    pct: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.price > 0:
+            raise ValueError(f"leg price must be positive, got {self.price!r}")
+        if self.qty is not None and self.pct is not None:
+            raise ValueError("a leg takes qty or pct, not both")
+        if self.qty is not None and not self.qty > 0:
+            raise ValueError(f"leg qty must be positive, got {self.qty!r}")
+        if self.pct is not None and not 0 < self.pct <= 100:
+            raise ValueError(f"leg pct must be in (0, 100], got {self.pct!r}")
+
+    @classmethod
+    def of(cls, leg: Leg | Mapping[str, Any]) -> Leg:
+        """A :class:`Leg` from a leg or a ``{"price", "qty", "pct"}`` mapping."""
+        if isinstance(leg, Leg):
+            return leg
+        if not isinstance(leg, Mapping):
+            raise TypeError(f"exit legs are hb.Leg or dicts, got {leg!r}")
+        unknown = set(leg) - {"price", "qty", "pct"}
+        if unknown or "price" not in leg:
+            raise ValueError(f"a leg needs price and optionally qty or pct, got {dict(leg)!r}")
+        return cls(float(leg["price"]), leg.get("qty"), leg.get("pct"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -355,7 +396,19 @@ class TrailUpdate:
     new_stop: float
 
 
-Event = Fill | Cancel | Reject | TrailUpdate
+@dataclass(frozen=True, slots=True)
+class StopUpdate:
+    """The engine moved a stop that is not a trail (``reason`` ``"move_sl_to_entry"``)."""
+
+    time_ms: int
+    id: str
+    symbol: str
+    old_stop: float | None
+    new_stop: float
+    reason: str = "move_sl_to_entry"
+
+
+Event = Fill | Cancel | Reject | TrailUpdate | StopUpdate
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,7 +476,8 @@ class BarContext:
 
     ``bars`` holds the latest bar of every symbol (a symbol without a bar at ``time_ms`` keeps
     its older bar; check ``bar.time_ms == ctx.time_ms``). ``events`` are the fills, cancels,
-    rejects and trail moves since the previous bar, in order.
+    rejects and stop moves (:class:`TrailUpdate`, :class:`StopUpdate`) since the previous bar,
+    in order.
     """
 
     time_ms: int

@@ -27,11 +27,13 @@ from honba.strategy.types import (
     Cancel,
     Costs,
     Fill,
+    Leg,
     Order,
     Position,
     Reject,
     RoundTrip,
     SessionState,
+    StopUpdate,
     Trail,
     TrailUpdate,
 )
@@ -72,6 +74,7 @@ _FEATURE_MIN_CONTRACT = {
     "slippage": 3,
     "price_bands": 3,
     "freeze_split": 3,
+    "partial_exits": 3,
 }
 
 
@@ -113,6 +116,20 @@ def _trail_wire(trail: Trail) -> dict[str, Any]:
     if trail.step is not None:
         out["step"] = float(trail.step)
     return out
+
+
+def _exit_wire(level: float | tuple[Leg, ...]) -> float | list[dict[str, float]]:
+    """A stop-loss / take-profit level, or its legs as ``{"price", "qty" | "pct"}`` dicts."""
+    if not isinstance(level, tuple):
+        return level
+    return [
+        {
+            "price": float(leg.price),
+            **({"qty": float(leg.qty)} if leg.qty is not None else {}),
+            **({"pct": float(leg.pct)} if leg.pct is not None else {}),
+        }
+        for leg in level
+    ]
 
 
 def _instrument_wire(inst: Instrument) -> dict[str, Any]:
@@ -215,14 +232,18 @@ def action_to_wire(action: Action) -> dict[str, Any]:
             "tif": action.tif,
             "product": action.product,
             "tag": action.tag,
-            "stop_loss": action.stop_loss,
-            "take_profit": action.take_profit,
+            "stop_loss": _exit_wire(action.stop_loss) if action.stop_loss is not None else None,
+            "take_profit": (
+                _exit_wire(action.take_profit) if action.take_profit is not None else None
+            ),
         }
         out.update({k: v for k, v in optional.items() if v is not None})
         if action.trail is not None:
             out["trail"] = _trail_wire(action.trail)
         if action.reduce_only:
             out["reduce_only"] = True
+        if action.move_sl_to_entry_after_first_tp:
+            out["move_sl_to_entry_after_first_tp"] = True
         return out
     if isinstance(action, ModifyOrder):
         out = {"op": "modify", "id": action.id}
@@ -231,8 +252,10 @@ def action_to_wire(action: Action) -> dict[str, Any]:
             "price": action.price,
             "trigger": action.trigger,
             "tif": action.tif,
-            "stop_loss": action.stop_loss,
-            "take_profit": action.take_profit,
+            "stop_loss": _exit_wire(action.stop_loss) if action.stop_loss is not None else None,
+            "take_profit": (
+                _exit_wire(action.take_profit) if action.take_profit is not None else None
+            ),
             "tag": action.tag,
         }
         out.update({k: v for k, v in optional.items() if v is not None})
@@ -343,6 +366,15 @@ def _event(raw: dict[str, Any]) -> Any:
     if kind == "trail_update":
         return TrailUpdate(
             int(raw["time_ms"]), raw["id"], raw["symbol"], raw.get("old_stop"), raw["new_stop"]
+        )
+    if kind == "stop_update":
+        return StopUpdate(
+            int(raw["time_ms"]),
+            raw["id"],
+            raw["symbol"],
+            raw.get("old_stop"),
+            raw["new_stop"],
+            str(raw.get("reason", "move_sl_to_entry")),
         )
     return None
 

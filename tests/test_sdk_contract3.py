@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import pytest
+from honba.strategy.actions import PlaceOrder
+from honba.strategy.types import StopUpdate
 from sdk_helpers import daily, flat
 
 import honba as hb
@@ -222,3 +224,177 @@ def test_split_order_helper_stays_the_fallback_for_engines_without_native_split(
     assert hb.research.get_engine("barter").capabilities().supports("freeze_split")
     with pytest.raises(ValueError, match="freeze_policy"):
         hb.BacktestConfig(freeze_policy="sometimes")  # type: ignore[arg-type]
+
+
+# ----------------------------------------------------------------------------- partial exits
+
+
+class ScaleOut(Recorder):
+    move = True
+
+    def on_bar(self, ctx):
+        self.stops += [e for e in ctx.events if isinstance(e, StopUpdate)]
+        if len(self.history()) == 3 and self.position.is_flat:
+            self.entry = self.buy(
+                10,
+                stop_loss=95,
+                take_profit=[hb.Leg(110, qty=5), {"price": 120}],
+                move_sl_to_entry_after_first_tp=self.move,
+            )
+
+    def on_stop_update(self, update):
+        self.seen.append(update)
+
+
+SCALE_ROWS = [*flat(100, 3), (100, 111, 99, 108), (108, 109, 99.5, 100), flat(100, 1)[0]]
+
+
+def test_tp1_takes_half_then_stop_moves_to_entry_and_covers_the_rest():
+    res = run(ScaleOut, SCALE_ROWS)
+    f = res.fills
+    assert f.order_id.tolist() == ["s1", "s1:tp1", "s1:sl"]
+    assert f.qty.tolist() == [10.0, 5.0, 5.0]
+    assert f.price.tolist() == [100.0, 110.0, 100.0]  # the stop sits at the entry price now
+    assert f.reason.tolist() == ["signal", "take_profit", "stop_loss"]
+    assert res.positions["X"].is_flat
+    (trip,) = res.round_trips
+    assert trip.gross_pnl == pytest.approx(50.0) and trip.exit_reason == "stop_loss"
+    statuses = {o.id: o.status for o in res.report.orders}
+    assert statuses == {
+        "s1": "filled",
+        "s1:sl": "filled",
+        "s1:tp1": "filled",
+        "s1:tp2": "cancelled",
+    }
+
+
+def test_stop_update_event_reaches_events_and_the_hook():
+    strat = {}
+
+    class Probe(ScaleOut):
+        def on_start(self):
+            super().on_start()
+            strat["s"] = self
+
+    run(Probe, SCALE_ROWS)
+    me = strat["s"]
+    (update,) = me.stops
+    assert isinstance(update, StopUpdate) and me.seen == [update]  # ctx.events and on_stop_update
+    assert (update.id, update.old_stop, update.new_stop) == ("s1:sl", 95.0, 100.0)
+    assert update.reason == "move_sl_to_entry"
+
+
+def test_without_move_the_stop_stays_and_the_last_target_completes_the_exit():
+    class Hold(ScaleOut):
+        move = False
+
+    rows = [*flat(100, 3), (100, 111, 99, 108), (108, 121, 107, 120)]
+    res = run(Hold, rows)
+    assert res.fills.reason.tolist() == ["signal", "take_profit", "take_profit"]
+    assert res.fills.price.tolist() == [100.0, 110.0, 120.0]
+    assert res.summary["net_pnl"] == pytest.approx(5 * 10 + 5 * 20)
+
+
+def test_remaining_stop_covers_what_the_targets_leave_when_the_stop_hits_first():
+    class Hold(ScaleOut):
+        move = False
+
+    rows = [*flat(100, 3), (100, 111, 99, 108), (108, 109, 90, 92)]
+    res = run(Hold, rows)
+    assert res.fills.qty.tolist() == [10.0, 5.0, 5.0]
+    assert res.fills.reason.tolist() == ["signal", "take_profit", "stop_loss"]
+    assert res.fills.price.iloc[-1] == 95.0  # stop of the 5 left, not of all 10
+
+
+def test_stop_loss_legs_and_replacing_legs_cancels_them_as_replaced():
+    strat = {}
+
+    class Legs(Recorder):
+        def on_start(self):
+            super().on_start()
+            strat["s"] = self
+
+        def on_bar(self, ctx):
+            n = len(self.history())
+            if n == 3:
+                self.h = self.buy(
+                    10,
+                    stop_loss=[hb.Leg(95, pct=50), hb.Leg(92)],
+                    take_profit=[hb.Leg(110, qty=4), hb.Leg(120)],
+                )
+            if n == 4:
+                self.modify(self.h, take_profit=[hb.Leg(115, qty=6), hb.Leg(125)])
+
+    res = run(Legs, flat(100, 6))
+    ids = {o.id: (o.status, o.reason) for o in res.report.orders}
+    assert ids["s1:tp1"] == ("cancelled", hb.CancelReason.REPLACED)
+    assert ids["s1:tp2"] == ("cancelled", hb.CancelReason.REPLACED)
+    assert {"s1:tp3", "s1:tp4", "s1:sl1", "s1:sl2"} <= set(ids)
+    replaced = [c.id for c in strat["s"].cancels if c.reason == hb.CancelReason.REPLACED]
+    assert sorted(replaced) == ["s1:tp1", "s1:tp2"]
+    live = {o.id: o for o in res.report.orders if o.status == "open"}
+    assert live["s1:tp3"].qty == 6.0 and live["s1:sl1"].qty == 5.0  # pct=50 of 10
+
+
+def test_sdk_validates_legs_before_sending():
+    fut = {"X": hb.Instrument("equity_futures", lot_size=75.0)}
+
+    class Bad(Recorder):
+        legs: object = None
+
+        def on_bar(self, ctx):
+            self.buy(150, take_profit=self.legs, stop_loss=90)
+
+    def go(**attrs):
+        cls = type("B", (Bad,), attrs)
+        return run(cls, flat(100, 3), CFG.with_(instruments=fut))
+
+    with pytest.raises(ValueError, match="not a multiple of the lot size 75"):
+        go(legs=[hb.Leg(110, qty=100), hb.Leg(120)])
+    with pytest.raises(ValueError, match="legs cover 225 but the order is for 150"):
+        go(legs=[hb.Leg(110, qty=75), hb.Leg(120, qty=150)])
+    with pytest.raises(ValueError, match="at most one leg"):
+        go(legs=[hb.Leg(110), hb.Leg(120)])
+    with pytest.raises(ValueError, match="add up to more than 100"):
+        go(legs=[hb.Leg(110, pct=60), hb.Leg(120, pct=60)])
+    with pytest.raises(ValueError, match="not both"):
+        hb.Leg(100, qty=1, pct=10)
+
+    class Both(Recorder):
+        def on_bar(self, ctx):
+            self.buy(10, stop_loss=[hb.Leg(90, qty=5), hb.Leg(85)], trail=hb.Trail.percent(1))
+
+    with pytest.raises(ValueError, match="unsupported_trail"):
+        run(Both, flat(100, 3))
+
+
+def test_engine_reject_unsupported_trail_is_surfaced_as_a_typed_reason():
+    class Raw(Recorder):
+        def on_bar(self, ctx):
+            if len(self.history()) == 3:
+                self._emit(
+                    PlaceOrder(
+                        "raw",
+                        "X",
+                        "buy",
+                        10.0,
+                        stop_loss=(hb.Leg(90, qty=5), hb.Leg(85)),
+                        trail=hb.Trail.percent(1.0),
+                    )
+                )
+
+    res = run(Raw, flat(100, 5))
+    assert [(r.id, r.reason) for r in res.report.rejected] == [
+        ("raw", hb.RejectReason.UNSUPPORTED_TRAIL)
+    ]
+
+
+def test_partial_exits_are_a_capability_and_simple_engine_names_it():
+    class Simple(hb.Strategy):
+        def on_bar(self, ctx):
+            self.buy(10, take_profit=[hb.Leg(110, qty=5), hb.Leg(120)])
+
+    with pytest.raises(hb.UnsupportedFeature) as err:
+        hb.backtest(Simple, {"X": daily(flat(100, 4))}, CFG, engine="simple")
+    assert "partial_exits" in err.value.missing
+    assert hb.research.get_engine("barter").capabilities().supports("partial_exits")

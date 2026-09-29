@@ -18,7 +18,7 @@ from .market import Instrument, TradingSession
 from .mtf import Resampler, Timeframe
 from .roundtrip import RoundTripTracker
 from .series import BarBuffer, Bars
-from .types import BarContext, Cancel, Fill, Reject, RoundTrip
+from .types import BarContext, Cancel, Fill, Reject, RoundTrip, StopUpdate, TrailUpdate
 
 __all__ = ["StrategyRunner"]
 
@@ -155,6 +155,8 @@ class StrategyRunner:
         elif isinstance(event, Cancel):
             s._terminal.setdefault(event.id, "cancelled" if event.kind == "cancel" else "expired")
             s.on_cancel(event)
+        elif isinstance(event, (TrailUpdate, StopUpdate)):
+            s.on_stop_update(event)
         elif isinstance(event, Reject):
             if event.id:
                 s._terminal.setdefault(event.id, "rejected")

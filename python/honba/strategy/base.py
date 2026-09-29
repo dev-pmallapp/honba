@@ -31,6 +31,7 @@ from .actions import (
     Action,
     CancelAll,
     CancelOrder,
+    ExitLevel,
     ModifyOrder,
     PlaceOrder,
     required_features,
@@ -45,17 +46,20 @@ from .types import (
     BarContext,
     Cancel,
     Fill,
+    Leg,
     Order,
     Position,
     Reject,
     RejectReason,
     RoundTrip,
     SessionState,
+    StopUpdate,
     Trail,
+    TrailUpdate,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from datetime import datetime
 
 __all__ = ["OrderHandle", "Strategy"]
@@ -103,6 +107,14 @@ class OrderHandle:
     def target_order(self) -> OrderHandle:
         """Handle of the attached take profit (``<id>:tp``)."""
         return OrderHandle(self._strategy, f"{self.id}:tp", self.symbol)
+
+    def stop_leg(self, n: int) -> OrderHandle:
+        """Handle of stop-loss leg ``n`` (1-based) of an entry placed with ``stop_loss`` legs."""
+        return OrderHandle(self._strategy, f"{self.id}:sl{n}", self.symbol)
+
+    def target_leg(self, n: int) -> OrderHandle:
+        """Handle of take-profit leg ``n`` (1-based) of an entry placed with target legs."""
+        return OrderHandle(self._strategy, f"{self.id}:tp{n}", self.symbol)
 
     def modify(self, **changes: Any) -> None:
         """``Strategy.modify`` on this order."""
@@ -212,6 +224,13 @@ class Strategy(ABC):
 
     def on_cancel(self, cancel: Cancel) -> None:
         """An order was cancelled or expired (``cancel.kind`` tells which)."""
+
+    def on_stop_update(self, update: TrailUpdate | StopUpdate) -> None:
+        """The engine moved a stop.
+
+        A trailing-stop ratchet (:class:`TrailUpdate`) or the move to entry after the first
+        target filled (:class:`StopUpdate`).
+        """
 
     def filters(self) -> Sequence[Callable[..., bool]]:
         """Entry filters: callables that must all return True for a new entry to be sent.
@@ -352,12 +371,13 @@ class Strategy(ABC):
         tif: str | None = None,
         product: str | None = None,
         tag: str | None = None,
-        stop_loss: float | None = None,
-        take_profit: float | None = None,
+        stop_loss: float | Sequence[Leg | Mapping[str, Any]] | None = None,
+        take_profit: float | Sequence[Leg | Mapping[str, Any]] | None = None,
         trail: Trail | None = None,
         reduce_only: bool = False,
         id: str | None = None,
         group: str | None = None,
+        move_sl_to_entry_after_first_tp: bool = False,
     ) -> OrderHandle | None:
         """Place an order and return its handle.
 
@@ -373,6 +393,15 @@ class Strategy(ABC):
         tick and ``qty`` down to whole lots. ``group`` tags the order (and its attached exits)
         with a basket name for reporting; see :meth:`group`. Entries are gated by
         :meth:`filters`.
+
+        Partial exits: ``stop_loss`` / ``take_profit`` also take a list of legs
+        (:class:`~honba.Leg` or ``{"price", "qty" | "pct"}`` dicts): leg quantities are lot
+        multiples summing to at most ``qty``, a leg without ``qty`` / ``pct`` takes the rest.
+        Each side covers the entry's open quantity, so a single stop loss protects whatever the
+        target legs leave. ``move_sl_to_entry_after_first_tp=True`` moves the stop to the entry
+        price once the first target fills (a ``StopUpdate`` event, ``on_stop_update``). A
+        ``trail`` cannot be combined with several stop-loss legs. Needs the ``partial_exits``
+        engine capability.
         """
         if side not in ("buy", "sell"):
             raise ValueError("side must be 'buy' or 'sell'")
@@ -391,6 +420,15 @@ class Strategy(ABC):
             lots = self._apply_filters(sym, side, lots)
             if lots <= 0:
                 return None
+        sl_level = self._exit_level("stop_loss", stop_loss, inst, lots, sym)
+        tp_level = self._exit_level("take_profit", take_profit, inst, lots, sym)
+        if isinstance(sl_level, tuple) and trail is not None:
+            raise ValueError(
+                "trail cannot be combined with stop_loss legs (the engine rejects it as "
+                "unsupported_trail): use one stop_loss level, or trail without legs"
+            )
+        if move_sl_to_entry_after_first_tp and (sl_level is None or tp_level is None):
+            raise ValueError("move_sl_to_entry_after_first_tp needs stop_loss and take_profit")
         order_id = id or self._next_id()
         action = PlaceOrder(
             order_id,
@@ -403,10 +441,11 @@ class Strategy(ABC):
             tif,
             product or self.product,
             tag,
-            None if stop_loss is None else inst.round_price(stop_loss),
-            None if take_profit is None else inst.round_price(take_profit),
+            sl_level,
+            tp_level,
             trail,
             reduce_only,
+            move_sl_to_entry_after_first_tp,
         )
         handle = self._submit(action, sym)
         tag_group = group if group is not None else self._group
@@ -454,8 +493,8 @@ class Strategy(ABC):
         limit: float | None = None,
         stop: float | None = None,
         tif: str | None = None,
-        stop_loss: float | None = None,
-        take_profit: float | None = None,
+        stop_loss: float | Sequence[Leg | Mapping[str, Any]] | None = None,
+        take_profit: float | Sequence[Leg | Mapping[str, Any]] | None = None,
         trail: Trail | None = None,
         tag: str | None = None,
     ) -> None:
@@ -463,11 +502,14 @@ class Strategy(ABC):
 
         To move the stop of a live position modify its exit order:
         ``self.modify(handle.stop_order, stop=new_level)``; for an unfilled entry pass
-        ``stop_loss`` / ``take_profit`` / ``trail``. ``None`` leaves a field unchanged.
+        ``stop_loss`` / ``take_profit`` / ``trail``. ``None`` leaves a field unchanged. A level
+        moves every working leg of that side; a list of legs replaces them (the old legs are
+        cancelled with reason ``replaced``).
         """
         order_id = order if isinstance(order, str) else order.id
         inst = self._instruments.get(self._order_symbol(order), Instrument())
         rnd = inst.round_price
+        sym = self._order_symbol(order)
         self._emit(
             ModifyOrder(
                 order_id,
@@ -475,8 +517,8 @@ class Strategy(ABC):
                 None if limit is None else rnd(limit),
                 None if stop is None else rnd(stop),
                 tif,
-                None if stop_loss is None else rnd(stop_loss),
-                None if take_profit is None else rnd(take_profit),
+                self._exit_level("stop_loss", stop_loss, inst, None, sym),
+                self._exit_level("take_profit", take_profit, inst, None, sym),
                 trail,
                 tag,
             )
@@ -498,6 +540,36 @@ class Strategy(ABC):
         if len(self.symbols) == 1:
             return self.symbols[0]
         raise ValueError(f"symbol is required with several symbols {list(self.symbols)}")
+
+    @staticmethod
+    def _exit_level(
+        name: str, value: Any, inst: Instrument, qty: float | None, sym: str
+    ) -> ExitLevel | None:
+        """A price, or validated :class:`Leg` tuple, rounded to the tick (``qty``: entry size)."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return inst.round_price(value)
+        legs = tuple(Leg.of(leg) for leg in value)
+        if not legs:
+            raise ValueError(f"{name} needs at least one leg")
+        legs = tuple(Leg(inst.round_price(leg.price), leg.qty, leg.pct) for leg in legs)
+        if sum(1 for leg in legs if leg.qty is None and leg.pct is None) > 1:
+            raise ValueError(f"{name}: at most one leg may omit qty and pct (it takes the rest)")
+        if sum(leg.pct or 0.0 for leg in legs) > 100.0 + _LOT_EPS:
+            raise ValueError(f"{name}: leg pct values add up to more than 100")
+        for leg in legs:
+            if leg.qty is not None and abs(inst.round_qty(leg.qty) - leg.qty) > _LOT_EPS:
+                raise ValueError(
+                    f"{name} leg qty {leg.qty:g} is not a multiple of the lot size "
+                    f"{inst.lot_size:g} of {sym or 'the symbol'}"
+                )
+        if qty is not None:
+            fixed = sum(leg.qty or 0.0 for leg in legs)
+            pct = sum(inst.round_qty(qty * leg.pct / 100.0) for leg in legs if leg.pct)
+            if fixed + pct > qty + _LOT_EPS:
+                raise ValueError(f"{name} legs cover {fixed + pct:g} but the order is for {qty:g}")
+        return legs
 
     def _next_id(self) -> str:
         self._seq += 1

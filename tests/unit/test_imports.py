@@ -41,7 +41,7 @@ TOP_LEVEL = [
 # Packages that still only exist in the legacy root ``honba/`` tree, which
 # ``python/honba`` shadows. Modules that import them cannot load until that
 # code is moved into ``python/honba``.
-LEGACY_ROOT_PACKAGES = {"honba.api", "honba.data", "honba.data.bhavcopy", "honba.strategies"}
+LEGACY_ROOT_PACKAGES = {"honba.api", "honba.strategies"}
 
 
 @pytest.mark.parametrize("name", TOP_LEVEL)

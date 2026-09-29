@@ -2,6 +2,7 @@
 
 from ._frames import CANDLE_COLUMNS
 from .actions import CorporateAction, adjust_candles, adjustment_factors, load_actions_csv
+from .bhavcopy import BhavcopyIngestion
 from .dhan import DhanCredentials, DhanError, DhanLoader, DhanSecurity
 from .instruments import InstrumentMaster, InstrumentRecord
 from .io import load_csv, load_parquet
@@ -10,6 +11,7 @@ from .store import AppendResult, CandleLoader, CandleStore
 __all__ = [
     "CANDLE_COLUMNS",
     "AppendResult",
+    "BhavcopyIngestion",
     "CandleLoader",
     "CandleStore",
     "CorporateAction",

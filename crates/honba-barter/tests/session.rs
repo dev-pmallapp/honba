@@ -236,7 +236,7 @@ fn square_off_does_not_cancel_an_exit_that_is_filling() {
                 Event::Fill(f) => f.id == id,
                 Event::Cancel { id: i, .. } | Event::Expire { id: i, .. } => i == id,
                 Event::Reject { id: i, .. } => i.as_deref() == Some(id),
-                Event::TrailUpdate { .. } => false,
+                Event::TrailUpdate { .. } | Event::StopUpdate { .. } => false,
             })
             .count()
     };

@@ -61,7 +61,8 @@
 //! }
 //! Costs = {"brokerage","stt","exchange_fee","sebi_fee","stamp_duty","gst","dp","total"}: float
 //! Fill  = {"time_ms","fill_id","order_id","symbol","side","qty","price","value",
-//!          "fees" (== costs.total),"costs": Costs,"realised_pnl","product","tag","reason"}
+//!          "fees" (== costs.total),"costs": Costs,"realised_pnl","product","tag","reason",
+//!          "slice" (only for freeze_policy split: "<order_id>#<n>")}
 //! Order / Position: see `OrderView` / `PositionView` in `honba_barter::model`.
 //! ```
 
@@ -161,6 +162,9 @@ pub struct TradeRecord {
     pub product: Product,
     pub tag: Option<String>,
     pub reason: FillReason,
+    /// Freeze-quantity slice id (`<order_id>#<n>`), only for split orders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -448,6 +452,7 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
             product: fill.product,
             tag: fill.tag.clone(),
             reason: fill.reason,
+            slice: fill.slice.clone(),
         })
         .collect::<Vec<_>>();
 

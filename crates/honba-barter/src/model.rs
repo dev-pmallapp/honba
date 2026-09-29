@@ -453,6 +453,9 @@ pub struct FillEvent {
     /// Quantity of the order still working after this fill (0 when the order is done).
     #[serde(default)]
     pub remaining_qty: f64,
+    /// Freeze-quantity slice (`<id>#<n>`) when the order was split (`freeze_policy: split`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice: Option<String>,
 }
 
 /// Something that happened to an order since the previous `on_bar`.

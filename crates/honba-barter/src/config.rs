@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
 /// | `liquidate_at_end` | bool      | `false`     | Close all positions at the final bar's close.             |
 /// | `margin`           | object    | 1x / 100%   | [`MarginConfig`]: `mis_leverage`, `nrml_margin_pct`, `short_margin_pct`. |
 /// | `slippage`         | object    | `null`      | [`SlippageConfig`]; `null` = fills at the matched price, no volume cap. |
+/// | `freeze_policy`    | str       | `"reject"`  | [`FreezePolicy`]: orders above `freeze_qty` are rejected or split. |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BacktestConfig {
@@ -58,6 +59,8 @@ pub struct BacktestConfig {
     /// none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slippage: Option<SlippageConfig>,
+    /// What happens to orders above an instrument's `freeze_qty`.
+    pub freeze_policy: FreezePolicy,
     /// Trading hours / holidays / MIS square-off; `null` = always open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<SessionConfig>,
@@ -93,6 +96,7 @@ impl Default for BacktestConfig {
             session: None,
             margin: MarginConfig::default(),
             slippage: None,
+            freeze_policy: FreezePolicy::Reject,
             liquidate_at_end: false,
             trading_days_per_year: 250,
             attached_exit_same_bar: false,
@@ -141,6 +145,20 @@ impl MarginConfig {
             Product::CNC => 1.0,
         }
     }
+}
+
+/// Handling of orders above an instrument's `freeze_qty` (exchange maximum per order).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FreezePolicy {
+    /// Reject the order (`above_freeze_qty`).
+    #[default]
+    Reject,
+    /// Accept it as one order and execute every fill as child exchange orders of at most
+    /// `freeze_qty` (rounded down to the lot size); the slices of a fill share its price,
+    /// carry their own costs (brokerage per slice) and are reported with `slice: "<id>#<n>"`
+    /// on the parent order's fill events / trades.
+    Split,
 }
 
 /// How the slippage of a market-like fill is sized.

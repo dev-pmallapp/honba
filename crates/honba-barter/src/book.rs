@@ -20,7 +20,7 @@
 //! decision bar's close fill immediately at that close.
 
 use crate::{
-    config::{InstrumentMeta, MarginConfig, SlippageConfig},
+    config::{FreezePolicy, InstrumentMeta, MarginConfig, SlippageConfig},
     data::Bar,
     model::{
         Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
@@ -150,6 +150,8 @@ pub struct BookConfig {
     pub margin: MarginConfig,
     /// Slippage and volume participation cap.
     pub slippage: Option<SlippageConfig>,
+    /// Orders above `freeze_qty`: rejected, or executed in freeze-sized slices.
+    pub freeze_policy: FreezePolicy,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
     /// Per instrument: timestamps of its MIS square-off bars (see
@@ -248,6 +250,8 @@ pub struct Order {
     pub triggered: bool,
     /// First bar index this order may be matched against.
     pub active_from_bar: usize,
+    /// Freeze-quantity slices executed so far (`<id>#<n>`).
+    pub slices: u32,
     /// Trading date of the first bar the order was matched against (`day` expiry).
     pub first_eval_date: Option<NaiveDate>,
     pub created_ms: i64,
@@ -309,6 +313,10 @@ pub struct FillIntent {
     pub bar_index: usize,
     /// Quantity was cut by the volume cap: the order keeps working for the rest.
     pub capped: bool,
+    /// Freeze-quantity slice id (`<order id>#<n>`) when the fill was split.
+    pub slice: Option<String>,
+    /// Last intent of one fill decision (the final slice).
+    pub last: bool,
 }
 
 /// A request honba refused (or an order that failed at fill time).
@@ -627,7 +635,7 @@ impl Book {
         bar_index: usize,
         date: NaiveDate,
         time_ms: i64,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
         let due = self
             .cfg
             .square_off_at
@@ -639,7 +647,7 @@ impl Book {
                 .as_ref()
                 .is_some_and(|session| session.past_square_off(time_ms));
         if !due || self.squared_off[instrument] == Some(date) {
-            return None;
+            return Vec::new();
         }
         self.squared_off[instrument] = Some(date);
 
@@ -662,10 +670,10 @@ impl Book {
 
         let qty = self.proj_qty[instrument];
         if self.positions[instrument].product != Some(Product::MIS) || qty.abs() <= EPS {
-            return None;
+            return Vec::new();
         }
         let id = format!("sq-{}-{}", self.cfg.symbols[instrument], date);
-        Some(self.forced_exit(
+        self.forced_exit(
             instrument,
             id,
             OrderRole::SquareOff,
@@ -673,7 +681,7 @@ impl Book {
             bar.close,
             bar_index,
             time_ms,
-        ))
+        )
     }
 
     /// Mandatory market exit of the whole projected position at `price` (no cash / margin /
@@ -688,7 +696,7 @@ impl Book {
         price: f64,
         bar_index: usize,
         time_ms: i64,
-    ) -> FillIntent {
+    ) -> Vec<FillIntent> {
         let qty = self.proj_qty[instrument];
         let side = if qty > 0.0 {
             ActionSide::Sell
@@ -725,6 +733,7 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: bar_index,
+            slices: 0,
             first_eval_date: Some(self.trading_date(time_ms)),
             created_ms: time_ms,
             updated_ms: time_ms,
@@ -756,10 +765,12 @@ impl Book {
             .collect::<Vec<_>>();
         open_positions
             .into_iter()
-            .filter_map(|instrument| {
-                let price = self.last_close[instrument]?;
+            .flat_map(|instrument| {
+                let Some(price) = self.last_close[instrument] else {
+                    return Vec::new();
+                };
                 let id = format!("liq-{}", self.cfg.symbols[instrument]);
-                Some(self.forced_exit(
+                self.forced_exit(
                     instrument,
                     id,
                     OrderRole::Liquidation,
@@ -767,7 +778,7 @@ impl Book {
                     price,
                     bar_index,
                     time_ms,
-                ))
+                )
             })
             .collect()
     }
@@ -891,18 +902,19 @@ impl Book {
 
                 match result {
                     Match::Fill(price, reason) => {
-                        match self.try_fill(index, price, reason, time_ms, bar_index) {
-                            Some(intent) => {
-                                let entry = self.orders[index].role == OrderRole::Entry;
-                                intents.push(intent);
-                                if entry && self.cfg.attached_exit_same_bar {
-                                    intents.extend(
-                                        self.same_bar_exit(index, price, bar, bar_index, time_ms),
-                                    );
-                                }
+                        let filled = self.try_fill(index, price, reason, time_ms, bar_index);
+                        if filled.is_empty() {
+                            // Nothing could fill this bar (volume cap, circuit): IOC orders
+                            // end here
+                            self.expire_ioc(index, time_ms);
+                        } else {
+                            let entry = self.orders[index].role == OrderRole::Entry;
+                            intents.extend(filled);
+                            if entry && self.cfg.attached_exit_same_bar {
+                                intents.extend(
+                                    self.same_bar_exit(index, price, bar, bar_index, time_ms),
+                                );
                             }
-                            // Nothing could fill this bar (volume cap): IOC orders end here
-                            None => self.expire_ioc(index, time_ms),
                         }
                     }
                     Match::Triggered => {
@@ -1124,7 +1136,7 @@ impl Book {
         bar: &Bar,
         bar_index: usize,
         time_ms: i64,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
         let id = self.orders[parent].id.clone();
         let long = self.orders[parent].side == ActionSide::Buy;
         let qty = self
@@ -1165,7 +1177,9 @@ impl Book {
                     hit.then_some((child, price, FillReason::TakeProfit))
                 })
         };
-        let (child, price, reason) = stop.or_else(target)?;
+        let Some((child, price, reason)) = stop.or_else(target) else {
+            return Vec::new();
+        };
 
         let order = &mut self.orders[child];
         order.status = OrderStatus::Open;
@@ -1409,10 +1423,10 @@ impl Book {
         if meta.lot_size.is_some_and(|lot| !is_multiple(qty, lot)) {
             return Err("invalid_lot");
         }
-        if meta
+        let above_freeze = meta
             .freeze_qty
-            .is_some_and(|freeze| !approx_le(qty, freeze))
-        {
+            .is_some_and(|freeze| !approx_le(qty, freeze));
+        if above_freeze && self.slice_size(instrument).is_none() {
             return Err("above_freeze_qty");
         }
         Ok(())
@@ -1541,7 +1555,14 @@ impl Book {
             Some(current) if position.abs() > EPS && position.signum() == after.signum() => current,
             _ => product,
         };
-        let costs = self.costs_for(instrument, side, product, price, qty).total;
+        let costs = self
+            .slices(instrument, qty)
+            .into_iter()
+            .map(|slice| {
+                self.costs_for(instrument, side, product, price, slice)
+                    .total
+            })
+            .sum::<f64>();
         let required =
             after.abs() * price * self.cfg.margin.rate(product_after, after < 0.0) + costs;
         let available = self.buying_power() + self.blocked(instrument);
@@ -1587,16 +1608,18 @@ impl Book {
         reason: FillReason,
         time_ms: i64,
         bar_index: usize,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
         let order = &self.orders[index];
-        let instrument = order.instrument?;
+        let Some(instrument) = order.instrument else {
+            return Vec::new();
+        };
         if self.locked(instrument, order.side) {
             // Circuit: no counterparty in this bar; the order keeps working (a stop that
             // triggered executes at a later open)
             if order.kind == OrderType::Stop {
                 self.orders[index].triggered = true;
             }
-            return None;
+            return Vec::new();
         }
         let order = &self.orders[index];
         let mut qty = order.remaining();
@@ -1609,7 +1632,7 @@ impl Book {
             qty = qty.min(closable);
             if qty <= EPS {
                 self.close_order(index, OrderStatus::Cancelled, "position_closed", time_ms);
-                return None;
+                return Vec::new();
             }
         }
         let mut capped = false;
@@ -1620,7 +1643,7 @@ impl Book {
             }
             if qty <= EPS {
                 // Bar volume used up: the order keeps working
-                return None;
+                return Vec::new();
             }
         }
         let order = &self.orders[index];
@@ -1632,12 +1655,42 @@ impl Book {
         };
         if let Err(reason) = self.check_fill(instrument, side, product, qty, price) {
             self.close_order(index, OrderStatus::Rejected, reason, time_ms);
-            return None;
+            return Vec::new();
         }
         if self.volume_capped() {
             self.volume_used[instrument] += qty;
         }
-        Some(self.intent(index, qty, price, reason, time_ms, bar_index, capped))
+        self.intent(index, qty, price, reason, time_ms, bar_index, capped)
+    }
+
+    /// Largest quantity one exchange order may carry under the `split` freeze policy (a lot
+    /// multiple); `None` = no slicing.
+    fn slice_size(&self, instrument: usize) -> Option<f64> {
+        if self.cfg.freeze_policy != FreezePolicy::Split {
+            return None;
+        }
+        let meta = self.meta(instrument);
+        let freeze = meta.freeze_qty?;
+        Some(match meta.lot_size {
+            Some(lot) => ((freeze / lot) + 1e-9).floor() * lot,
+            None => freeze,
+        })
+        .filter(|size| *size > 0.0)
+    }
+
+    /// Quantities of the exchange orders a fill of `qty` is executed as (freeze slices).
+    fn slices(&self, instrument: usize, qty: f64) -> Vec<f64> {
+        let Some(size) = self.slice_size(instrument) else {
+            return vec![qty];
+        };
+        let mut slices = Vec::new();
+        let mut left = qty;
+        while left > size * (1.0 + 1e-9) {
+            slices.push(size);
+            left -= size;
+        }
+        slices.push(left);
+        slices
     }
 
     fn volume_capped(&self) -> bool {
@@ -1689,7 +1742,7 @@ impl Book {
         time_ms: i64,
         bar_index: usize,
         capped: bool,
-    ) -> FillIntent {
+    ) -> Vec<FillIntent> {
         let (instrument, side, product) = {
             let order = &self.orders[order];
             (
@@ -1700,26 +1753,42 @@ impl Book {
                 order.product,
             )
         };
-        let costs = self.costs_for(instrument, side, product, price, qty);
-        self.proj_cash -= side.sign() * qty * price + costs.total;
-        self.proj_qty[instrument] += side.sign() * qty;
+        let slices = self.slices(instrument, qty);
+        let split = slices.len() > 1;
+        let count = slices.len();
+        slices
+            .into_iter()
+            .enumerate()
+            .map(|(n, qty)| {
+                let costs = self.costs_for(instrument, side, product, price, qty);
+                self.proj_cash -= side.sign() * qty * price + costs.total;
+                self.proj_qty[instrument] += side.sign() * qty;
+                let slice = split.then(|| {
+                    let parent = &mut self.orders[order];
+                    parent.slices += 1;
+                    format!("{}#{}", parent.id, parent.slices)
+                });
 
-        self.fill_seq += 1;
-        let intent = FillIntent {
-            fill_id: format!("f{}", self.fill_seq),
-            order,
-            instrument,
-            side,
-            qty,
-            price,
-            reason,
-            costs,
-            time_ms,
-            bar_index,
-            capped,
-        };
-        self.pending.insert(intent.fill_id.clone(), intent.clone());
-        intent
+                self.fill_seq += 1;
+                let intent = FillIntent {
+                    fill_id: format!("f{}", self.fill_seq),
+                    order,
+                    instrument,
+                    side,
+                    qty,
+                    price,
+                    reason,
+                    costs,
+                    time_ms,
+                    bar_index,
+                    capped,
+                    slice,
+                    last: n + 1 == count,
+                };
+                self.pending.insert(intent.fill_id.clone(), intent.clone());
+                intent
+            })
+            .collect()
     }
 
     /// Apply one decider action. Returns fills to execute now.
@@ -1870,6 +1939,7 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: if filled { bar_index + 1 } else { usize::MAX },
+            slices: 0,
             first_eval_date: None,
             created_ms: time_ms,
             updated_ms: time_ms,
@@ -1961,14 +2031,14 @@ impl Book {
         bar_index: usize,
         time_ms: i64,
         request: OrderRequest,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
         let id = match &request.id {
             // Ids are unique for the whole run (exits are addressed as `<id>:sl` / `<id>:tp`)
             Some(id)
                 if self.order_index(id).is_some() || id.ends_with(":sl") || id.ends_with(":tp") =>
             {
                 self.reject_request(time_ms, &request, Some(id.clone()), "duplicate_id");
-                return None;
+                return Vec::new();
             }
             Some(id) => id.clone(),
             None => self.next_order_id(),
@@ -1976,7 +2046,7 @@ impl Book {
 
         let Some(instrument) = self.instrument(&request.symbol) else {
             self.reject_request(time_ms, &request, Some(id), "unknown_symbol");
-            return None;
+            return Vec::new();
         };
         if let Err(reason) = self.check_qty(instrument, request.qty).and_then(|()| {
             self.check_ticks(
@@ -1990,7 +2060,7 @@ impl Book {
             )
         }) {
             self.reject_request(time_ms, &request, Some(id), reason);
-            return None;
+            return Vec::new();
         }
         // A trail on a stop order without an attached stop loss trails the order itself;
         // otherwise it trails the attached stop loss.
@@ -2004,35 +2074,35 @@ impl Book {
         };
         if let Err(reason) = Self::check_prices(request.kind, request.price, trigger_check) {
             self.reject_request(time_ms, &request, Some(id), reason);
-            return None;
+            return Vec::new();
         }
         if let Some(trail) = &request.trail {
             if let Err(reason) = Self::check_trail(trail) {
                 self.reject_request(time_ms, &request, Some(id), reason);
-                return None;
+                return Vec::new();
             }
             if request.kind == OrderType::StopLimit {
                 self.reject_request(time_ms, &request, Some(id), "unsupported_trail");
-                return None;
+                return Vec::new();
             }
         }
         if self.is_warmup(time_ms) {
             self.reject_request(time_ms, &request, Some(id), "warmup");
-            return None;
+            return Vec::new();
         }
         if !self.market_open(time_ms) {
             self.reject_request(time_ms, &request, Some(id), "market_closed");
-            return None;
+            return Vec::new();
         }
         let Some(close) = self.last_close[instrument] else {
             self.reject_request(time_ms, &request, Some(id), "no_price");
-            return None;
+            return Vec::new();
         };
         // The close of an older bar is stale: nothing can execute "now" without a bar
         let has_bar = self.has_bar[instrument];
         if request.kind == OrderType::Market && !has_bar && !self.cfg.next_open {
             self.reject_request(time_ms, &request, Some(id), "no_bar");
-            return None;
+            return Vec::new();
         }
         let band_prices = [
             request
@@ -2044,7 +2114,7 @@ impl Book {
         ];
         if let Err(reason) = self.check_band(instrument, &band_prices) {
             self.reject_request(time_ms, &request, Some(id), reason);
-            return None;
+            return Vec::new();
         }
         let reference = request.price.or(request.trigger).unwrap_or(close);
         if let Err(reason) = Self::check_bracket(
@@ -2054,7 +2124,7 @@ impl Book {
             request.take_profit,
         ) {
             self.reject_request(time_ms, &request, Some(id), reason);
-            return None;
+            return Vec::new();
         }
         let (stop_loss, take_profit) = (request.stop_loss, request.take_profit);
         // Orders reducing a position default to its product, others to the instrument's
@@ -2073,7 +2143,7 @@ impl Book {
                 .is_some_and(|session| session.past_square_off(time_ms));
         if past_square_off && product == Product::MIS && !reduces {
             self.reject_request(time_ms, &request, Some(id), "after_square_off");
-            return None;
+            return Vec::new();
         }
         let (own_trail, exit_trail) = match request.trail {
             Some(trail) if own_trail => (Some(trail), None),
@@ -2109,6 +2179,7 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: bar_index + 1,
+            slices: 0,
             // A day order belongs to the trading date it was placed on (with a session, or for
             // intraday data); on daily bars it is valid for the next bar's session instead
             first_eval_date: (self.cfg.session.is_some()
@@ -2146,7 +2217,7 @@ impl Book {
         if self.cfg.next_open || !has_bar {
             // Everything is matched from the next bar on (market orders at its open); without
             // a bar at this timestamp there is no current price to execute against
-            return None;
+            return Vec::new();
         }
 
         // Close fill model: execute now at the decision bar's close when possible
@@ -2155,7 +2226,7 @@ impl Book {
         match immediate {
             Some(reason) => {
                 let intent = self.try_fill(index, close, reason, time_ms, bar_index);
-                if intent.is_none() {
+                if intent.is_empty() {
                     // Nothing fillable in this bar (volume cap): IOC orders end here
                     self.expire_ioc(index, time_ms);
                 }
@@ -2163,7 +2234,7 @@ impl Book {
             }
             None if self.orders[index].tif == TimeInForce::Ioc => {
                 self.close_order(index, OrderStatus::Expired, "ioc", time_ms);
-                None
+                Vec::new()
             }
             None => {
                 if self.orders[index].kind == OrderType::StopLimit
@@ -2176,7 +2247,7 @@ impl Book {
                     // Stop already through at the close but limit not reachable: rest as limit
                     self.orders[index].triggered = true;
                 }
-                None
+                Vec::new()
             }
         }
     }
@@ -2438,7 +2509,8 @@ impl Book {
         order.updated_ms = intent.time_ms;
         // Reduce-only orders clamped to the position are done once filled (unless the volume
         // cap cut the fill short)
-        if order.remaining() <= EPS * order.qty.max(1.0) || (order.reduce_only && !intent.capped) {
+        let clamped_done = order.reduce_only && !intent.capped && intent.last;
+        if order.remaining() <= EPS * order.qty.max(1.0) || clamped_done {
             order.status = OrderStatus::Filled;
         }
         if order.kind == OrderType::Stop {
@@ -2473,6 +2545,7 @@ impl Book {
             tag,
             reason: intent.reason,
             remaining_qty,
+            slice: intent.slice,
         };
         self.fills.push(fill.clone());
         self.events.push(Event::Fill(fill));
@@ -2556,6 +2629,7 @@ mod tests {
             trail_active: false,
             triggered: false,
             active_from_bar: 0,
+            slices: 0,
             first_eval_date: None,
             created_ms: 0,
             updated_ms: 0,

@@ -17,7 +17,8 @@
 //! `insufficient_margin`, `end_of_data`, fill reason `liquidate_end`, role `liquidation`;
 //! 3 = `slippage` (bps / volume share, `max_volume_share` partial fills: order status
 //! `partially_filled`, fill `remaining_qty`); `instruments.*.price_band_pct` (reason
-//! `outside_price_band`, circuit-locked bars).
+//! `outside_price_band`, circuit-locked bars); `freeze_policy` (`split`: freeze-sized slices,
+//! fill / trade `slice`).
 //!
 //! `candles`: `{symbol: [(time_ms, open, high, low, close, volume), ...]}`. `on_bar(ctx)` is
 //! called once per distinct bar timestamp and returns a list of actions (or `None`). Every key
@@ -43,6 +44,8 @@
 //!   "margin": {"mis_leverage": 1.0, "nrml_margin_pct": 100.0, "short_margin_pct": 100.0},
 //!   "slippage": {"model": "bps" | "volume_share", "bps": 0.0, "impact_bps": 0.0,
 //!                "max_volume_share": null},   // see config::SlippageConfig
+//!   "freeze_policy": "reject" | "split",   // orders above freeze_qty: reject, or execute
+//!                                          // each fill as freeze-sized lot-multiple slices
 //!   "costs": {"model": "flat" | "india",
 //!             "brokerage": {"per_order": 20, "pct": 0.03, "cnc_free": true, "dp_per_sell": 0},
 //!             "table": "2024-10-01"},
@@ -110,7 +113,8 @@
 //!    {"type": "fill", "time_ms", "id", "fill_id", "symbol", "side", "qty", "price", "value",
 //!     "costs": Costs, "realised_pnl", "product", "tag", "reason": "signal" | "limit" | "stop" |
 //!     "stop_loss" | "take_profit" | "trailing_stop" | "square_off" | "liquidate_end",
-//!     "remaining_qty"},               // order quantity still working after this fill
+//!     "remaining_qty",                // order quantity still working after this fill
+//!     "slice"},                       // "<id>#<n>", only for freeze_policy split slices
 //!    {"type": "cancel" | "expire", "time_ms", "id", "symbol", "reason"},
 //!    {"type": "reject", "time_ms", "id", "symbol", "side", "qty", "reason"},
 //!    {"type": "trail_update", "time_ms", "id", "symbol", "old_stop", "new_stop"}],
@@ -160,8 +164,8 @@ pub mod strategy;
 
 pub use backtest::{run_backtest, run_sweep, BacktestError};
 pub use config::{
-    BacktestConfig, BrokerageConfig, CostModel, CostsConfig, FillModel, InstrumentMeta,
-    IntrabarPriority, MarginConfig, SessionConfig, SlippageConfig, SlippageModel,
+    BacktestConfig, BrokerageConfig, CostModel, CostsConfig, FillModel, FreezePolicy,
+    InstrumentMeta, IntrabarPriority, MarginConfig, SessionConfig, SlippageConfig, SlippageModel,
 };
 pub use data::{Bar, BarGate, CandleData, CandleMarketData};
 pub use ledger::Ledger;

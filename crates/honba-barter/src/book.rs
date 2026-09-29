@@ -1106,6 +1106,11 @@ impl Book {
 
     /// Close an order as cancelled / expired / rejected with an event.
     fn close_order(&mut self, index: usize, status: OrderStatus, reason: &str, time_ms: i64) {
+        // An order with a fill in flight ends with that fill (or its failure): exactly one
+        // terminal event per order
+        if self.pending.values().any(|pending| pending.order == index) {
+            return;
+        }
         // Attached exits of an entry that never filled go with it
         if self.orders[index].role == OrderRole::Entry {
             let id = self.orders[index].id.clone();

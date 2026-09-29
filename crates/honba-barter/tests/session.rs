@@ -204,3 +204,44 @@ fn cash_equity_shorts_only_intraday() {
     assert_eq!(report.final_positions["SBIN"], -5.0);
     assert_eq!(report.trades[0].product, Product::NRML);
 }
+
+#[test]
+fn square_off_does_not_cancel_an_exit_that_is_filling() {
+    let mut bars = bars_at(
+        &["2025-10-20 10:00", "2025-10-20 15:20", "2025-10-20 15:25"],
+        100.0,
+    );
+    // At the square-off bar the stop loss triggers first
+    bars[1] = Bar::new(bars[1].time_ms, 100.0, 100.0, 85.0, 88.0, 1.0);
+    let (report, seen) = run(
+        session_config(serde_json::json!({})),
+        "SBIN",
+        bars,
+        [(
+            0,
+            vec![OrderRequest::market("SBIN", ActionSide::Buy, 10.0)
+                .product(Product::MIS)
+                .stop_loss(90.0)
+                .into()],
+        )],
+    );
+    let terminal = |id: &str| {
+        seen.iter()
+            .flat_map(|s| &s.events)
+            .filter(|e| match e {
+                Event::Fill(f) => f.id == id,
+                Event::Cancel { id: i, .. } | Event::Expire { id: i, .. } => i == id,
+                Event::Reject { id: i, .. } => i.as_deref() == Some(id),
+                Event::TrailUpdate { .. } => false,
+            })
+            .count()
+    };
+    assert_eq!(terminal("o1:sl"), 1);
+    let sl = report.orders.iter().find(|o| o.id == "o1:sl").unwrap();
+    assert_eq!(sl.status, OrderStatus::Filled);
+    assert!(report
+        .trades
+        .iter()
+        .all(|t| t.reason != FillReason::SquareOff));
+    assert_eq!(report.final_positions["SBIN"], 0.0);
+}

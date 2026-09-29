@@ -88,6 +88,7 @@ class BacktestConfig:
     allow_short: bool = False
     latency_ms: int = 0
     risk_free_return: float = 0.0
+    trading_days_per_year: int = 250
     exchange: str = "NSE"
     quote: str = "INR"
     session: TradingSession | None = None
@@ -102,6 +103,8 @@ class BacktestConfig:
     def __post_init__(self) -> None:
         if not self.capital > 0:
             raise ValueError("capital must be positive")
+        if self.trading_days_per_year < 1:
+            raise ValueError("trading_days_per_year must be >= 1")
         if self.warmup_bars < 0:
             raise ValueError("warmup_bars must be >= 0")
 

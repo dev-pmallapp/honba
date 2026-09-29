@@ -215,3 +215,60 @@ def test_result_works_for_any_engine_report():
     assert res.summary["net_pnl"] == 0.0 and res.raw is None
     assert list(res.fills.symbol) == ["X"] and res.trades.empty and res.orders.empty
     assert res.metrics.total_trades == 0
+
+
+# ------------------------------------------------------------------------------- metrics authority
+
+
+class GrossReportEngine(ZeroEngine):
+    """Reports gross per-fill win_rate / profit_factor that must not leak into the result."""
+
+    def run(self, request, on_bar):
+        rep = super().run(request, on_bar)
+        fills = [
+            Fill(1, "a", "f1", "X", "buy", 1, 100.0),
+            Fill(
+                2,
+                "b",
+                "f2",
+                "X",
+                "sell",
+                1,
+                101.0,
+                realised_pnl=1.0,
+                costs=hb.strategy.Costs(total=3.0),
+            ),
+        ]
+        rep.fills = fills
+        rep.equity_curve = [(1, 100_000.0), (86_400_000 * 2, 99_998.0)]
+        rep.summary.win_rate, rep.summary.profit_factor, rep.summary.sharpe = 1.0, 9.9, 9.9
+        return rep
+
+
+def test_sdk_net_metrics_override_gross_engine_values_everywhere():
+    data = {"X": daily(flat(100, 4))}
+    res = hb.backtest(SmaCross, data, CFG, engine=GrossReportEngine())
+    assert res.report.summary.win_rate == 1.0  # engine value kept in the raw report ...
+    assert res.summary["engine_win_rate"] == 1.0 and res.summary["engine_profit_factor"] == 9.9
+    assert res.summary["win_rate"] == 0.0  # ... but the round trip is a net loser (1 - 3)
+    assert res.metric("win_rate") == 0.0 and res.metric("profit_factor") == 0.0
+    assert res.summary["sharpe"] != 9.9 and res.summary["sharpe"] == res.metrics.sharpe
+    frame = hb.sweep(SmaCross, data, {"fast": [3, 4]}, CFG, engine=GrossReportEngine())
+    assert (frame.win_rate == 0.0).all() and (frame.profit_factor == 0.0).all()
+
+
+def test_annualisation_is_configurable_and_passed_to_the_engine():
+    from honba.research._barter_adapter import config_to_wire
+
+    data = {"X": trending(120, seed=4)}
+    r250 = hb.backtest(SmaCross, data, CFG, engine="simple")
+    r365 = hb.backtest(SmaCross, data, CFG.with_(trading_days_per_year=365), engine="simple")
+    if r250.metrics.sharpe is not None and r250.metrics.sharpe != 0:
+        assert r365.metrics.sharpe / r250.metrics.sharpe == pytest.approx((365 / 250) ** 0.5)
+    assert config_to_wire(CFG, ["X"], None)["trading_days_per_year"] == 250
+    assert (
+        config_to_wire(CFG.with_(trading_days_per_year=252), ["X"], None)["trading_days_per_year"]
+        == 252
+    )
+    with pytest.raises(ValueError):
+        hb.BacktestConfig(trading_days_per_year=0)

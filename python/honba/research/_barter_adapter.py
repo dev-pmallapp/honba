@@ -101,6 +101,7 @@ def config_to_wire(config: BacktestConfig, symbols: list[str], start_ms: int | N
         "initial_cash": float(config.capital),
         "latency_ms": int(config.latency_ms),
         "risk_free_return": float(config.risk_free_return),
+        "trading_days_per_year": int(config.trading_days_per_year),
         "allow_short": config.allow_short,
         "fill_model": config.fill,
         "intrabar_priority": config.intrabar,

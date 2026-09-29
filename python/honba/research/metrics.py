@@ -136,10 +136,12 @@ def compute_metrics(
     equity: pd.Series,
     initial_capital: float,
     risk_free_return: float = 0.0,
+    trading_days: int = TRADING_DAYS,
 ) -> Metrics:
     """Compute :class:`Metrics`.
 
-    ``equity`` is indexed by tz-aware time; ``risk_free_return`` is an annual fraction.
+    ``equity`` is indexed by tz-aware time; ``risk_free_return`` is an annual fraction and
+    ``trading_days`` the annualisation factor (sessions per year).
     """
     pnl = np.array([t.pnl for t in trips])
     wins = [t for t in trips if t.pnl > 0]
@@ -160,7 +162,7 @@ def compute_metrics(
 
     final = float(equity.iloc[-1]) if len(equity) else initial_capital
     rets = daily_returns(equity, initial_capital)
-    rf_d = risk_free_return / TRADING_DAYS
+    rf_d = risk_free_return / trading_days
     cagr = vol = sharpe = sortino = omega = serenity = ulcer = None
     if len(equity) >= 2:
         span = (equity.index[-1] - equity.index[0]).total_seconds() / (365.25 * 86_400)
@@ -172,11 +174,11 @@ def compute_metrics(
         ex = rets - rf_d
         sd = float(rets.std(ddof=1))
         if sd > 0:
-            vol = sd * math.sqrt(TRADING_DAYS)
-            sharpe = float(ex.mean()) / sd * math.sqrt(TRADING_DAYS)
+            vol = sd * math.sqrt(trading_days)
+            sharpe = float(ex.mean()) / sd * math.sqrt(trading_days)
         down = float(np.sqrt(np.mean(np.minimum(ex.to_numpy(), 0.0) ** 2)))
         if down > 0:
-            sortino = float(ex.mean()) / down * math.sqrt(TRADING_DAYS)
+            sortino = float(ex.mean()) / down * math.sqrt(trading_days)
         neg = float(-ex[ex < 0].sum())
         omega = float(ex[ex > 0].sum()) / neg if neg > 0 else None
         # Jesse serenity index: (sum of returns - rf) / (ulcer index * pitfall)

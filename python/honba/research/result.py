@@ -17,6 +17,7 @@ from .metrics import Metrics, compute_metrics, drawdown_series
 
 __all__ = ["BacktestResult"]
 
+_SDK_KEYS = ("win_rate", "profit_factor", "sharpe", "sortino", "calmar", "cagr", "max_drawdown")
 _COST_FIELDS = ("brokerage", "stt", "exchange_fee", "sebi_fee", "stamp_duty", "gst", "dp")
 
 
@@ -51,11 +52,19 @@ class BacktestResult:
 
     @property
     def summary(self) -> dict[str, Any]:
-        """Engine-computed portfolio summary.
+        """Portfolio summary: engine figures with the SDK's net metrics authoritative.
 
-        Keys include ``net_pnl``, ``total_return``, ``max_drawdown``, ``sharpe``, fees, counts.
+        Engine keys (``net_pnl``, ``total_return``, fees, counts, ``costs``) are kept. The
+        risk / trade ratios (``win_rate``, ``profit_factor``, ``sharpe``, ``sortino``,
+        ``calmar``, ``cagr``, ``max_drawdown``) come from :attr:`metrics`: net of costs,
+        per round trip, one annualisation (``config.trading_days_per_year``). The engine's own
+        values (gross, per fill, its annualisation) are under ``engine_<name>``.
         """
-        return self.report.summary.as_dict()
+        out = self.report.summary.as_dict()
+        for key in _SDK_KEYS:
+            out[f"engine_{key}"] = out.get(key)
+            out[key] = getattr(self.metrics, key)
+        return out
 
     @cached_property
     def round_trips(self) -> list[RoundTrip]:
@@ -76,7 +85,11 @@ class BacktestResult:
     def metrics(self) -> Metrics:
         """Jesse-style metrics (trade stats from round trips, risk ratios over 250 sessions)."""
         return compute_metrics(
-            self.round_trips, self.equity, self.config.capital, self.config.risk_free_return
+            self.round_trips,
+            self.equity,
+            self.config.capital,
+            self.config.risk_free_return,
+            self.config.trading_days_per_year,
         )
 
     @property
@@ -155,18 +168,17 @@ class BacktestResult:
         return dict(self.report.instruments)
 
     def metric(self, name: str, default: Any = None) -> Any:
-        """One value from the engine summary, else from :attr:`metrics`."""
-        summary = self.summary
-        if name in summary:
-            return summary[name]
-        return getattr(self.metrics, name, default)
+        """One value by name: SDK :attr:`metrics` first, then the engine summary."""
+        if hasattr(self.metrics, name):
+            return getattr(self.metrics, name)
+        return self.summary.get(name, default)
 
     def __repr__(self) -> str:
         s = self.report.summary
         return (
             f"BacktestResult({self.strategy or 'strategy'}, engine={self.engine!r}, "
             f"net_pnl={s.net_pnl:.2f}, trades={len(self.round_trips)}, "
-            f"max_drawdown={s.max_drawdown:.2%})"
+            f"max_drawdown={self.metrics.max_drawdown:.2%})"
         )
 
 

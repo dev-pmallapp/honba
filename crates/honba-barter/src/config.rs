@@ -27,6 +27,9 @@ use std::collections::BTreeMap;
 /// | `attached_exit_same_bar` | bool | `false`   | Attached exits can trigger on the entry's bar (stop first).|
 /// | `liquidate_at_end` | bool      | `false`     | Close all positions at the final bar's close.             |
 /// | `margin`           | object    | 1x / 100%   | [`MarginConfig`]: `mis_leverage`, `nrml_margin_pct`, `short_margin_pct`. |
+/// | `slippage`         | object    | `null`      | [`SlippageConfig`]; `null` = fills at the matched price, no volume cap. |
+/// | `freeze_policy`    | str       | `"reject"`  | [`FreezePolicy`]: orders above `freeze_qty` are rejected or split. |
+/// | `settlement`       | object    | `null`      | [`SettlementConfig`]; `null` = T+0 (sale proceeds usable at once). |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BacktestConfig {
@@ -53,6 +56,15 @@ pub struct BacktestConfig {
     pub liquidate_at_end: bool,
     /// Margin required to open positions (see [`MarginConfig`]).
     pub margin: MarginConfig,
+    /// Adverse price offset on market / stop fills and bar-volume participation cap; `null` =
+    /// none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slippage: Option<SlippageConfig>,
+    /// What happens to orders above an instrument's `freeze_qty`.
+    pub freeze_policy: FreezePolicy,
+    /// Delivery (CNC) settlement: when sale proceeds become usable; `null` = T+0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settlement: Option<SettlementConfig>,
     /// Trading hours / holidays / MIS square-off; `null` = always open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<SessionConfig>,
@@ -87,6 +99,9 @@ impl Default for BacktestConfig {
             costs: None,
             session: None,
             margin: MarginConfig::default(),
+            slippage: None,
+            freeze_policy: FreezePolicy::Reject,
+            settlement: None,
             liquidate_at_end: false,
             trading_days_per_year: 250,
             attached_exit_same_bar: false,
@@ -133,6 +148,107 @@ impl MarginConfig {
             Product::NRML | Product::MTF => self.nrml_margin_pct / 100.0,
             Product::CNC if short => self.short_margin_pct / 100.0,
             Product::CNC => 1.0,
+        }
+    }
+}
+
+/// Settlement cycle of delivery (CNC) trades.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SettlementCycle {
+    /// Settles immediately (no holdings / positions distinction in cash).
+    #[default]
+    #[serde(rename = "T+0", alias = "t+0", alias = "T0")]
+    T0,
+    /// Settles on the next trading date.
+    #[serde(rename = "T+1", alias = "t+1", alias = "T1")]
+    T1,
+}
+
+/// `settlement` config (I2).
+///
+/// With `cnc: "T+1"`, proceeds of CNC sales (net of costs, for the quantity that closed a
+/// long) settle at the first bar of a later trading date; until then only
+/// `same_day_sell_credit` of them funds new exposure (the rest is `unsettled`). CNC buys become
+/// holdings (`qty_settled`) on the next trading date; selling them before that (BTST) is
+/// allowed and nets against the same day's buys first.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SettlementConfig {
+    pub cnc: SettlementCycle,
+    /// Fraction in [0, 1] of unsettled sale proceeds usable for new buys the same day
+    /// (broker dependent, default 1: full credit).
+    pub same_day_sell_credit: f64,
+}
+
+impl Default for SettlementConfig {
+    fn default() -> Self {
+        Self {
+            cnc: SettlementCycle::T0,
+            same_day_sell_credit: 1.0,
+        }
+    }
+}
+
+/// Handling of orders above an instrument's `freeze_qty` (exchange maximum per order).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FreezePolicy {
+    /// Reject the order (`above_freeze_qty`).
+    #[default]
+    Reject,
+    /// Accept it as one order and execute every fill as child exchange orders of at most
+    /// `freeze_qty` (rounded down to the lot size); the slices of a fill share its price,
+    /// carry their own costs (brokerage per slice) and are reported with `slice: "<id>#<n>"`
+    /// on the parent order's fill events / trades.
+    Split,
+}
+
+/// How the slippage of a market-like fill is sized.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlippageModel {
+    /// Fixed `bps` of the fill price.
+    #[default]
+    Bps,
+    /// `bps + impact_bps x (fill qty / bar volume)`: grows with the share of the bar's volume
+    /// the fill takes (bars without volume: `bps` only).
+    VolumeShare,
+}
+
+/// `slippage` config.
+///
+/// Slippage moves market-like fills (market, stop / SL-M, stop-loss and trailing exits, MIS
+/// square-off, `liquidate_at_end`) against the order: buys up, sells down, rounded to the tick
+/// away from the market. Limit, take-profit and stop-limit fills are never worse than their
+/// limit and get no slippage.
+///
+/// `max_volume_share` caps what fills in one bar: all orders of a symbol together fill at most
+/// `max_volume_share x bar volume` (rounded down to the lot size) per bar; the rest of an order
+/// stays working (status `partially_filled`) and continues on later bars (IOC remainders
+/// expire). Bars with zero volume are not capped (no volume data). MIS square-off and
+/// `liquidate_at_end` exits are never capped.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SlippageConfig {
+    pub model: SlippageModel,
+    /// Fixed adverse offset in basis points of the fill price.
+    pub bps: f64,
+    /// `volume_share` model: extra basis points at 100% participation (linear in the share).
+    pub impact_bps: f64,
+    /// Fraction of each bar's volume that can fill, in (0, 1]; `null` = no cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_volume_share: Option<f64>,
+}
+
+impl SlippageConfig {
+    /// Adverse offset in basis points for a fill of `qty` in a bar that traded `volume`.
+    pub fn bps_for(&self, qty: f64, volume: f64) -> f64 {
+        match self.model {
+            SlippageModel::Bps => self.bps,
+            SlippageModel::VolumeShare if volume > 0.0 => {
+                self.bps + self.impact_bps * (qty / volume)
+            }
+            SlippageModel::VolumeShare => self.bps,
         }
     }
 }
@@ -190,6 +306,11 @@ pub struct InstrumentMeta {
     /// Product for orders that don't name one (default: CNC for equity cash, NRML otherwise).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_product: Option<Product>,
+    /// Price band (circuit limit) in percent of the previous session's close: limit / trigger
+    /// prices outside it are rejected (`outside_price_band`), and a bar locked at a band
+    /// (`high == low` at the upper / lower band) fills no buys / sells.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_band_pct: Option<f64>,
 }
 
 impl InstrumentMeta {

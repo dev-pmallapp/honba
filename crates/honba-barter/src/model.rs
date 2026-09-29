@@ -134,6 +134,81 @@ pub struct TrailSpec {
     pub step: Option<f64>,
 }
 
+/// One leg of a scaled exit: `{"price": 840.0, "qty": 5}` or `{"price": 840.0, "pct": 50}`;
+/// without `qty` / `pct` the leg takes the rest of the entry quantity (one such leg per list).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ExitLeg {
+    pub price: f64,
+    /// Quantity (a lot multiple).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qty: Option<f64>,
+    /// Percent of the entry quantity (rounded down to the lot size).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pct: Option<f64>,
+}
+
+impl ExitLeg {
+    pub fn qty(price: f64, qty: f64) -> Self {
+        Self {
+            price,
+            qty: Some(qty),
+            pct: None,
+        }
+    }
+
+    pub fn pct(price: f64, pct: f64) -> Self {
+        Self {
+            price,
+            qty: None,
+            pct: Some(pct),
+        }
+    }
+
+    /// The rest of the entry quantity.
+    pub fn rest(price: f64) -> Self {
+        Self {
+            price,
+            qty: None,
+            pct: None,
+        }
+    }
+}
+
+/// Attached exit: one level for the whole quantity, or a list of legs (partial exits).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ExitSpec {
+    Level(f64),
+    Legs(Vec<ExitLeg>),
+}
+
+impl ExitSpec {
+    /// Every price level of the exit.
+    pub fn levels(&self) -> Vec<f64> {
+        match self {
+            Self::Level(level) => vec![*level],
+            Self::Legs(legs) => legs.iter().map(|leg| leg.price).collect(),
+        }
+    }
+
+    /// The first (nearest listed) level.
+    pub fn first_level(&self) -> Option<f64> {
+        self.levels().first().copied()
+    }
+}
+
+impl From<f64> for ExitSpec {
+    fn from(level: f64) -> Self {
+        Self::Level(level)
+    }
+}
+
+impl From<Vec<ExitLeg>> for ExitSpec {
+    fn from(legs: Vec<ExitLeg>) -> Self {
+        Self::Legs(legs)
+    }
+}
+
 /// `{"op": "place", ...}`: submit a new order. `op` may be omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OrderRequest {
@@ -159,12 +234,18 @@ pub struct OrderRequest {
     pub product: Option<Product>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
-    /// Attached protective stop, activated when this order fills (OCO with `take_profit`).
+    /// Attached protective stop, activated when this order fills (OCO with `take_profit`);
+    /// a level or a list of [`ExitLeg`]s.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stop_loss: Option<f64>,
-    /// Attached target, activated when this order fills (OCO with `stop_loss`).
+    pub stop_loss: Option<ExitSpec>,
+    /// Attached target, activated when this order fills (OCO with `stop_loss`); a level or a
+    /// list of [`ExitLeg`]s (partial exits).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub take_profit: Option<f64>,
+    pub take_profit: Option<ExitSpec>,
+    /// Once the first take-profit leg fills, move the stop loss to the entry's average fill
+    /// price (only ever tightening it).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub move_sl_to_entry_after_first_tp: bool,
     /// Trailing parameters: for an entry, trails the attached stop loss; for a `stop` order,
     /// trails the order's own trigger.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -189,6 +270,7 @@ impl OrderRequest {
             tag: None,
             stop_loss: None,
             take_profit: None,
+            move_sl_to_entry_after_first_tp: false,
             trail: None,
             reduce_only: false,
         }
@@ -234,12 +316,27 @@ impl OrderRequest {
     }
 
     pub fn stop_loss(mut self, price: f64) -> Self {
-        self.stop_loss = Some(price);
+        self.stop_loss = Some(price.into());
         self
     }
 
     pub fn take_profit(mut self, price: f64) -> Self {
-        self.take_profit = Some(price);
+        self.take_profit = Some(price.into());
+        self
+    }
+
+    pub fn stop_loss_legs(mut self, legs: Vec<ExitLeg>) -> Self {
+        self.stop_loss = Some(legs.into());
+        self
+    }
+
+    pub fn take_profit_legs(mut self, legs: Vec<ExitLeg>) -> Self {
+        self.take_profit = Some(legs.into());
+        self
+    }
+
+    pub fn move_sl_to_entry_after_first_tp(mut self) -> Self {
+        self.move_sl_to_entry_after_first_tp = true;
         self
     }
 
@@ -267,10 +364,12 @@ pub struct ModifyRequest {
     pub trigger: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tif: Option<TimeInForce>,
+    /// A level moves every open leg of the stop loss; a list replaces the legs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stop_loss: Option<f64>,
+    pub stop_loss: Option<ExitSpec>,
+    /// A level moves every open leg of the take profit; a list replaces the legs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub take_profit: Option<f64>,
+    pub take_profit: Option<ExitSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trail: Option<TrailSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -413,6 +512,10 @@ pub struct PositionView {
     pub unrealised_pnl: f64,
     /// `realised_pnl + unrealised_pnl`.
     pub pnl: f64,
+    /// Delivered CNC long quantity (holdings): with `settlement.cnc = "T+1"` what was bought on
+    /// earlier trading dates, with T+0 the whole CNC long; 0 for other products and shorts.
+    #[serde(default)]
+    pub qty_settled: f64,
 }
 
 /// Why a fill happened.
@@ -450,6 +553,12 @@ pub struct FillEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     pub reason: FillReason,
+    /// Quantity of the order still working after this fill (0 when the order is done).
+    #[serde(default)]
+    pub remaining_qty: f64,
+    /// Freeze-quantity slice (`<id>#<n>`) when the order was split (`freeze_policy: split`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice: Option<String>,
 }
 
 /// Something that happened to an order since the previous `on_bar`.
@@ -486,6 +595,15 @@ pub enum Event {
         old_stop: Option<f64>,
         new_stop: f64,
     },
+    /// The engine moved a stop (`reason`: `move_sl_to_entry`).
+    StopUpdate {
+        time_ms: i64,
+        id: String,
+        symbol: String,
+        old_stop: Option<f64>,
+        new_stop: f64,
+        reason: String,
+    },
 }
 
 /// Session state at the bar (only meaningful when a `session` is configured).
@@ -506,6 +624,8 @@ pub enum OrderStatus {
     Open,
     /// Attached exit waiting for its entry to fill.
     Pending,
+    /// Open with part of its quantity filled (reported only; internally still open).
+    PartiallyFilled,
     Filled,
     Cancelled,
     Expired,
@@ -573,10 +693,14 @@ pub struct BarContext<'a> {
     pub session: SessionView,
     /// True while `time_ms < start_ms` (orders are rejected with `warmup`).
     pub warmup: bool,
-    /// Available cash in the quote currency.
+    /// Cash in the quote currency (including unsettled sale proceeds).
     pub cash: f64,
     /// Cash plus positions marked at their latest close.
     pub equity: f64,
+    /// CNC sale proceeds awaiting settlement (T+1; 0 with T+0).
+    pub unsettled_cash: f64,
+    /// `cash` minus the unsettled proceeds not covered by `same_day_sell_credit`.
+    pub available_cash: f64,
 }
 
 impl BarContext<'_> {
@@ -601,6 +725,8 @@ pub struct BarContextPayload<'a> {
     pub warmup: bool,
     pub cash: f64,
     pub equity: f64,
+    pub unsettled_cash: f64,
+    pub available_cash: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -641,6 +767,8 @@ impl<'a> BarContext<'a> {
             warmup: self.warmup,
             cash: self.cash,
             equity: self.equity,
+            unsettled_cash: self.unsettled_cash,
+            available_cash: self.available_cash,
         }
     }
 

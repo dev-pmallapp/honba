@@ -36,7 +36,8 @@
 //!     "calmar": float|null,             // cagr / max_drawdown
 //!     "num_round_trips": int,
 //!     "win_rate": float|null,           // round trips with net_pnl > 0 / round trips
-//!     "profit_factor": float|null       // sum of winning / losing round-trip net_pnl
+//!     "profit_factor": float|null,      // sum of winning / losing round-trip net_pnl
+//!     "unsettled_cash": float           // CNC sale proceeds not settled at the end (T+1)
 //!   },
 //!   "instruments": {                    // per symbol; metrics from barter's TearSheet (Annual(trading_days_per_year))
 //!     "<symbol>": {
@@ -57,11 +58,13 @@
 //!                      "exit_time_ms", "qty", "entry_price", "exit_price", "gross_pnl",
 //!                      "costs", "net_pnl", "return_pct" } ],   // closed trips only
 //!   "final_positions": { "<symbol>": float },
-//!   "positions": { "<symbol>": Position }      // final position details
+//!   "positions": { "<symbol>": Position }      // final position details (qty_settled =
+//!                                              // holdings, see settlement)
 //! }
 //! Costs = {"brokerage","stt","exchange_fee","sebi_fee","stamp_duty","gst","dp","total"}: float
 //! Fill  = {"time_ms","fill_id","order_id","symbol","side","qty","price","value",
-//!          "fees" (== costs.total),"costs": Costs,"realised_pnl","product","tag","reason"}
+//!          "fees" (== costs.total),"costs": Costs,"realised_pnl","product","tag","reason",
+//!          "slice" (only for freeze_policy split: "<order_id>#<n>")}
 //! Order / Position: see `OrderView` / `PositionView` in `honba_barter::model`.
 //! ```
 
@@ -128,6 +131,9 @@ pub struct SummaryMetrics {
     pub num_round_trips: usize,
     pub win_rate: Option<f64>,
     pub profit_factor: Option<f64>,
+    /// CNC sale proceeds still unsettled at the end (T+1; part of `final_cash`).
+    #[serde(default)]
+    pub unsettled_cash: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -161,6 +167,9 @@ pub struct TradeRecord {
     pub product: Product,
     pub tag: Option<String>,
     pub reason: FillReason,
+    /// Freeze-quantity slice id (`<order_id>#<n>`), only for split orders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -448,6 +457,7 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
             product: fill.product,
             tag: fill.tag.clone(),
             reason: fill.reason,
+            slice: fill.slice.clone(),
         })
         .collect::<Vec<_>>();
 
@@ -564,6 +574,7 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         num_round_trips: round_trips.len(),
         win_rate: (!net.is_empty()).then(|| wins as f64 / net.len() as f64),
         profit_factor: (gross_loss > 0.0).then(|| gross_profit / gross_loss),
+        unsettled_cash: book.unsettled_cash(),
     };
 
     let start_ms = config

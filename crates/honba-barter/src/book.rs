@@ -20,10 +20,13 @@
 //! decision bar's close fill immediately at that close.
 
 use crate::{
-    config::{InstrumentMeta, MarginConfig},
+    config::{
+        FreezePolicy, InstrumentMeta, MarginConfig, SettlementConfig, SettlementCycle,
+        SlippageConfig,
+    },
     data::Bar,
     model::{
-        Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
+        Action, ActionSide, CostBreakdown, Event, ExitSpec, FillEvent, FillReason, ModifyRequest,
         OrderRequest, OrderRole, OrderStatus, OrderType, OrderView, PositionView, Product, Segment,
         SessionView, TimeInForce, TrailMode, TrailSpec,
     },
@@ -67,6 +70,38 @@ fn is_multiple(value: f64, step: f64) -> bool {
     }
     let ratio = value / step;
     (ratio - ratio.round()).abs() <= 1e-6
+}
+
+/// Ids of attached exits (`<id>:sl`, `<id>:tp`, `<id>:sl<n>`, `<id>:tp<n>`) are reserved.
+fn is_exit_id(id: &str) -> bool {
+    id.rsplit_once(':').is_some_and(|(_, suffix)| {
+        ["sl", "tp"].iter().any(|base| {
+            suffix
+                .strip_prefix(base)
+                .is_some_and(|n| n.chars().all(|c| c.is_ascii_digit()))
+        })
+    })
+}
+
+/// Every level of the attached exits.
+fn exit_levels(stop_loss: Option<&ExitSpec>, take_profit: Option<&ExitSpec>) -> Vec<Option<f64>> {
+    [stop_loss, take_profit]
+        .into_iter()
+        .flatten()
+        .flat_map(ExitSpec::levels)
+        .map(Some)
+        .collect()
+}
+
+/// A stop loss given as more than one leg.
+fn multi_leg(spec: Option<&ExitSpec>) -> bool {
+    matches!(spec, Some(ExitSpec::Legs(legs)) if legs.len() > 1)
+}
+
+fn with_levels(legs: Vec<(f64, LegPlan, f64)>) -> Vec<(Option<f64>, LegPlan, f64)> {
+    legs.into_iter()
+        .map(|(level, plan, qty)| (Some(level), plan, qty))
+        .collect()
 }
 
 /// Per-fill transaction cost model.
@@ -148,6 +183,12 @@ pub struct BookConfig {
     /// Attached exits may trigger on the bar their entry filled in (stop first).
     pub attached_exit_same_bar: bool,
     pub margin: MarginConfig,
+    /// Slippage and volume participation cap.
+    pub slippage: Option<SlippageConfig>,
+    /// Orders above `freeze_qty`: rejected, or executed in freeze-sized slices.
+    pub freeze_policy: FreezePolicy,
+    /// CNC settlement cycle; `None` = T+0.
+    pub settlement: Option<SettlementConfig>,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
     /// Per instrument: timestamps of its MIS square-off bars (see
@@ -176,6 +217,8 @@ pub struct Position {
     pub product: Option<Product>,
     /// Realised PnL (gross of costs).
     pub realised_pnl: f64,
+    /// T+1: CNC long quantity bought on earlier trading dates (holdings).
+    pub settled: f64,
 }
 
 impl Position {
@@ -246,6 +289,10 @@ pub struct Order {
     pub triggered: bool,
     /// First bar index this order may be matched against.
     pub active_from_bar: usize,
+    /// Freeze-quantity slices executed so far (`<id>#<n>`).
+    pub slices: u32,
+    /// Bracket bookkeeping (entry: exit fills / options; exit leg: planned quantity).
+    pub bracket: Bracket,
     /// Trading date of the first bar the order was matched against (`day` expiry).
     pub first_eval_date: Option<NaiveDate>,
     pub created_ms: i64,
@@ -277,7 +324,10 @@ impl Order {
             tag: self.tag.clone(),
             role: self.role,
             parent: self.parent.clone(),
-            status: self.status,
+            status: match self.status {
+                OrderStatus::Open if self.filled_qty > 0.0 => OrderStatus::PartiallyFilled,
+                status => status,
+            },
             reason: self.reason.clone(),
             stop_loss: self.stop_loss,
             take_profit: self.take_profit,
@@ -287,6 +337,57 @@ impl Order {
             updated_ms: self.updated_ms,
         }
     }
+}
+
+/// How much of the entry quantity an attached exit leg plans to close.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum LegPlan {
+    /// The whole entry (single-level stop loss / take profit).
+    #[default]
+    Full,
+    Qty(f64),
+    /// Percent of the entry quantity, rounded down to the lot size.
+    Pct(f64),
+    /// The entry quantity not planned by the other legs of its list.
+    Rest,
+}
+
+/// Bracket state of an order.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Bracket {
+    /// Entry: quantity its exit legs have filled.
+    pub exit_filled: f64,
+    /// Entry: move the stop loss to the entry price after the first take-profit fill.
+    pub move_sl_to_entry: bool,
+    /// Entry: the stop loss was moved (or a take profit filled) already.
+    pub sl_moved: bool,
+    /// Entry: numbered legs created so far (stop loss, take profit).
+    pub legs: [u32; 2],
+    /// Exit leg: plan and planned quantity (from the entry quantity).
+    pub plan: LegPlan,
+    pub plan_qty: f64,
+}
+
+/// Quantities planned by `plans` for an entry of `qty` (lot-rounded percentages).
+fn plan_quantities(qty: f64, lot: Option<f64>, plans: &[LegPlan]) -> Vec<f64> {
+    let floor_lot = |value: f64| match lot {
+        Some(lot) if lot > 0.0 => ((value / lot) + 1e-9).floor() * lot,
+        _ => value,
+    };
+    let fixed = |plan: &LegPlan| match *plan {
+        LegPlan::Full => qty,
+        LegPlan::Qty(q) => q,
+        LegPlan::Pct(pct) => floor_lot(qty * pct / 100.0),
+        LegPlan::Rest => 0.0,
+    };
+    let planned = plans.iter().map(fixed).sum::<f64>();
+    plans
+        .iter()
+        .map(|plan| match plan {
+            LegPlan::Rest => (qty - planned).max(0.0),
+            plan => fixed(plan),
+        })
+        .collect()
 }
 
 /// A fill the book decided on, waiting for barter to execute it.
@@ -302,6 +403,14 @@ pub struct FillIntent {
     pub costs: CostBreakdown,
     pub time_ms: i64,
     pub bar_index: usize,
+    /// Quantity was cut by the volume cap: the order keeps working for the rest.
+    pub capped: bool,
+    /// Freeze-quantity slice id (`<order id>#<n>`) when the fill was split.
+    pub slice: Option<String>,
+    /// T+1: sale proceeds of this fill not usable before settlement.
+    pub locked: f64,
+    /// Last intent of one fill decision (the final slice).
+    pub last: bool,
 }
 
 /// A request honba refused (or an order that failed at fill time).
@@ -364,6 +473,8 @@ fn match_order(order: &Order, bar: &Bar) -> Match {
             .map_or(Match::None, |price| {
                 Match::Fill(price, order.limit_reason())
             }),
+        // A stop that already triggered (partially filled) works as a market order
+        OrderType::Stop if order.triggered => Match::Fill(bar.open, order.stop_reason()),
         OrderType::Stop => order
             .trigger
             .and_then(|trigger| stop_touch(side, trigger, bar))
@@ -449,6 +560,14 @@ pub struct Book {
     pub last_close: Vec<Option<f64>>,
     /// Instruments with a bar at the current timestamp.
     has_bar: Vec<bool>,
+    /// Bar of each instrument at the current timestamp.
+    cur_bar: Vec<Option<Bar>>,
+    /// Quantity filled per instrument in the current bar (volume cap).
+    volume_used: Vec<f64>,
+    /// Close of the previous trading date per instrument (price band reference).
+    band_ref: Vec<Option<f64>>,
+    /// Trading date of the latest bar per instrument.
+    bar_date: Vec<Option<NaiveDate>>,
     pub orders: Vec<Order>,
     pub fills: Vec<FillEvent>,
     pub rejections: Vec<Rejection>,
@@ -465,8 +584,14 @@ pub struct Book {
     pending: HashMap<String, FillIntent>,
     /// Execution outcomes waiting for earlier fills (by fill sequence).
     reported: std::collections::BTreeMap<u64, (String, Result<(), String>)>,
+    /// T+1: unsettled CNC sale proceeds `(trade date, proceeds, not yet usable part)`.
+    unsettled: Vec<(NaiveDate, f64, f64)>,
+    /// Trading date the settlement state was rolled to.
+    settle_date: Option<NaiveDate>,
     /// Batch-local projection of cash / positions including not yet confirmed intents.
     proj_cash: f64,
+    /// Projected sale proceeds not usable yet (T+1).
+    proj_locked: f64,
     proj_qty: Vec<f64>,
     events: Vec<Event>,
     order_seq: u64,
@@ -482,9 +607,16 @@ impl Book {
         Self {
             cash: cfg.initial_cash,
             proj_cash: cfg.initial_cash,
+            proj_locked: 0.0,
+            unsettled: Vec::new(),
+            settle_date: None,
             positions: vec![Position::default(); n],
             last_close: vec![None; n],
             has_bar: vec![false; n],
+            cur_bar: vec![None; n],
+            volume_used: vec![0.0; n],
+            band_ref: vec![None; n],
+            bar_date: vec![None; n],
             proj_qty: vec![0.0; n],
             orders: Vec::new(),
             fills: Vec::new(),
@@ -536,6 +668,11 @@ impl Book {
         let unrealised = self.last_close[instrument]
             .map(|close| position.qty * (close - position.avg_price))
             .unwrap_or_default();
+        let cnc_long = if position.product == Some(Product::CNC) {
+            position.qty.max(0.0)
+        } else {
+            0.0
+        };
         PositionView {
             qty: position.qty,
             avg_price: position.avg_price,
@@ -543,6 +680,11 @@ impl Book {
             realised_pnl: position.realised_pnl,
             unrealised_pnl: unrealised,
             pnl: position.realised_pnl + unrealised,
+            qty_settled: if self.t_plus_one() {
+                position.settled.min(cnc_long)
+            } else {
+                cnc_long
+            },
         }
     }
 
@@ -606,7 +748,7 @@ impl Book {
         bar_index: usize,
         date: NaiveDate,
         time_ms: i64,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
         let due = self
             .cfg
             .square_off_at
@@ -618,7 +760,7 @@ impl Book {
                 .as_ref()
                 .is_some_and(|session| session.past_square_off(time_ms));
         if !due || self.squared_off[instrument] == Some(date) {
-            return None;
+            return Vec::new();
         }
         self.squared_off[instrument] = Some(date);
 
@@ -641,10 +783,10 @@ impl Book {
 
         let qty = self.proj_qty[instrument];
         if self.positions[instrument].product != Some(Product::MIS) || qty.abs() <= EPS {
-            return None;
+            return Vec::new();
         }
         let id = format!("sq-{}-{}", self.cfg.symbols[instrument], date);
-        Some(self.forced_exit(
+        self.forced_exit(
             instrument,
             id,
             OrderRole::SquareOff,
@@ -652,7 +794,7 @@ impl Book {
             bar.close,
             bar_index,
             time_ms,
-        ))
+        )
     }
 
     /// Mandatory market exit of the whole projected position at `price` (no cash / margin /
@@ -667,7 +809,7 @@ impl Book {
         price: f64,
         bar_index: usize,
         time_ms: i64,
-    ) -> FillIntent {
+    ) -> Vec<FillIntent> {
         let qty = self.proj_qty[instrument];
         let side = if qty > 0.0 {
             ActionSide::Sell
@@ -704,11 +846,14 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: bar_index,
+            slices: 0,
+            bracket: Bracket::default(),
             first_eval_date: Some(self.trading_date(time_ms)),
             created_ms: time_ms,
             updated_ms: time_ms,
         });
-        self.intent(index, qty.abs(), price, reason, time_ms, bar_index)
+        let price = self.slipped(instrument, side, price, qty.abs());
+        self.intent(index, qty.abs(), price, reason, time_ms, bar_index, false)
     }
 
     /// End of data (`liquidate_at_end`): cancel every working order and close every position
@@ -734,10 +879,12 @@ impl Book {
             .collect::<Vec<_>>();
         open_positions
             .into_iter()
-            .filter_map(|instrument| {
-                let price = self.last_close[instrument]?;
+            .flat_map(|instrument| {
+                let Some(price) = self.last_close[instrument] else {
+                    return Vec::new();
+                };
                 let id = format!("liq-{}", self.cfg.symbols[instrument]);
-                Some(self.forced_exit(
+                self.forced_exit(
                     instrument,
                     id,
                     OrderRole::Liquidation,
@@ -745,7 +892,7 @@ impl Book {
                     price,
                     bar_index,
                     time_ms,
-                ))
+                )
             })
             .collect()
     }
@@ -755,11 +902,51 @@ impl Book {
         for (proj, position) in self.proj_qty.iter_mut().zip(&self.positions) {
             *proj = position.qty;
         }
+        self.proj_locked = self.unsettled.iter().map(|(_, _, locked)| locked).sum();
         for pending in self.pending.values() {
             self.proj_cash -=
                 pending.side.sign() * pending.qty * pending.price + pending.costs.total;
             self.proj_qty[pending.instrument] += pending.side.sign() * pending.qty;
+            self.proj_locked += pending.locked;
         }
+    }
+
+    fn t_plus_one(&self) -> bool {
+        self.cfg
+            .settlement
+            .is_some_and(|s| s.cnc == SettlementCycle::T1)
+    }
+
+    /// New trading date: earlier sale proceeds settle and CNC buys become holdings.
+    fn roll_settlement(&mut self, date: NaiveDate) {
+        if self.settle_date == Some(date) {
+            return;
+        }
+        self.settle_date = Some(date);
+        self.unsettled
+            .retain(|(trade_date, _, _)| *trade_date >= date);
+        for position in &mut self.positions {
+            position.settled = if position.product == Some(Product::CNC) {
+                position.qty.max(0.0)
+            } else {
+                0.0
+            };
+        }
+    }
+
+    /// CNC sale proceeds not settled yet (T+1).
+    pub fn unsettled_cash(&self) -> f64 {
+        self.unsettled.iter().map(|(_, proceeds, _)| proceeds).sum()
+    }
+
+    /// Cash usable for new exposure: cash minus unsettled proceeds beyond the same-day credit.
+    pub fn available_cash(&self) -> f64 {
+        self.cash
+            - self
+                .unsettled
+                .iter()
+                .map(|(_, _, locked)| locked)
+                .sum::<f64>()
     }
 
     /// Start processing the bars at `time_ms` (`bars[i]` is instrument `i`'s bar, if any):
@@ -775,6 +962,18 @@ impl Book {
         for (has_bar, bar) in self.has_bar.iter_mut().zip(bars) {
             *has_bar = bar.is_some();
         }
+        for (instrument, bar) in bars.iter().enumerate() {
+            self.cur_bar[instrument] = *bar;
+            if let Some(bar) = bar {
+                // First bar of a new trading date: the band moves to the previous close
+                let date = self.trading_date(bar.time_ms);
+                if self.bar_date[instrument] != Some(date) {
+                    self.bar_date[instrument] = Some(date);
+                    self.band_ref[instrument] = self.last_close[instrument];
+                }
+            }
+        }
+        self.volume_used.fill(0.0);
         for ((close, recent), bar) in self.last_close.iter_mut().zip(&mut self.recent).zip(bars) {
             if let Some(bar) = bar {
                 *close = Some(bar.close);
@@ -784,9 +983,10 @@ impl Book {
                 recent.push_back(*bar);
             }
         }
+        let date = self.trading_date(time_ms);
+        self.roll_settlement(date);
         self.sync_projection();
         self.advance_open_floor();
-        let date = self.trading_date(time_ms);
 
         let open = self.market_open(time_ms);
 
@@ -806,8 +1006,9 @@ impl Book {
                     o.instrument == Some(instrument)
                         && o.is_open()
                         && o.tif == TimeInForce::Day
-                        // market orders (next_open) execute at the next available open
-                        && o.kind != OrderType::Market
+                        // market orders (next_open) execute at the next available open;
+                        // remainders of partially filled ones expire like any day order
+                        && (o.kind != OrderType::Market || o.filled_qty > 0.0)
                         && o.first_eval_date
                             .is_some_and(|first| self.day_expired(first, date, time_ms))
                 })
@@ -845,22 +1046,27 @@ impl Book {
                 }
                 self.orders[index].first_eval_date.get_or_insert(date);
 
-                let (index, result) = match self.orders[index].parent.clone() {
+                let result = match self.orders[index].parent.clone() {
                     Some(parent) if brackets_done.contains(&parent) => continue,
                     Some(parent) => {
+                        // Every leg of the bracket at once
+                        intents.extend(self.match_bracket(&parent, bar_index, bar, time_ms));
                         brackets_done.push(parent);
-                        self.resolve_bracket(index, bar_index, bar)
+                        continue;
                     }
-                    None => (index, match_order(&self.orders[index], bar)),
+                    None => match_order(&self.orders[index], bar),
                 };
 
                 match result {
                     Match::Fill(price, reason) => {
-                        if let Some(intent) =
-                            self.try_fill(index, price, reason, time_ms, bar_index)
-                        {
+                        let filled = self.try_fill(index, price, reason, time_ms, bar_index);
+                        if filled.is_empty() {
+                            // Nothing could fill this bar (volume cap, circuit): IOC orders
+                            // end here
+                            self.expire_ioc(index, time_ms);
+                        } else {
                             let entry = self.orders[index].role == OrderRole::Entry;
-                            intents.push(intent);
+                            intents.extend(filled);
                             if entry && self.cfg.attached_exit_same_bar {
                                 intents.extend(
                                     self.same_bar_exit(index, price, bar, bar_index, time_ms),
@@ -1077,9 +1283,9 @@ impl Book {
     }
 
     /// `attached_exit_same_bar`: after an entry filled at `entry` inside `bar`, its attached
-    /// exits may trigger on the rest of that bar. Stop first: if the bar's range reaches the
-    /// stop the stop fills (at the stop, or at the entry price if the entry is already
-    /// through it), otherwise the target may fill.
+    /// exits may trigger on the rest of that bar. Stop first: if the bar's range reaches
+    /// stop-loss legs they fill (at their stop, or at the entry price if the entry is already
+    /// through it), otherwise the take-profit legs the bar reached may fill.
     fn same_bar_exit(
         &mut self,
         parent: usize,
@@ -1087,105 +1293,258 @@ impl Book {
         bar: &Bar,
         bar_index: usize,
         time_ms: i64,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
         let id = self.orders[parent].id.clone();
         let long = self.orders[parent].side == ActionSide::Buy;
-        let qty = self
-            .pending
-            .values()
-            .filter(|p| p.order == parent)
-            .map(|p| p.qty)
-            .sum::<f64>();
+        // Size the legs for the quantity in flight
+        self.rebalance(parent, time_ms);
 
-        let stop = self.find_child(&id, OrderRole::StopLoss).and_then(|child| {
-            let level = self.orders[child].trigger?;
-            let hit = if long {
-                bar.low <= level
-            } else {
-                bar.high >= level
-            };
-            let price = if long {
-                level.min(entry)
-            } else {
-                level.max(entry)
-            };
-            hit.then_some((child, price, self.orders[child].stop_reason()))
-        });
-        let target = || {
-            self.find_child(&id, OrderRole::TakeProfit)
-                .and_then(|child| {
-                    let level = self.orders[child].price?;
-                    let hit = if long {
-                        bar.high >= level
-                    } else {
-                        bar.low <= level
+        let hits = |role: OrderRole| {
+            self.legs(&id, role)
+                .into_iter()
+                .filter(|&leg| self.orders[leg].remaining() > EPS)
+                .filter_map(|leg| {
+                    let order = &self.orders[leg];
+                    let (hit, price, reason) = match role {
+                        OrderRole::StopLoss => {
+                            let level = order.trigger?;
+                            if long {
+                                (bar.low <= level, level.min(entry), order.stop_reason())
+                            } else {
+                                (bar.high >= level, level.max(entry), order.stop_reason())
+                            }
+                        }
+                        _ => {
+                            let level = order.price?;
+                            if long {
+                                (bar.high >= level, level.max(entry), FillReason::TakeProfit)
+                            } else {
+                                (bar.low <= level, level.min(entry), FillReason::TakeProfit)
+                            }
+                        }
                     };
-                    let price = if long {
-                        level.max(entry)
-                    } else {
-                        level.min(entry)
-                    };
-                    hit.then_some((child, price, FillReason::TakeProfit))
+                    hit.then_some((leg, price, reason))
                 })
+                .collect::<Vec<_>>()
         };
-        let (child, price, reason) = stop.or_else(target)?;
+        let mut chosen = hits(OrderRole::StopLoss);
+        if chosen.is_empty() {
+            chosen = hits(OrderRole::TakeProfit);
+        }
+        // Levels nearest the entry are reached first
+        chosen.sort_by(|a, b| (a.1 - entry).abs().total_cmp(&(b.1 - entry).abs()));
 
-        let order = &mut self.orders[child];
-        order.status = OrderStatus::Open;
-        order.active_from_bar = bar_index;
-        order.qty = qty;
-        order.updated_ms = time_ms;
-        self.try_fill(child, price, reason, time_ms, bar_index)
+        let mut intents = Vec::new();
+        for (leg, price, reason) in chosen {
+            let open = self.bracket_open(parent);
+            if open <= EPS {
+                break;
+            }
+            let order = &mut self.orders[leg];
+            order.status = OrderStatus::Open;
+            order.active_from_bar = bar_index;
+            order.updated_ms = time_ms;
+            intents.extend(self.try_fill_upto(leg, price, reason, time_ms, bar_index, open));
+        }
+        intents
     }
 
-    /// Open, active OCO sibling of a bracket exit.
-    fn active_sibling(&self, index: usize, bar_index: usize) -> Option<usize> {
-        let parent = self.orders[index].parent.as_ref()?;
+    /// Match every active leg of the bracket of entry `parent` against `bar`. When stop-loss
+    /// and take-profit legs both trigger, the side filling at the open (a gap) happened first,
+    /// otherwise `stop_first` decides; legs then fill nearest-to-the-open first, each capped
+    /// by the bracket quantity still open (the later side only gets what is left).
+    fn match_bracket(
+        &mut self,
+        parent: &str,
+        bar_index: usize,
+        bar: &Bar,
+        time_ms: i64,
+    ) -> Vec<FillIntent> {
+        let Some(entry) = self.order_index(parent) else {
+            return Vec::new();
+        };
+        let mut hits = [OrderRole::StopLoss, OrderRole::TakeProfit]
+            .into_iter()
+            .flat_map(|role| self.legs(parent, role))
+            .filter(|&leg| {
+                let order = &self.orders[leg];
+                order.status == OrderStatus::Open
+                    && order.active_from_bar <= bar_index
+                    && order.remaining() > EPS
+            })
+            .filter_map(|leg| match match_order(&self.orders[leg], bar) {
+                Match::Fill(price, reason) => Some((leg, price, reason)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if hits.is_empty() {
+            return Vec::new();
+        }
+        let at_open = |role: OrderRole| {
+            hits.iter()
+                .any(|&(leg, price, _)| self.orders[leg].role == role && price == bar.open)
+        };
+        let (stop_at_open, target_at_open) =
+            (at_open(OrderRole::StopLoss), at_open(OrderRole::TakeProfit));
+        let first = match (stop_at_open, target_at_open) {
+            (true, false) => OrderRole::StopLoss,
+            (false, true) => OrderRole::TakeProfit,
+            _ if self.cfg.stop_first => OrderRole::StopLoss,
+            _ => OrderRole::TakeProfit,
+        };
+        hits.sort_by(|a, b| {
+            let key = |&(leg, price, _): &(usize, f64, FillReason)| {
+                (self.orders[leg].role != first, (price - bar.open).abs())
+            };
+            let (ka, kb) = (key(a), key(b));
+            ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+        });
+
+        let mut intents = Vec::new();
+        for (leg, price, reason) in hits {
+            let open = self.bracket_open(entry);
+            if open <= EPS {
+                break;
+            }
+            intents.extend(self.try_fill_upto(leg, price, reason, time_ms, bar_index, open));
+        }
+        intents
+    }
+
+    /// Quantity of fills of `order` in flight.
+    fn pending_qty(&self, order: usize) -> f64 {
+        self.pending
+            .values()
+            .filter(|p| p.order == order)
+            .map(|p| p.qty)
+            .sum()
+    }
+
+    /// Quantity of entry `entry`'s position its exit legs still have to close (including fills
+    /// in flight).
+    fn bracket_open(&self, entry: usize) -> f64 {
+        let order = &self.orders[entry];
+        let exits_pending = self
+            .pending
+            .values()
+            .filter(|p| self.orders[p.order].parent.as_ref() == Some(&order.id))
+            .map(|p| p.qty)
+            .sum::<f64>();
+        (order.filled_qty + self.pending_qty(entry) - order.bracket.exit_filled - exits_pending)
+            .max(0.0)
+    }
+
+    /// Open or pending exit legs of entry `parent` with `role`, in creation order.
+    fn legs(&self, parent: &str, role: OrderRole) -> Vec<usize> {
         self.orders
             .iter()
             .enumerate()
             .skip(self.open_floor)
-            .find(|(i, order)| {
-                order.parent.as_ref() == Some(parent)
-                    && *i != index
-                    && order.status == OrderStatus::Open
-                    && order.active_from_bar <= bar_index
-            })
+            .filter(|(_, o)| o.is_open() && o.role == role && o.parent.as_deref() == Some(parent))
             .map(|(i, _)| i)
+            .collect()
     }
 
-    /// Match a bracket exit together with its OCO sibling: when both trigger in one bar, the
-    /// one filling at the open (a gap) happened first; otherwise `stop_first` decides.
-    fn resolve_bracket(&self, index: usize, bar_index: usize, bar: &Bar) -> (usize, Match) {
-        let result = match_order(&self.orders[index], bar);
-        let Some(sibling) = self.active_sibling(index, bar_index) else {
-            return (index, result);
+    /// Size the exit legs of entry `entry` to the quantity still open: each side (stop loss,
+    /// take profit) covers at most the open quantity, trimming its last legs first. Once the
+    /// entry is done, legs left without quantity are cancelled (`oco`).
+    fn rebalance(&mut self, entry: usize, time_ms: i64) {
+        let id = self.orders[entry].id.clone();
+        let started = self.orders[entry].filled_qty > 0.0 || self.pending_qty(entry) > 0.0;
+        let open = if started {
+            self.bracket_open(entry)
+        } else {
+            self.orders[entry].qty
         };
-        let sibling_result = match_order(&self.orders[sibling], bar);
-        match (result, sibling_result) {
-            (Match::Fill(price, _), Match::Fill(sibling_price, _)) => {
-                let at_open = price == bar.open;
-                let sibling_at_open = sibling_price == bar.open;
-                let preferred = if self.cfg.stop_first {
-                    OrderRole::StopLoss
-                } else {
-                    OrderRole::TakeProfit
-                };
-                let this_first = match (at_open, sibling_at_open) {
-                    (true, false) => true,
-                    (false, true) => false,
-                    _ => self.orders[index].role == preferred,
-                };
-                if this_first {
-                    (index, result)
-                } else {
-                    (sibling, sibling_result)
+        let done = !self.orders[entry].is_open();
+        let mut exhausted = Vec::new();
+        for role in [OrderRole::StopLoss, OrderRole::TakeProfit] {
+            let legs = self.legs(&id, role);
+            let mut rest = legs
+                .iter()
+                .map(|&leg| {
+                    let order = &self.orders[leg];
+                    (order.bracket.plan_qty - order.filled_qty - self.pending_qty(leg)).max(0.0)
+                })
+                .collect::<Vec<_>>();
+            let mut excess = rest.iter().sum::<f64>() - open;
+            for rest in rest.iter_mut().rev() {
+                if excess <= EPS {
+                    break;
+                }
+                let cut = rest.min(excess);
+                *rest -= cut;
+                excess -= cut;
+            }
+            for (leg, rest) in legs.into_iter().zip(rest) {
+                let pending = self.pending_qty(leg);
+                let order = &mut self.orders[leg];
+                order.qty = order.filled_qty + pending + rest;
+                if started && done && rest <= EPS && pending <= EPS {
+                    exhausted.push(leg);
                 }
             }
-            (Match::Fill(..), _) => (index, result),
-            (_, Match::Fill(..)) => (sibling, sibling_result),
-            _ => (index, result),
         }
+        for leg in exhausted {
+            if self.orders[leg].is_open() {
+                self.close_order(leg, OrderStatus::Cancelled, "oco", time_ms);
+            }
+        }
+        self.sync_levels(entry);
+    }
+
+    /// The entry's `stop_loss` / `take_profit` show its first working leg of each side.
+    fn sync_levels(&mut self, entry: usize) {
+        let id = self.orders[entry].id.clone();
+        if let Some(&leg) = self.legs(&id, OrderRole::StopLoss).first() {
+            self.orders[entry].stop_loss = self.orders[leg].trigger;
+        }
+        if let Some(&leg) = self.legs(&id, OrderRole::TakeProfit).first() {
+            self.orders[entry].take_profit = self.orders[leg].price;
+        }
+    }
+
+    /// `move_sl_to_entry_after_first_tp`: tighten every stop-loss leg to the entry's average
+    /// fill price (rounded to the tick away from the market).
+    fn move_sl_to_entry(&mut self, entry: usize, time_ms: i64) {
+        let order = &self.orders[entry];
+        if order.filled_qty <= 0.0 {
+            return;
+        }
+        let (Some(instrument), average) = (order.instrument, order.filled_value / order.filled_qty)
+        else {
+            return;
+        };
+        let id = order.id.clone();
+        for leg in self.legs(&id, OrderRole::StopLoss) {
+            let side = self.orders[leg].side;
+            let level = self.round_stop(instrument, side, average);
+            let current = self.orders[leg].trigger;
+            let tighter = match (current, side) {
+                (None, _) => true,
+                (Some(stop), ActionSide::Sell) => level > stop,
+                (Some(stop), ActionSide::Buy) => level < stop,
+            };
+            if !tighter {
+                continue;
+            }
+            let order = &mut self.orders[leg];
+            order.trigger = Some(level);
+            if order.trail.is_some() {
+                order.trail_stop = Some(level);
+            }
+            order.updated_ms = time_ms;
+            let (id, symbol) = (order.id.clone(), order.symbol.clone());
+            self.events.push(Event::StopUpdate {
+                time_ms,
+                id,
+                symbol,
+                old_stop: current,
+                new_stop: level,
+                reason: "move_sl_to_entry".into(),
+            });
+        }
+        self.sync_levels(entry);
     }
 
     fn expire_ioc(&mut self, index: usize, time_ms: i64) {
@@ -1284,6 +1643,8 @@ impl Book {
         order.reason = Some(reason.to_string());
         order.updated_ms = time_ms;
         let (id, symbol) = (order.id.clone(), order.symbol.clone());
+        let entry_filled = order.role == OrderRole::Entry && order.filled_qty > 0.0;
+        let (side, qty) = (order.side, order.remaining());
         let reason = reason.to_string();
         match status {
             OrderStatus::Expired => self.events.push(Event::Expire {
@@ -1293,7 +1654,6 @@ impl Book {
                 reason,
             }),
             OrderStatus::Rejected => {
-                let (side, qty) = (order.side, order.remaining());
                 self.push_reject(Rejection {
                     time_ms,
                     id: Some(id),
@@ -1309,6 +1669,10 @@ impl Book {
                 symbol,
                 reason,
             }),
+        }
+        if entry_filled {
+            // A partially filled entry is done: its legs cover what it filled
+            self.rebalance(index, time_ms);
         }
     }
 
@@ -1372,13 +1736,68 @@ impl Book {
         if meta.lot_size.is_some_and(|lot| !is_multiple(qty, lot)) {
             return Err("invalid_lot");
         }
-        if meta
+        let above_freeze = meta
             .freeze_qty
-            .is_some_and(|freeze| !approx_le(qty, freeze))
-        {
+            .is_some_and(|freeze| !approx_le(qty, freeze));
+        if above_freeze && self.slice_size(instrument).is_none() {
             return Err("above_freeze_qty");
         }
         Ok(())
+    }
+
+    /// Lower / upper price band of `instrument` for the current trading date (on the tick).
+    pub fn price_band(&self, instrument: usize) -> Option<(f64, f64)> {
+        let meta = self.meta(instrument);
+        let pct = meta.price_band_pct?;
+        let reference = self.band_ref[instrument]?;
+        let (lower, upper) = (
+            reference * (1.0 - pct / 100.0),
+            reference * (1.0 + pct / 100.0),
+        );
+        Some(match meta.tick_size {
+            Some(tick) if tick > 0.0 => (
+                ((lower / tick) - 1e-9).ceil() * tick,
+                ((upper / tick) + 1e-9).floor() * tick,
+            ),
+            _ => (lower, upper),
+        })
+    }
+
+    /// Limit / trigger prices must lie within the price band.
+    fn check_band(&self, instrument: usize, prices: &[Option<f64>]) -> Check {
+        let Some((lower, upper)) = self.price_band(instrument) else {
+            return Ok(());
+        };
+        let tolerance = EPS * upper.abs().max(1.0);
+        if prices
+            .iter()
+            .flatten()
+            .any(|p| *p < lower - tolerance || *p > upper + tolerance)
+        {
+            return Err("outside_price_band");
+        }
+        Ok(())
+    }
+
+    /// Is the current bar of `instrument` locked at the band against `side` (upper circuit:
+    /// no sellers, so buys cannot fill; lower circuit: sells cannot).
+    fn locked(&self, instrument: usize, side: ActionSide) -> bool {
+        let (Some(bar), Some((lower, upper))) =
+            (self.cur_bar[instrument], self.price_band(instrument))
+        else {
+            return false;
+        };
+        let tolerance = self
+            .meta(instrument)
+            .tick_size
+            .map_or(EPS * bar.high.abs().max(1.0), |tick| tick / 2.0);
+        if bar.high - bar.low > tolerance {
+            return false;
+        }
+        match side {
+            ActionSide::Buy => bar.low >= upper - tolerance,
+            ActionSide::Sell => bar.high <= lower + tolerance,
+        }
     }
 
     /// Prices must sit on the instrument tick.
@@ -1449,7 +1868,14 @@ impl Book {
             Some(current) if position.abs() > EPS && position.signum() == after.signum() => current,
             _ => product,
         };
-        let costs = self.costs_for(instrument, side, product, price, qty).total;
+        let costs = self
+            .slices(instrument, qty)
+            .into_iter()
+            .map(|slice| {
+                self.costs_for(instrument, side, product, price, slice)
+                    .total
+            })
+            .sum::<f64>();
         let required =
             after.abs() * price * self.cfg.margin.rate(product_after, after < 0.0) + costs;
         let available = self.buying_power() + self.blocked(instrument);
@@ -1468,7 +1894,8 @@ impl Book {
     /// marked at the latest close. Short-sale proceeds sit in cash but are offset by the
     /// short liability, so they never fund purchases.
     fn buying_power(&self) -> f64 {
-        (0..self.proj_qty.len()).fold(self.proj_cash, |power, instrument| {
+        let usable = self.proj_cash - self.proj_locked;
+        (0..self.proj_qty.len()).fold(usable, |power, instrument| {
             power + self.proj_qty[instrument] * self.mark(instrument) - self.blocked(instrument)
         })
     }
@@ -1495,10 +1922,34 @@ impl Book {
         reason: FillReason,
         time_ms: i64,
         bar_index: usize,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
+        self.try_fill_upto(index, price, reason, time_ms, bar_index, f64::INFINITY)
+    }
+
+    /// [`Self::try_fill`] for at most `max_qty`.
+    fn try_fill_upto(
+        &mut self,
+        index: usize,
+        price: f64,
+        reason: FillReason,
+        time_ms: i64,
+        bar_index: usize,
+        max_qty: f64,
+    ) -> Vec<FillIntent> {
         let order = &self.orders[index];
-        let instrument = order.instrument?;
-        let mut qty = order.remaining();
+        let Some(instrument) = order.instrument else {
+            return Vec::new();
+        };
+        if self.locked(instrument, order.side) {
+            // Circuit: no counterparty in this bar; the order keeps working (a stop that
+            // triggered executes at a later open)
+            if order.kind == OrderType::Stop {
+                self.orders[index].triggered = true;
+            }
+            return Vec::new();
+        }
+        let order = &self.orders[index];
+        let mut qty = order.remaining().min(max_qty);
         if order.reduce_only {
             let position = self.proj_qty[instrument];
             let closable = match order.side {
@@ -1508,16 +1959,129 @@ impl Book {
             qty = qty.min(closable);
             if qty <= EPS {
                 self.close_order(index, OrderStatus::Cancelled, "position_closed", time_ms);
-                return None;
+                return Vec::new();
             }
         }
-        if let Err(reason) = self.check_fill(instrument, order.side, order.product, qty, price) {
-            self.close_order(index, OrderStatus::Rejected, reason, time_ms);
-            return None;
+        let mut capped = false;
+        if let Some(room) = self.volume_room(instrument, qty) {
+            if room < qty - EPS * qty.max(1.0) {
+                qty = room;
+                capped = true;
+            }
+            if qty <= EPS {
+                // Bar volume used up: the order keeps working
+                return Vec::new();
+            }
         }
-        Some(self.intent(index, qty, price, reason, time_ms, bar_index))
+        let order = &self.orders[index];
+        let (side, product) = (order.side, order.product);
+        let price = if matches!(order.kind, OrderType::Market | OrderType::Stop) {
+            self.slipped(instrument, side, price, qty)
+        } else {
+            price
+        };
+        if let Err(reason) = self.check_fill(instrument, side, product, qty, price) {
+            self.close_order(index, OrderStatus::Rejected, reason, time_ms);
+            return Vec::new();
+        }
+        if self.volume_capped() {
+            self.volume_used[instrument] += qty;
+        }
+        self.intent(index, qty, price, reason, time_ms, bar_index, capped)
     }
 
+    /// T+1: part of a CNC sale's net proceeds (for the quantity closing a long, given the
+    /// projected position) that cannot fund new exposure before settlement.
+    fn locked_proceeds(
+        &self,
+        instrument: usize,
+        side: ActionSide,
+        product: Product,
+        price: f64,
+        qty: f64,
+        costs: &CostBreakdown,
+    ) -> f64 {
+        let Some(settlement) = self.cfg.settlement.filter(|_| self.t_plus_one()) else {
+            return 0.0;
+        };
+        if side != ActionSide::Sell || product != Product::CNC || qty <= 0.0 {
+            return 0.0;
+        }
+        let closing = qty.min(self.proj_qty[instrument].max(0.0));
+        let proceeds = closing * price - costs.total * closing / qty;
+        (proceeds * (1.0 - settlement.same_day_sell_credit)).max(0.0)
+    }
+
+    /// Largest quantity one exchange order may carry under the `split` freeze policy (a lot
+    /// multiple); `None` = no slicing.
+    fn slice_size(&self, instrument: usize) -> Option<f64> {
+        if self.cfg.freeze_policy != FreezePolicy::Split {
+            return None;
+        }
+        let meta = self.meta(instrument);
+        let freeze = meta.freeze_qty?;
+        Some(match meta.lot_size {
+            Some(lot) => ((freeze / lot) + 1e-9).floor() * lot,
+            None => freeze,
+        })
+        .filter(|size| *size > 0.0)
+    }
+
+    /// Quantities of the exchange orders a fill of `qty` is executed as (freeze slices).
+    fn slices(&self, instrument: usize, qty: f64) -> Vec<f64> {
+        let Some(size) = self.slice_size(instrument) else {
+            return vec![qty];
+        };
+        let mut slices = Vec::new();
+        let mut left = qty;
+        while left > size * (1.0 + 1e-9) {
+            slices.push(size);
+            left -= size;
+        }
+        slices.push(left);
+        slices
+    }
+
+    fn volume_capped(&self) -> bool {
+        self.cfg
+            .slippage
+            .is_some_and(|s| s.max_volume_share.is_some())
+    }
+
+    /// Quantity the volume cap still allows in `instrument`'s current bar for an order with
+    /// `remaining` quantity (in lots, or whole units for integral orders); `None` = uncapped.
+    fn volume_room(&self, instrument: usize, remaining: f64) -> Option<f64> {
+        let share = self.cfg.slippage?.max_volume_share?;
+        let volume = self.cur_bar[instrument]?.volume;
+        if volume <= 0.0 {
+            return None;
+        }
+        let room = (share * volume - self.volume_used[instrument]).max(0.0);
+        let step = self.meta(instrument).lot_size.unwrap_or(1.0);
+        Some(if is_multiple(remaining, step) {
+            ((room / step) + 1e-9).floor() * step
+        } else {
+            room
+        })
+    }
+
+    /// `price` moved against a market-like fill of `qty` by the configured slippage (buys
+    /// up, sells down), rounded to the tick away from the market.
+    fn slipped(&self, instrument: usize, side: ActionSide, price: f64, qty: f64) -> f64 {
+        let Some(slippage) = self.cfg.slippage else {
+            return price;
+        };
+        let volume = self.cur_bar[instrument].map_or(0.0, |bar| bar.volume);
+        let bps = slippage.bps_for(qty, volume);
+        if bps.is_nan() || bps <= 0.0 {
+            return price;
+        }
+        let raw = price * (1.0 + side.sign() * bps / 10_000.0);
+        // round_stop rounds sells down and buys up: adverse for a fill
+        self.round_stop(instrument, side, raw)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn intent(
         &mut self,
         order: usize,
@@ -1526,7 +2090,8 @@ impl Book {
         reason: FillReason,
         time_ms: i64,
         bar_index: usize,
-    ) -> FillIntent {
+        capped: bool,
+    ) -> Vec<FillIntent> {
         let (instrument, side, product) = {
             let order = &self.orders[order];
             (
@@ -1537,25 +2102,45 @@ impl Book {
                 order.product,
             )
         };
-        let costs = self.costs_for(instrument, side, product, price, qty);
-        self.proj_cash -= side.sign() * qty * price + costs.total;
-        self.proj_qty[instrument] += side.sign() * qty;
+        let slices = self.slices(instrument, qty);
+        let split = slices.len() > 1;
+        let count = slices.len();
+        slices
+            .into_iter()
+            .enumerate()
+            .map(|(n, qty)| {
+                let costs = self.costs_for(instrument, side, product, price, qty);
+                let locked = self.locked_proceeds(instrument, side, product, price, qty, &costs);
+                self.proj_cash -= side.sign() * qty * price + costs.total;
+                self.proj_qty[instrument] += side.sign() * qty;
+                self.proj_locked += locked;
+                let slice = split.then(|| {
+                    let parent = &mut self.orders[order];
+                    parent.slices += 1;
+                    format!("{}#{}", parent.id, parent.slices)
+                });
 
-        self.fill_seq += 1;
-        let intent = FillIntent {
-            fill_id: format!("f{}", self.fill_seq),
-            order,
-            instrument,
-            side,
-            qty,
-            price,
-            reason,
-            costs,
-            time_ms,
-            bar_index,
-        };
-        self.pending.insert(intent.fill_id.clone(), intent.clone());
-        intent
+                self.fill_seq += 1;
+                let intent = FillIntent {
+                    fill_id: format!("f{}", self.fill_seq),
+                    order,
+                    instrument,
+                    side,
+                    qty,
+                    price,
+                    reason,
+                    costs,
+                    time_ms,
+                    bar_index,
+                    capped,
+                    slice,
+                    last: n + 1 == count,
+                    locked,
+                };
+                self.pending.insert(intent.fill_id.clone(), intent.clone());
+                intent
+            })
+            .collect()
     }
 
     /// Apply one decider action. Returns fills to execute now.
@@ -1620,11 +2205,11 @@ impl Book {
     fn check_bracket(
         side: ActionSide,
         reference: f64,
-        stop_loss: Option<f64>,
-        take_profit: Option<f64>,
+        stop_loss: Option<&ExitSpec>,
+        take_profit: Option<&ExitSpec>,
     ) -> Check {
         let valid = |v: f64| v.is_finite() && v > 0.0;
-        if let Some(stop) = stop_loss {
+        for stop in stop_loss.map(ExitSpec::levels).unwrap_or_default() {
             let protective = match side {
                 ActionSide::Buy => stop < reference,
                 ActionSide::Sell => stop > reference,
@@ -1633,7 +2218,7 @@ impl Book {
                 return Err("invalid_stop_loss");
             }
         }
-        if let Some(target) = take_profit {
+        for target in take_profit.map(ExitSpec::levels).unwrap_or_default() {
             let profitable = match side {
                 ActionSide::Buy => target > reference,
                 ActionSide::Sell => target < reference,
@@ -1645,35 +2230,130 @@ impl Book {
         Ok(())
     }
 
-    /// Open or pending attached exit of `parent` with `role`.
-    fn find_child(&self, parent: &str, role: OrderRole) -> Option<usize> {
-        let suffix = match role {
-            OrderRole::StopLoss => "sl",
-            _ => "tp",
+    /// Legs of an attached exit for an entry of `qty`: `(level, plan, planned qty)`.
+    /// Legs are lot multiples summing to at most the entry quantity.
+    fn plan_legs(
+        &self,
+        instrument: usize,
+        qty: f64,
+        spec: &ExitSpec,
+        reason: &'static str,
+    ) -> Result<Vec<(f64, LegPlan, f64)>, &'static str> {
+        let legs = match spec {
+            ExitSpec::Level(level) => return Ok(vec![(*level, LegPlan::Full, qty)]),
+            ExitSpec::Legs(legs) if legs.is_empty() => return Err(reason),
+            ExitSpec::Legs(legs) => legs,
         };
-        self.open_order_index(&format!("{parent}:{suffix}"))
-            .filter(|&index| {
-                let order = &self.orders[index];
-                order.parent.as_deref() == Some(parent) && order.role == role
+        let lot = self.meta(instrument).lot_size;
+        let plans = legs
+            .iter()
+            .map(|leg| match (leg.qty, leg.pct) {
+                (Some(q), None) if q.is_finite() && q > 0.0 => Ok(LegPlan::Qty(q)),
+                (None, Some(p)) if p.is_finite() && p > 0.0 && p <= 100.0 => Ok(LegPlan::Pct(p)),
+                (None, None) => Ok(LegPlan::Rest),
+                _ => Err(reason),
             })
+            .collect::<Result<Vec<_>, _>>()?;
+        if plans.iter().filter(|p| **p == LegPlan::Rest).count() > 1 {
+            return Err(reason);
+        }
+        let fixed = plan_quantities(qty, lot, &plans)
+            .into_iter()
+            .zip(&plans)
+            .filter(|(_, plan)| **plan != LegPlan::Rest)
+            .map(|(q, _)| q)
+            .sum::<f64>();
+        if !approx_le(fixed, qty) {
+            return Err(reason);
+        }
+        let quantities = plan_quantities(qty, lot, &plans);
+        let lots_ok = quantities
+            .iter()
+            .all(|q| *q > EPS && lot.is_none_or(|lot| is_multiple(*q, lot)));
+        if !lots_ok {
+            return Err(reason);
+        }
+        Ok(legs
+            .iter()
+            .zip(plans)
+            .zip(quantities)
+            .map(|((leg, plan), q)| (leg.price, plan, q))
+            .collect())
     }
 
-    /// Create the stop-loss (stop) or take-profit (limit) exit of entry `parent`. It stays
-    /// `pending` until the entry fills, then covers the filled quantity (reduce-only, GTC).
+    /// Recompute the planned quantities of an unfilled entry's legs after its quantity
+    /// changed.
+    fn replan(&mut self, entry: usize) {
+        let order = &self.orders[entry];
+        if order.filled_qty > 0.0 {
+            return;
+        }
+        let (id, qty) = (order.id.clone(), order.qty);
+        let lot = order.instrument.and_then(|i| self.meta(i).lot_size);
+        for role in [OrderRole::StopLoss, OrderRole::TakeProfit] {
+            let legs = self.legs(&id, role);
+            let plans = legs
+                .iter()
+                .map(|&leg| self.orders[leg].bracket.plan)
+                .collect::<Vec<_>>();
+            for (leg, planned) in legs.into_iter().zip(plan_quantities(qty, lot, &plans)) {
+                self.orders[leg].bracket.plan_qty = planned;
+            }
+        }
+    }
+
+    /// Attach the stop-loss (stop) or take-profit (limit) legs of entry `parent`: one leg
+    /// `<id>:sl` / `<id>:tp` for a single level, numbered legs `<id>:sl<n>` / `<id>:tp<n>` for
+    /// a list. Legs stay `pending` until the entry fills, then cover the filled quantity
+    /// (reduce-only, GTC).
+    #[allow(clippy::too_many_arguments)]
+    fn attach_legs(
+        &mut self,
+        parent: usize,
+        role: OrderRole,
+        legs: Vec<(Option<f64>, LegPlan, f64)>,
+        numbered: bool,
+        trail: Option<TrailSpec>,
+        time_ms: i64,
+        bar_index: usize,
+    ) {
+        for (level, plan, plan_qty) in legs {
+            let base = match role {
+                OrderRole::StopLoss => "sl",
+                _ => "tp",
+            };
+            let suffix = if numbered {
+                let counter = &mut self.orders[parent].bracket.legs[usize::from(base == "tp")];
+                *counter += 1;
+                format!("{base}{counter}")
+            } else {
+                base.to_string()
+            };
+            self.attach_exit(
+                parent, role, suffix, level, plan, plan_qty, trail, time_ms, bar_index,
+            );
+        }
+        self.rebalance(parent, time_ms);
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn attach_exit(
         &mut self,
         parent: usize,
         role: OrderRole,
+        suffix: String,
         level: Option<f64>,
+        plan: LegPlan,
+        plan_qty: f64,
         trail: Option<TrailSpec>,
         time_ms: i64,
         bar_index: usize,
     ) -> usize {
         let entry = &self.orders[parent];
         let filled = entry.filled_qty > 0.0;
-        let (kind, price, trigger, suffix) = match role {
-            OrderRole::StopLoss => (OrderType::Stop, None, level, "sl"),
-            _ => (OrderType::Limit, level, None, "tp"),
+        let (kind, price, trigger) = match role {
+            OrderRole::StopLoss => (OrderType::Stop, None, level),
+            _ => (OrderType::Limit, level, None),
         };
         let child = Order {
             id: format!("{}:{suffix}", entry.id),
@@ -1681,7 +2361,7 @@ impl Book {
             symbol: entry.symbol.clone(),
             side: entry.side.opposite(),
             kind,
-            qty: if filled { entry.filled_qty } else { entry.qty },
+            qty: plan_qty,
             filled_qty: 0.0,
             filled_value: 0.0,
             price,
@@ -1706,6 +2386,12 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: if filled { bar_index + 1 } else { usize::MAX },
+            slices: 0,
+            bracket: Bracket {
+                plan,
+                plan_qty,
+                ..Bracket::default()
+            },
             first_eval_date: None,
             created_ms: time_ms,
             updated_ms: time_ms,
@@ -1722,13 +2408,12 @@ impl Book {
         index
     }
 
-    /// After a fill: activate an entry's exits, cancel an exit's OCO sibling, and drop exits
-    /// that no longer have a position to protect.
+    /// After a fill: activate an entry's exits, resize the bracket's legs (cancelling what
+    /// no longer has quantity: OCO), and drop exits that no longer have a position to protect.
     fn after_fill(&mut self, order: usize, price: f64, bar_index: usize, time_ms: i64) {
         let id = self.orders[order].id.clone();
         match self.orders[order].role {
             OrderRole::Entry => {
-                let filled = self.orders[order].filled_qty;
                 let mut activated = Vec::new();
                 for (index, child) in self
                     .orders
@@ -1739,7 +2424,6 @@ impl Book {
                         o.parent.as_ref() == Some(&id) && o.is_open() && o.role != OrderRole::Entry
                     })
                 {
-                    child.qty = filled;
                     if child.status == OrderStatus::Pending {
                         child.status = OrderStatus::Open;
                         child.active_from_bar = bar_index + 1;
@@ -1747,23 +2431,27 @@ impl Book {
                         activated.push(index);
                     }
                 }
+                self.rebalance(order, time_ms);
                 // Trailing exits start from the entry fill price
                 for index in activated {
                     self.init_trail(index, price, time_ms);
                 }
             }
             OrderRole::StopLoss | OrderRole::TakeProfit => {
-                let parent = self.orders[order].parent.clone();
-                let siblings = self
-                    .orders
-                    .iter()
-                    .enumerate()
-                    .skip(self.open_floor)
-                    .filter(|(i, o)| *i != order && o.parent == parent && o.is_open())
-                    .map(|(i, _)| i)
-                    .collect::<Vec<_>>();
-                for sibling in siblings {
-                    self.close_order(sibling, OrderStatus::Cancelled, "oco", time_ms);
+                let entry = self.orders[order]
+                    .parent
+                    .as_deref()
+                    .and_then(|parent| self.order_index(parent));
+                if let Some(entry) = entry {
+                    let first_target = self.orders[order].role == OrderRole::TakeProfit
+                        && !self.orders[entry].bracket.sl_moved;
+                    if first_target {
+                        self.orders[entry].bracket.sl_moved = true;
+                        if self.orders[entry].bracket.move_sl_to_entry {
+                            self.move_sl_to_entry(entry, time_ms);
+                        }
+                    }
+                    self.rebalance(entry, time_ms);
                 }
             }
             OrderRole::SquareOff | OrderRole::Liquidation => {}
@@ -1782,6 +2470,12 @@ impl Book {
                     o.instrument == Some(instrument)
                         && o.status == OrderStatus::Open
                         && matches!(o.role, OrderRole::StopLoss | OrderRole::TakeProfit)
+                        // legs of an entry still working wait for its next fills
+                        && !o
+                            .parent
+                            .as_deref()
+                            .and_then(|parent| self.open_order_index(parent))
+                            .is_some_and(|entry| self.orders[entry].role == OrderRole::Entry)
                 })
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
@@ -1797,14 +2491,12 @@ impl Book {
         bar_index: usize,
         time_ms: i64,
         request: OrderRequest,
-    ) -> Option<FillIntent> {
+    ) -> Vec<FillIntent> {
         let id = match &request.id {
             // Ids are unique for the whole run (exits are addressed as `<id>:sl` / `<id>:tp`)
-            Some(id)
-                if self.order_index(id).is_some() || id.ends_with(":sl") || id.ends_with(":tp") =>
-            {
+            Some(id) if self.order_index(id).is_some() || is_exit_id(id) => {
                 self.reject_request(time_ms, &request, Some(id.clone()), "duplicate_id");
-                return None;
+                return Vec::new();
             }
             Some(id) => id.clone(),
             None => self.next_order_id(),
@@ -1812,21 +2504,17 @@ impl Book {
 
         let Some(instrument) = self.instrument(&request.symbol) else {
             self.reject_request(time_ms, &request, Some(id), "unknown_symbol");
-            return None;
+            return Vec::new();
         };
+        let exit_levels = exit_levels(request.stop_loss.as_ref(), request.take_profit.as_ref());
         if let Err(reason) = self.check_qty(instrument, request.qty).and_then(|()| {
             self.check_ticks(
                 instrument,
-                &[
-                    request.price,
-                    request.trigger,
-                    request.stop_loss,
-                    request.take_profit,
-                ],
+                &[[request.price, request.trigger].as_slice(), &exit_levels].concat(),
             )
         }) {
             self.reject_request(time_ms, &request, Some(id), reason);
-            return None;
+            return Vec::new();
         }
         // A trail on a stop order without an attached stop loss trails the order itself;
         // otherwise it trails the attached stop loss.
@@ -1840,47 +2528,88 @@ impl Book {
         };
         if let Err(reason) = Self::check_prices(request.kind, request.price, trigger_check) {
             self.reject_request(time_ms, &request, Some(id), reason);
-            return None;
+            return Vec::new();
         }
         if let Some(trail) = &request.trail {
             if let Err(reason) = Self::check_trail(trail) {
                 self.reject_request(time_ms, &request, Some(id), reason);
-                return None;
+                return Vec::new();
             }
-            if request.kind == OrderType::StopLimit {
+            // A trail moves one stop: not a stop-limit, not a list of stop-loss legs
+            if request.kind == OrderType::StopLimit || multi_leg(request.stop_loss.as_ref()) {
                 self.reject_request(time_ms, &request, Some(id), "unsupported_trail");
-                return None;
+                return Vec::new();
             }
         }
         if self.is_warmup(time_ms) {
             self.reject_request(time_ms, &request, Some(id), "warmup");
-            return None;
+            return Vec::new();
         }
         if !self.market_open(time_ms) {
             self.reject_request(time_ms, &request, Some(id), "market_closed");
-            return None;
+            return Vec::new();
         }
         let Some(close) = self.last_close[instrument] else {
             self.reject_request(time_ms, &request, Some(id), "no_price");
-            return None;
+            return Vec::new();
         };
         // The close of an older bar is stale: nothing can execute "now" without a bar
         let has_bar = self.has_bar[instrument];
         if request.kind == OrderType::Market && !has_bar && !self.cfg.next_open {
             self.reject_request(time_ms, &request, Some(id), "no_bar");
-            return None;
+            return Vec::new();
+        }
+        let band_prices = [
+            request
+                .price
+                .filter(|_| matches!(request.kind, OrderType::Limit | OrderType::StopLimit)),
+            request
+                .trigger
+                .filter(|_| matches!(request.kind, OrderType::Stop | OrderType::StopLimit)),
+        ];
+        if let Err(reason) = self.check_band(instrument, &band_prices) {
+            self.reject_request(time_ms, &request, Some(id), reason);
+            return Vec::new();
         }
         let reference = request.price.or(request.trigger).unwrap_or(close);
         if let Err(reason) = Self::check_bracket(
             request.side,
             reference,
-            request.stop_loss,
-            request.take_profit,
+            request.stop_loss.as_ref(),
+            request.take_profit.as_ref(),
         ) {
             self.reject_request(time_ms, &request, Some(id), reason);
-            return None;
+            return Vec::new();
         }
-        let (stop_loss, take_profit) = (request.stop_loss, request.take_profit);
+        let planned = request
+            .stop_loss
+            .as_ref()
+            .map(|spec| self.plan_legs(instrument, request.qty, spec, "invalid_stop_loss"))
+            .transpose()
+            .and_then(|stop_loss| {
+                let take_profit = request
+                    .take_profit
+                    .as_ref()
+                    .map(|spec| {
+                        self.plan_legs(instrument, request.qty, spec, "invalid_take_profit")
+                    })
+                    .transpose()?;
+                Ok((stop_loss, take_profit))
+            });
+        let (stop_legs, target_legs) = match planned {
+            Ok(planned) => planned,
+            Err(reason) => {
+                self.reject_request(time_ms, &request, Some(id), reason);
+                return Vec::new();
+            }
+        };
+        let stop_loss = request.stop_loss.as_ref().and_then(ExitSpec::first_level);
+        let take_profit = request.take_profit.as_ref().and_then(ExitSpec::first_level);
+        let numbered = |spec: Option<&ExitSpec>| matches!(spec, Some(ExitSpec::Legs(_)));
+        let (stop_numbered, target_numbered) = (
+            numbered(request.stop_loss.as_ref()),
+            numbered(request.take_profit.as_ref()),
+        );
         // Orders reducing a position default to its product, others to the instrument's
         let position = &self.positions[instrument];
         let reduces = position.qty * request.side.sign() < 0.0;
@@ -1897,7 +2626,7 @@ impl Book {
                 .is_some_and(|session| session.past_square_off(time_ms));
         if past_square_off && product == Product::MIS && !reduces {
             self.reject_request(time_ms, &request, Some(id), "after_square_off");
-            return None;
+            return Vec::new();
         }
         let (own_trail, exit_trail) = match request.trail {
             Some(trail) if own_trail => (Some(trail), None),
@@ -1933,6 +2662,11 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: bar_index + 1,
+            slices: 0,
+            bracket: Bracket {
+                move_sl_to_entry: request.move_sl_to_entry_after_first_tp,
+                ..Bracket::default()
+            },
             // A day order belongs to the trading date it was placed on (with a session, or for
             // intraday data); on daily bars it is valid for the next bar's session instead
             first_eval_date: (self.cfg.session.is_some()
@@ -1946,21 +2680,25 @@ impl Book {
         if own_trail.is_some() {
             self.init_trail(index, close, time_ms);
         }
-        if stop_loss.is_some() || exit_trail.is_some() {
-            self.attach_exit(
+        if stop_legs.is_some() || exit_trail.is_some() {
+            let legs =
+                stop_legs.map_or_else(|| vec![(None, LegPlan::Full, request.qty)], with_levels);
+            self.attach_legs(
                 index,
                 OrderRole::StopLoss,
-                stop_loss,
+                legs,
+                stop_numbered,
                 exit_trail,
                 time_ms,
                 bar_index,
             );
         }
-        if let Some(level) = take_profit {
-            self.attach_exit(
+        if let Some(legs) = target_legs {
+            self.attach_legs(
                 index,
                 OrderRole::TakeProfit,
-                Some(level),
+                with_levels(legs),
+                target_numbered,
                 None,
                 time_ms,
                 bar_index,
@@ -1970,17 +2708,24 @@ impl Book {
         if self.cfg.next_open || !has_bar {
             // Everything is matched from the next bar on (market orders at its open); without
             // a bar at this timestamp there is no current price to execute against
-            return None;
+            return Vec::new();
         }
 
         // Close fill model: execute now at the decision bar's close when possible
         let immediate = self.orders[index].marketable_at(close);
 
         match immediate {
-            Some(reason) => self.try_fill(index, close, reason, time_ms, bar_index),
+            Some(reason) => {
+                let intent = self.try_fill(index, close, reason, time_ms, bar_index);
+                if intent.is_empty() {
+                    // Nothing fillable in this bar (volume cap): IOC orders end here
+                    self.expire_ioc(index, time_ms);
+                }
+                intent
+            }
             None if self.orders[index].tif == TimeInForce::Ioc => {
                 self.close_order(index, OrderStatus::Expired, "ioc", time_ms);
-                None
+                Vec::new()
             }
             None => {
                 if self.orders[index].kind == OrderType::StopLimit
@@ -1993,7 +2738,7 @@ impl Book {
                     // Stop already through at the close but limit not reachable: rest as limit
                     self.orders[index].triggered = true;
                 }
-                None
+                Vec::new()
             }
         }
     }
@@ -2042,17 +2787,25 @@ impl Book {
             return;
         }
         if let Some(instrument) = order.instrument {
-            let checks = self.check_qty(instrument, qty).and_then(|()| {
-                self.check_ticks(
-                    instrument,
-                    &[
-                        modify.price,
-                        modify.trigger,
-                        modify.stop_loss,
-                        modify.take_profit,
-                    ],
-                )
-            });
+            let exit_levels = exit_levels(modify.stop_loss.as_ref(), modify.take_profit.as_ref());
+            let checks = self
+                .check_qty(instrument, qty)
+                .and_then(|()| {
+                    self.check_ticks(
+                        instrument,
+                        &[[modify.price, modify.trigger].as_slice(), &exit_levels].concat(),
+                    )
+                })
+                .and_then(|()| {
+                    // Only the order's own new prices face the band
+                    let price = modify
+                        .price
+                        .filter(|_| matches!(order.kind, OrderType::Limit | OrderType::StopLimit));
+                    let trigger = modify
+                        .trigger
+                        .filter(|_| matches!(order.kind, OrderType::Stop | OrderType::StopLimit));
+                    self.check_band(instrument, &[price, trigger])
+                });
             if let Err(reason) = checks {
                 self.reject_op(time_ms, Some(modify.id), reason);
                 return;
@@ -2073,8 +2826,13 @@ impl Book {
                 self.reject_op(time_ms, Some(modify.id), reason);
                 return;
             }
+            let stop_legs = self.legs(&modify.id, OrderRole::StopLoss).len();
             if order.role == OrderRole::TakeProfit
                 || order.role != OrderRole::Entry && order.kind != OrderType::Stop
+                || multi_leg(modify.stop_loss.as_ref())
+                || (order.role == OrderRole::Entry
+                    && stop_legs > 1
+                    && !matches!(modify.stop_loss, Some(ExitSpec::Level(_))))
             {
                 self.reject_op(time_ms, Some(modify.id), "unsupported_trail");
                 return;
@@ -2097,37 +2855,80 @@ impl Book {
                     .or(order.instrument.and_then(|i| self.last_close[i]))
                     .unwrap_or(f64::NAN)
             };
-            if let Err(reason) =
-                Self::check_bracket(order.side, reference, modify.stop_loss, modify.take_profit)
-            {
+            if let Err(reason) = Self::check_bracket(
+                order.side,
+                reference,
+                modify.stop_loss.as_ref(),
+                modify.take_profit.as_ref(),
+            ) {
                 self.reject_op(time_ms, Some(modify.id), reason);
                 return;
             }
         }
-
-        for (role, level) in [
-            (OrderRole::StopLoss, modify.stop_loss),
-            (OrderRole::TakeProfit, modify.take_profit),
+        // New leg lists are planned against the entry quantity
+        let mut planned = Vec::new();
+        for (role, spec, reason) in [
+            (OrderRole::StopLoss, &modify.stop_loss, "invalid_stop_loss"),
+            (
+                OrderRole::TakeProfit,
+                &modify.take_profit,
+                "invalid_take_profit",
+            ),
         ] {
-            let Some(level) = level else {
+            let Some(spec) = spec else {
                 continue;
             };
-            match self.find_child(&modify.id, role) {
-                Some(child) => {
-                    let child = &mut self.orders[child];
-                    match role {
-                        OrderRole::StopLoss => child.trigger = Some(level),
-                        _ => child.price = Some(level),
-                    }
-                    child.updated_ms = time_ms;
-                }
-                None => {
-                    self.attach_exit(index, role, Some(level), None, time_ms, bar_index);
+            let Some(instrument) = self.orders[index].instrument else {
+                continue;
+            };
+            match self.plan_legs(instrument, qty, spec, reason) {
+                Ok(legs) => planned.push((role, spec.clone(), legs)),
+                Err(reason) => {
+                    self.reject_op(time_ms, Some(modify.id), reason);
+                    return;
                 }
             }
-            match role {
-                OrderRole::StopLoss => self.orders[index].stop_loss = Some(level),
-                _ => self.orders[index].take_profit = Some(level),
+        }
+
+        for (role, spec, legs) in planned {
+            let current = self.legs(&modify.id, role);
+            match spec {
+                // A level moves every working leg (or attaches a single one)
+                ExitSpec::Level(level) if !current.is_empty() => {
+                    for leg in current {
+                        let leg = &mut self.orders[leg];
+                        match role {
+                            OrderRole::StopLoss => leg.trigger = Some(level),
+                            _ => leg.price = Some(level),
+                        }
+                        leg.updated_ms = time_ms;
+                    }
+                    self.sync_levels(index);
+                }
+                ExitSpec::Level(_) => self.attach_legs(
+                    index,
+                    role,
+                    with_levels(legs),
+                    false,
+                    None,
+                    time_ms,
+                    bar_index,
+                ),
+                // A list replaces the working legs
+                ExitSpec::Legs(_) => {
+                    for leg in current {
+                        self.close_order(leg, OrderStatus::Cancelled, "replaced", time_ms);
+                    }
+                    self.attach_legs(
+                        index,
+                        role,
+                        with_levels(legs),
+                        true,
+                        None,
+                        time_ms,
+                        bar_index,
+                    )
+                }
             }
         }
 
@@ -2140,11 +2941,11 @@ impl Book {
                 && (order.role != OrderRole::Entry
                     || order.trail.is_some()
                     || (order.stop_loss.is_none()
-                        && self.find_child(&modify.id, OrderRole::StopLoss).is_none()));
+                        && self.legs(&modify.id, OrderRole::StopLoss).is_empty()));
             let target = if own {
                 Some(index)
             } else {
-                self.find_child(&modify.id, OrderRole::StopLoss)
+                self.legs(&modify.id, OrderRole::StopLoss).first().copied()
             };
             match target {
                 Some(target) => {
@@ -2164,10 +2965,12 @@ impl Book {
                     }
                 }
                 None => {
-                    self.attach_exit(
+                    let qty = self.orders[index].qty;
+                    self.attach_legs(
                         index,
                         OrderRole::StopLoss,
-                        None,
+                        vec![(None, LegPlan::Full, qty)],
+                        false,
                         Some(trail),
                         time_ms,
                         bar_index,
@@ -2192,18 +2995,20 @@ impl Book {
         }
         order.updated_ms = time_ms;
 
-        // Keep the entry's view of its exits in sync
-        let (role, parent, level) = (
-            order.role,
-            order.parent.clone(),
-            order.trigger.or(order.price),
-        );
-        if let Some(parent) = parent.and_then(|p| self.order_index(&p)) {
-            match role {
-                OrderRole::StopLoss => self.orders[parent].stop_loss = level,
-                OrderRole::TakeProfit => self.orders[parent].take_profit = level,
-                _ => {}
+        let (role, parent) = (order.role, order.parent.clone());
+        if open && modify.qty.is_some() && role != OrderRole::Entry {
+            // An exit leg's new quantity is its plan
+            order.bracket.plan = LegPlan::Qty(qty);
+            order.bracket.plan_qty = qty;
+        }
+        match parent.and_then(|p| self.order_index(&p)) {
+            // Keep the entry's view of its exits in sync
+            Some(parent) => self.rebalance(parent, time_ms),
+            None if open && modify.qty.is_some() => {
+                self.replan(index);
+                self.rebalance(index, time_ms);
             }
+            None => {}
         }
     }
 
@@ -2241,16 +3046,38 @@ impl Book {
         order.filled_qty += intent.qty;
         order.filled_value += intent.qty * intent.price;
         order.updated_ms = intent.time_ms;
-        // Reduce-only orders clamped to the position are done once filled
-        if order.remaining() <= EPS * order.qty.max(1.0) || order.reduce_only {
+        // Reduce-only orders clamped to the position are done once filled (unless the volume
+        // cap cut the fill short)
+        let clamped_done = order.reduce_only && !intent.capped && intent.last;
+        if order.remaining() <= EPS * order.qty.max(1.0) || clamped_done {
             order.status = OrderStatus::Filled;
         }
+        if order.kind == OrderType::Stop {
+            // The rest of a partially filled stop executes as a market order
+            order.triggered = true;
+        }
+        let remaining_qty = if order.status == OrderStatus::Filled {
+            0.0
+        } else {
+            order.remaining()
+        };
         let tag = order.tag.clone();
         let order_id = order.id.clone();
 
+        if let Some(entry) = self.orders[intent.order]
+            .parent
+            .as_deref()
+            .and_then(|parent| self.order_index(parent))
+        {
+            self.orders[entry].bracket.exit_filled += intent.qty;
+        }
         let delta = intent.side.sign() * intent.qty;
         self.cash -= delta * intent.price + intent.costs.total;
+        let before = self.positions[intent.instrument];
         let realised = self.positions[intent.instrument].apply(delta, intent.price, product);
+        if self.t_plus_one() {
+            self.settle_fill(&intent, before, product);
+        }
         self.costs.add(&intent.costs);
 
         let fill = FillEvent {
@@ -2267,11 +3094,37 @@ impl Book {
             product,
             tag,
             reason: intent.reason,
+            remaining_qty,
+            slice: intent.slice,
         };
         self.fills.push(fill.clone());
         self.events.push(Event::Fill(fill));
         self.after_fill(intent.order, intent.price, intent.bar_index, intent.time_ms);
+        // An IOC order's unfilled rest (volume cap) is cancelled once its fills are applied
+        self.expire_ioc(intent.order, intent.time_ms);
         true
+    }
+
+    /// T+1 bookkeeping of a confirmed fill: CNC sale proceeds wait for settlement, and sales
+    /// net against the same day's buys before they reduce holdings.
+    fn settle_fill(&mut self, intent: &FillIntent, before: Position, product: Product) {
+        let date = self.trading_date(intent.time_ms);
+        if intent.side == ActionSide::Sell && product == Product::CNC && before.qty > 0.0 {
+            let closing = intent.qty.min(before.qty);
+            let proceeds = closing * intent.price - intent.costs.total * closing / intent.qty;
+            self.unsettled.push((date, proceeds, intent.locked));
+        }
+        let position = &mut self.positions[intent.instrument];
+        if intent.side == ActionSide::Sell && before.qty > 0.0 {
+            let bought_today = (before.qty - before.settled).max(0.0);
+            let from_holdings = (intent.qty.min(before.qty) - bought_today).max(0.0);
+            position.settled = (before.settled - from_holdings).max(0.0);
+        }
+        position.settled = if position.product == Some(Product::CNC) {
+            position.settled.min(position.qty.max(0.0))
+        } else {
+            0.0
+        };
     }
 
     /// barter refused `fill_id`.
@@ -2348,6 +3201,8 @@ mod tests {
             trail_active: false,
             triggered: false,
             active_from_bar: 0,
+            slices: 0,
+            bracket: Bracket::default(),
             first_eval_date: None,
             created_ms: 0,
             updated_ms: 0,

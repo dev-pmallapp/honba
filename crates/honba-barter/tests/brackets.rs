@@ -184,7 +184,7 @@ fn modify_exits_and_manual_exit_cancels_them() {
                 vec![
                     ModifyRequest {
                         id: "E".into(),
-                        stop_loss: Some(98.0),
+                        stop_loss: Some(98.0.into()),
                         ..ModifyRequest::default()
                     }
                     .into(),
@@ -277,7 +277,7 @@ fn modifying_exits_of_a_closed_position_is_rejected() {
                 2,
                 vec![ModifyRequest {
                     id: "o1".into(),
-                    stop_loss: Some(90.0),
+                    stop_loss: Some(90.0.into()),
                     ..ModifyRequest::default()
                 }
                 .into()],

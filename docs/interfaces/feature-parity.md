@@ -67,7 +67,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | J25 | Filters (`filters()` gates entries) | none | SDK | P1 | Trivial in Python. |
 | J26 | Trading hours / `is_trading_hours` | done | Engine | P0 | NSE 09:15-15:30 IST, pre-open 09:00-09:08, holiday calendar, muhurat session. Engine must know sessions for MIS square-off and DAY TIF. |
 | J27 | Fees (maker/taker) | done | Engine | P0 | Wire `IndianTaxCalculator` per fill (see 1.3). |
-| J28 | Leverage / futures margin / liquidation | none | Engine | P2 | India: MIS intraday leverage (broker-defined, ~5x equity), NRML SPAN+exposure. No liquidation engine; broker auto-square-off on margin shortfall. |
+| J28 | Leverage / futures margin / liquidation | partial (margin config: MIS leverage, NRML / short margin %, `insufficient_margin`; no SPAN, no liquidation engine) | Engine | P2 | India: MIS intraday leverage (broker-defined, ~5x equity), NRML SPAN+exposure. No liquidation engine; broker auto-square-off on margin shortfall. |
 | J29 | Shorting | done | Engine | P0 | Equity cash shorts are intraday (MIS) only; must be squared off same day. Overnight shorts only via F&O (NRML). |
 | J30 | Portfolio rebalance / universes | none | SDK | P1 | Universe = index constituents (NIFTY 50/100/500) with point-in-time membership (P2). |
 | J31 | Shared vars across routes | none | SDK | P1 | Replaced by portfolio-level strategy. |
@@ -97,7 +97,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O13 | Historical data / intervals | none | SDK (`honba-dhan`) | P1 | Same loader as J22. |
 | O14 | Symbol search / instrument master / expiry list | none | SDK | P1 | Instrument master supplies `lot_size`, `tick_size`, `freeze_qty`, segment to the engine config. |
 | O15 | Account: funds, order book, trade book, position book, holdings | done (ctx) | Bridge (backtest ctx) / `honba-dhan` (live) | P0 (ctx) / P2 (live) | Backtest ctx must expose open orders, fills, positions with avg price, holdings (CNC) vs positions (MIS). |
-| O16 | Margin calculator | none | Engine | P2 | SPAN approximation for NRML; MIS leverage table. |
+| O16 | Margin calculator | partial (percent-based margin in the engine) | Engine | P2 | SPAN approximation for NRML; MIS leverage table. |
 | O17 | Analyzer / sandbox (paper with live data, simulated margin, auto square-off) | none | Engine (barter mock + live feed) | P2 | Reuses backtest execution model on live Dhan data. |
 | O18 | Auto square-off of intraday positions | done | Engine | P0 | MIS positions closed at a configurable time (brokers ~15:15-15:25) at that bar's price; exit reason `square_off`. Also valid in backtests. |
 | O19 | Python strategy hosting + IST scheduler | none | Out | P2 | Later: `honba run` service. |

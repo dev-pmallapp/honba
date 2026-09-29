@@ -109,6 +109,19 @@ it trails the order's own trigger. `TrailUpdate` events appear in `ctx.events`.
 position (netting orders queued earlier in the same bar), so repeated calls never double up.
 Reducing orders keep the position's product. `close_all` cancels every order first.
 
+### Reasons
+
+`Reject.reason` is a `hb.RejectReason` (a `str` enum, so `== "no_bar"` works; unknown engine
+reasons stay plain strings): `unknown_symbol invalid_qty invalid_price invalid_trigger
+invalid_stop_loss invalid_take_profit invalid_trail unsupported_trail invalid_lot invalid_tick
+above_freeze_qty no_price no_bar no_position duplicate_id unknown_order order_closed
+not_an_entry market_closed after_square_off warmup insufficient_cash insufficient_margin
+insufficient_position`. `Fill.reason` values are in `hb.FillReason` (`signal limit stop
+stop_loss take_profit trailing_stop square_off liquidate_end`); `hb.strategy.CancelReason`
+lists cancel / expire reasons (`user oco position_closed parent_closed square_off end_of_data
+day ioc`). Orders placed on warm-up bars are refused by the SDK itself with
+`RejectReason.WARMUP`.
+
 ### Sizing and instruments
 
 `self.size` (`Sizer`) defaults to the run's equity, the latest close and the instrument's lot
@@ -143,6 +156,9 @@ cfg = hb.BacktestConfig(
     costs=hb.CostModel.india(),                   # or CostModel.flat(0.03)
     fill="next_open",                             # "close" (default) | "next_open"
     intrabar="stop_first",                        # or "target_first" when SL and TP both trigger
+    attached_exit_same_bar=False,                 # True: bracket exits may trigger on the entry bar
+    margin=hb.MarginConfig(mis_leverage=5, nrml_margin_pct=15, short_margin_pct=30),  # buying power
+    trading_days_per_year=250,                    # annualisation (SDK metrics and engine)
     session=hb.TradingSession(holidays=frozenset({date(2025, 10, 21)})),   # NSE hours + MIS square-off
     instruments={"NIFTYFUT": hb.Instrument("equity_futures", lot_size=75, tick_size=0.05)},
     warmup_bars=100,                              # or start="2024-06-03"
@@ -155,9 +171,17 @@ pandas or polars with `time|timestamp|datetime|date` (naive datetimes are IST, e
 accepted; or a datetime index), `open high low close [volume]`. Candles are validated first
 (`config.validation = "error" | "warn" | "off"`): NaN / inf, positive prices, OHLC sanity,
 sorted and unique timestamps, and with a session: holidays / weekends, bars outside the hours,
-and missing intraday bars (warning). `hb.validate_candles(...)` returns the findings;
-`sort_candles=True` sorts instead of rejecting unsorted input; `liquidate_at_end=True` flattens
-on the last bar.
+and missing intraday bars (warning). With `product=MIS` a warning notes sessions whose bars
+never reach `mis_square_off`: the engine squares MIS positions off on the first in-session bar
+whose interval covers the square-off time, or on the session's last bar when none does (early
+data end, daily bars), so they are flat by the session end but earlier than configured. `hb.validate_candles(...)` returns the findings;
+`sort_candles=True` sorts instead of rejecting unsorted input. `liquidate_at_end=True` flattens
+all positions at the final bar's close (fill reason `liquidate_end`, cancels working orders
+with `end_of_data`): natively on engines that declare the `liquidate_at_end` capability (barter
+contract >= 2, also under `fill="next_open"`), else by an SDK `close_all` on the last bar (close
+fills only; `next_open` then raises `UnsupportedFeature`). `margin` sets the buying power rules
+(opening exposure needs `notional x rate` of `equity - margin of open positions`; new
+exposure beyond that is rejected `insufficient_margin`).
 
 `BacktestResult`:
 
@@ -165,7 +189,7 @@ on the last bar.
 |---|---|
 | `res.summary` | engine summary dict: `net_pnl`, `total_return`, `cagr`, `max_drawdown`, `sharpe`, `sortino`, `calmar`, `win_rate`, `profit_factor`, fees and per-component `costs`, counts |
 | `res.metrics` | `Metrics`: Jesse-style set computed from round trips + equity (250 sessions): expectancy, avg win/loss, ratio, streaks, holding periods, long/short split, largest win/loss, sharpe, sortino, calmar, omega, serenity, ulcer index, longest underwater period, trades per day, ... |
-| `res.trades` | round trips (flat -> position -> flat, net of costs) as a DataFrame; `res.round_trips` are `RoundTrip` objects |
+| `res.trades` | round trips (flat -> position -> flat, net of costs) as a DataFrame; `res.round_trips` are `RoundTrip` objects: the engine's own when its report has them (barter contract 2), enriched with tags / exit reason from the fills, else rebuilt from fills (`SimpleEngine`); both agree |
 | `res.fills`, `res.orders`, `res.rejected` | DataFrames of executions (with cost components), every order with final status, rejections with reason |
 | `res.equity_curve`, `res.equity` | DataFrame (`equity`, `drawdown`) / Series indexed by IST time |
 | `res.positions`, `res.open_positions`, `res.instruments`, `res.logs` | final positions, per-symbol engine metrics, `Strategy.log` lines |
@@ -188,7 +212,7 @@ a module-level strategy class and an engine given by name.
 
 | Engine | Orders | Extras |
 |---|---|---|
-| `barter` (default) | market, limit, stop, stop-limit; day / ioc / gtc; CNC / MIS / NRML / MTF | brackets, native trailing (percent / amount / atr), modify, sessions, MIS square-off, lot / tick / freeze rules, Indian costs, `next_open`, warm-up |
+| `barter` (default) | market, limit, stop, stop-limit; day / ioc / gtc; CNC / MIS / NRML / MTF | brackets, native trailing (percent / amount / atr), modify, sessions, MIS square-off, lot / tick / freeze rules, Indian costs, margin, same-bar exits, `next_open`, warm-up, native `liquidate_at_end`, engine round trips (contract 2; older builds work without the newer features, see below) |
 | `simple` | market, limit; day / ioc / gtc; CNC | pure-Python reference (flat costs, close fills, warm-up); no stops, brackets, trailing, sessions |
 
 Features an engine lacks raise `hb.UnsupportedFeature` (with `.engine` and `.missing`): config
@@ -240,6 +264,12 @@ factory). `honba.research.simple_engine` is a complete, small example; conforman
 - `Fill.realised_pnl` is gross of costs, `costs.total` the fill's costs; fills are reported in
   execution order (the SDK rebuilds round trips and metrics from them);
 - exceptions raised by `on_bar` (strategy errors, `UnsupportedFeature`) must propagate unchanged.
+
+`_core.contract_version()` (2 today; `_core.version()` is the crate version) is checked on every
+run: a build without the function counts as contract 0 and works but lacks margin,
+`attached_exit_same_bar` and native `liquidate_at_end` (declared through capabilities); a version
+outside `CONTRACT_MIN..CONTRACT_MAX` in `_barter_adapter.py` raises a clear error asking to
+rebuild. The report echoes `contract_version`.
 
 The barter engine speaks JSON (`_core.run_backtest(config_json, candles, on_bar) -> report_json`,
 contract in `crates/honba-barter/src/lib.rs` and `report.rs`); `_barter_adapter.py` translates.

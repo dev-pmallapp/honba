@@ -433,6 +433,10 @@ pub struct Book {
     recent: Vec<VecDeque<Bar>>,
     /// Date of the last MIS square-off per instrument.
     squared_off: Vec<Option<NaiveDate>>,
+    /// Latest order index per id.
+    id_index: HashMap<String, usize>,
+    /// Every order below this index is closed.
+    open_floor: usize,
     pending: HashMap<String, FillIntent>,
     /// Batch-local projection of cash / positions including not yet confirmed intents.
     proj_cash: f64,
@@ -461,6 +465,8 @@ impl Book {
             equity_curve: Vec::new(),
             recent: vec![VecDeque::new(); n],
             squared_off: vec![None; n],
+            id_index: HashMap::new(),
+            open_floor: 0,
             pending: HashMap::new(),
             events: Vec::new(),
             order_seq: 0,
@@ -514,6 +520,7 @@ impl Book {
     pub fn open_orders(&self) -> Vec<OrderView> {
         self.orders
             .iter()
+            .skip(self.open_floor)
             .filter(|order| order.is_open())
             .map(Order::view)
             .collect()
@@ -586,6 +593,7 @@ impl Book {
             .orders
             .iter()
             .enumerate()
+            .skip(self.open_floor)
             .filter(|(_, o)| {
                 o.instrument == Some(instrument) && o.is_open() && o.product == Product::MIS
             })
@@ -607,7 +615,7 @@ impl Book {
             ActionSide::Buy
         };
         let id = format!("sq-{}-{}", self.cfg.symbols[instrument], date);
-        self.orders.push(Order {
+        let index = self.push_order(Order {
             id,
             instrument: Some(instrument),
             symbol: self.cfg.symbols[instrument].clone(),
@@ -638,7 +646,6 @@ impl Book {
             created_ms: time_ms,
             updated_ms: time_ms,
         });
-        let index = self.orders.len() - 1;
         // Mandatory exit: no cash / short checks
         Some(self.intent(
             index,
@@ -682,6 +689,7 @@ impl Book {
             }
         }
         self.sync_projection();
+        self.advance_open_floor();
         let date = self.trading_date(time_ms);
 
         let open = self.market_open(time_ms);
@@ -697,6 +705,7 @@ impl Book {
                 .orders
                 .iter()
                 .enumerate()
+                .skip(self.open_floor)
                 .filter(|(_, o)| {
                     o.instrument == Some(instrument)
                         && o.is_open()
@@ -722,6 +731,7 @@ impl Book {
                 .orders
                 .iter()
                 .enumerate()
+                .skip(self.open_floor)
                 .filter(|(_, order)| {
                     order.instrument == Some(instrument)
                         && order.status == OrderStatus::Open
@@ -869,7 +879,7 @@ impl Book {
             order.role,
         );
         if role == OrderRole::StopLoss {
-            if let Some(parent) = parent.and_then(|p| self.orders.iter().position(|o| o.id == p)) {
+            if let Some(parent) = parent.and_then(|p| self.order_index(&p)) {
                 self.orders[parent].stop_loss = Some(candidate);
             }
         }
@@ -903,6 +913,7 @@ impl Book {
             .orders
             .iter()
             .enumerate()
+            .skip(self.open_floor)
             .filter(|(index, order)| {
                 order.instrument == Some(instrument)
                     && order.status == OrderStatus::Open
@@ -966,12 +977,17 @@ impl Book {
     /// Open, active OCO sibling of a bracket exit.
     fn active_sibling(&self, index: usize, bar_index: usize) -> Option<usize> {
         let parent = self.orders[index].parent.as_ref()?;
-        self.orders.iter().position(|order| {
-            order.parent.as_ref() == Some(parent)
-                && order.id != self.orders[index].id
-                && order.status == OrderStatus::Open
-                && order.active_from_bar <= bar_index
-        })
+        self.orders
+            .iter()
+            .enumerate()
+            .skip(self.open_floor)
+            .find(|(i, order)| {
+                order.parent.as_ref() == Some(parent)
+                    && *i != index
+                    && order.status == OrderStatus::Open
+                    && order.active_from_bar <= bar_index
+            })
+            .map(|(i, _)| i)
     }
 
     /// Match a bracket exit together with its OCO sibling: when both trigger in one bar, the
@@ -1063,7 +1079,8 @@ impl Book {
     fn reject_op(&mut self, time_ms: i64, id: Option<String>, reason: &str) {
         let symbol = id
             .as_ref()
-            .and_then(|id| self.orders.iter().find(|o| &o.id == id))
+            .and_then(|id| self.order_index(id))
+            .map(|index| &self.orders[index])
             .map(|o| o.symbol.clone())
             .unwrap_or_default();
         self.push_reject(Rejection {
@@ -1085,6 +1102,7 @@ impl Book {
                 .orders
                 .iter()
                 .enumerate()
+                .skip(self.open_floor)
                 .filter(|(_, o)| o.parent.as_ref() == Some(&id) && o.status == OrderStatus::Pending)
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
@@ -1129,16 +1147,39 @@ impl Book {
         loop {
             self.order_seq += 1;
             let id = format!("o{}", self.order_seq);
-            if !self.orders.iter().any(|order| order.id == id) {
+            if !self.id_index.contains_key(&id) {
                 return id;
             }
         }
     }
 
     fn open_order_index(&self, id: &str) -> Option<usize> {
-        self.orders
-            .iter()
-            .position(|order| order.id == id && order.is_open())
+        self.id_index
+            .get(id)
+            .copied()
+            .filter(|&index| self.orders[index].is_open())
+    }
+
+    /// Latest order with `id`, open or not.
+    fn order_index(&self, id: &str) -> Option<usize> {
+        self.id_index.get(id).copied()
+    }
+
+    fn push_order(&mut self, order: Order) -> usize {
+        self.id_index.insert(order.id.clone(), self.orders.len());
+        self.orders.push(order);
+        self.orders.len() - 1
+    }
+
+    /// Orders are append-only and never reopen: skip the closed prefix in scans.
+    fn advance_open_floor(&mut self) {
+        while self
+            .orders
+            .get(self.open_floor)
+            .is_some_and(|order| !order.is_open())
+        {
+            self.open_floor += 1;
+        }
     }
 
     fn meta(&self, instrument: usize) -> InstrumentMeta {
@@ -1299,6 +1340,7 @@ impl Book {
     /// Apply one decider action. Returns fills to execute now.
     pub fn apply(&mut self, bar_index: usize, time_ms: i64, action: Action) -> Vec<FillIntent> {
         self.sync_projection();
+        self.advance_open_floor();
         match action {
             Action::Place(request) => self
                 .place(bar_index, time_ms, request)
@@ -1320,6 +1362,7 @@ impl Book {
                     .orders
                     .iter()
                     .enumerate()
+                    .skip(self.open_floor)
                     .filter(|(_, order)| {
                         order.is_open() && symbol.as_ref().is_none_or(|s| &order.symbol == s)
                     })
@@ -1383,9 +1426,15 @@ impl Book {
 
     /// Open or pending attached exit of `parent` with `role`.
     fn find_child(&self, parent: &str, role: OrderRole) -> Option<usize> {
-        self.orders.iter().position(|order| {
-            order.parent.as_deref() == Some(parent) && order.role == role && order.is_open()
-        })
+        let suffix = match role {
+            OrderRole::StopLoss => "sl",
+            _ => "tp",
+        };
+        self.open_order_index(&format!("{parent}:{suffix}"))
+            .filter(|&index| {
+                let order = &self.orders[index];
+                order.parent.as_deref() == Some(parent) && order.role == role
+            })
     }
 
     /// Create the stop-loss (stop) or take-profit (limit) exit of entry `parent`. It stays
@@ -1440,8 +1489,7 @@ impl Book {
             created_ms: time_ms,
             updated_ms: time_ms,
         };
-        self.orders.push(child);
-        let index = self.orders.len() - 1;
+        let index = self.push_order(child);
         if filled {
             // Attached to a live position: trail from the current market
             let reference = self.orders[index]
@@ -1461,9 +1509,15 @@ impl Book {
             OrderRole::Entry => {
                 let filled = self.orders[order].filled_qty;
                 let mut activated = Vec::new();
-                for (index, child) in self.orders.iter_mut().enumerate().filter(|(_, o)| {
-                    o.parent.as_ref() == Some(&id) && o.is_open() && o.role != OrderRole::Entry
-                }) {
+                for (index, child) in self
+                    .orders
+                    .iter_mut()
+                    .enumerate()
+                    .skip(self.open_floor)
+                    .filter(|(_, o)| {
+                        o.parent.as_ref() == Some(&id) && o.is_open() && o.role != OrderRole::Entry
+                    })
+                {
                     child.qty = filled;
                     if child.status == OrderStatus::Pending {
                         child.status = OrderStatus::Open;
@@ -1483,6 +1537,7 @@ impl Book {
                     .orders
                     .iter()
                     .enumerate()
+                    .skip(self.open_floor)
                     .filter(|(i, o)| *i != order && o.parent == parent && o.is_open())
                     .map(|(i, _)| i)
                     .collect::<Vec<_>>();
@@ -1501,6 +1556,7 @@ impl Book {
                 .orders
                 .iter()
                 .enumerate()
+                .skip(self.open_floor)
                 .filter(|(_, o)| {
                     o.instrument == Some(instrument)
                         && o.status == OrderStatus::Open
@@ -1522,7 +1578,10 @@ impl Book {
         request: OrderRequest,
     ) -> Option<FillIntent> {
         let id = match &request.id {
-            Some(id) if self.open_order_index(id).is_some() => {
+            // Ids are unique for the whole run (exits are addressed as `<id>:sl` / `<id>:tp`)
+            Some(id)
+                if self.order_index(id).is_some() || id.ends_with(":sl") || id.ends_with(":tp") =>
+            {
                 self.reject_request(time_ms, &request, Some(id.clone()), "duplicate_id");
                 return None;
             }
@@ -1655,8 +1714,7 @@ impl Book {
             updated_ms: time_ms,
         };
 
-        self.orders.push(order);
-        let index = self.orders.len() - 1;
+        let index = self.push_order(order);
         if own_trail.is_some() {
             self.init_trail(index, close, time_ms);
         }
@@ -1717,8 +1775,9 @@ impl Book {
         let index = self.open_order_index(&modify.id).or_else(|| {
             (brackets || modify.trail.is_some())
                 .then(|| {
-                    self.orders.iter().rposition(|o| {
-                        o.id == modify.id && o.role == OrderRole::Entry && o.filled_qty > 0.0
+                    self.order_index(&modify.id).filter(|&index| {
+                        let o = &self.orders[index];
+                        o.role == OrderRole::Entry && o.filled_qty > 0.0
                     })
                 })
                 .flatten()
@@ -1901,7 +1960,7 @@ impl Book {
             order.parent.clone(),
             order.trigger.or(order.price),
         );
-        if let Some(parent) = parent.and_then(|p| self.orders.iter().position(|o| o.id == p)) {
+        if let Some(parent) = parent.and_then(|p| self.order_index(&p)) {
             match role {
                 OrderRole::StopLoss => self.orders[parent].stop_loss = level,
                 OrderRole::TakeProfit => self.orders[parent].take_profit = level,

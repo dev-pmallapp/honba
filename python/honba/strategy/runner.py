@@ -86,6 +86,11 @@ class StrategyRunner:
         """Lines recorded with ``Strategy.log`` as ``(time_ms, message)``."""
         return self.strategy._logs
 
+    @property
+    def order_groups(self) -> dict[str, str]:
+        """Basket / group name per order id (orders placed with ``group=``)."""
+        return dict(self.strategy._groups)
+
     # -- history -----------------------------------------------------------------------------
 
     def _history(self, symbol: str, tf: str | None) -> Bars:

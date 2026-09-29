@@ -81,6 +81,7 @@ def _run(
         params=runner.strategy.param_values,
         logs=runner.logs,
         strategy=strategy.__name__,
+        order_groups=runner.order_groups,
     )
 
 

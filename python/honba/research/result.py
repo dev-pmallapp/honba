@@ -41,6 +41,7 @@ class BacktestResult:
     params: dict[str, Any] = field(default_factory=dict)
     logs: list[tuple[int, str]] = field(default_factory=list)
     strategy: str = ""
+    order_groups: dict[str, str] = field(default_factory=dict)
 
     @property
     def raw(self) -> Any:
@@ -129,7 +130,10 @@ class BacktestResult:
         realised_pnl (gross), product, tag, reason.
         """
         rows = [_fill_row(f) for f in self.report.fills]
-        return _frame(rows, "time_ms")
+        frame = _frame(rows, "time_ms")
+        if self.order_groups and len(frame):
+            frame["group"] = [self._group_of(o) for o in frame.order_id]
+        return frame
 
     @property
     def trades(self) -> pd.DataFrame:
@@ -160,13 +164,71 @@ class BacktestResult:
             }
             for t in self.round_trips
         ]
-        return pd.DataFrame(rows)
+        frame = pd.DataFrame(rows)
+        if self.order_groups and len(frame):
+            frame["group"] = self._trip_groups()
+        return frame
 
     @property
     def orders(self) -> pd.DataFrame:
         """Every accepted order with its final state."""
         rows = [_order_row(o) for o in self.report.orders]
-        return pd.DataFrame(rows)
+        frame = pd.DataFrame(rows)
+        if self.order_groups and len(frame):
+            frame["group"] = [self._group_of(o) for o in frame["id"]]
+        return frame
+
+    def _group_of(self, order_id: str) -> str | None:
+        """Group of an order; attached exits (``<id>:sl`` / ``<id>:tp``) inherit it."""
+        return self.order_groups.get(order_id) or self.order_groups.get(order_id.split(":")[0])
+
+    def _trip_groups(self) -> list[str | None]:
+        """Group of each round trip: that of its first entry fill."""
+        first: dict[tuple[str, int], str | None] = {}
+        for f in self.report.fills:
+            first.setdefault((f.symbol, f.time_ms), self._group_of(f.order_id))
+        return [first.get((t.symbol, t.entry_time_ms)) for t in self.round_trips]
+
+    @property
+    def groups(self) -> pd.DataFrame:
+        """Per basket / group (orders placed with ``group=``) round-trip results.
+
+        Indexed by group (ungrouped trades under ``"-"``): ``trades``, ``wins``,
+        ``win_rate``, ``gross_pnl``, ``costs``, ``pnl``, ``symbols``. Empty when no order
+        carried a group.
+        """
+        cols = ["trades", "wins", "win_rate", "gross_pnl", "costs", "pnl", "symbols"]
+        if not self.order_groups:
+            return pd.DataFrame(columns=cols).rename_axis("group")
+        rows: dict[str, dict[str, Any]] = {}
+        for trip, grp in zip(self.round_trips, self._trip_groups(), strict=True):
+            row = rows.setdefault(
+                grp or "-",
+                {"trades": 0, "wins": 0, "gross_pnl": 0.0, "costs": 0.0, "pnl": 0.0, "sy": set()},
+            )
+            row["trades"] += 1
+            row["wins"] += trip.pnl > 0
+            row["gross_pnl"] += trip.gross_pnl
+            row["costs"] += trip.costs
+            row["pnl"] += trip.pnl
+            row["sy"].add(trip.symbol)
+        for row in rows.values():
+            row["win_rate"] = row["wins"] / row["trades"] if row["trades"] else None
+            row["symbols"] = ",".join(sorted(row.pop("sy")))
+        frame = pd.DataFrame.from_dict(rows, orient="index", columns=cols)
+        return frame.rename_axis("group").sort_index()
+
+    @property
+    def log_frame(self) -> pd.DataFrame:
+        """``Strategy.log`` lines as a DataFrame: ``time`` (IST bar time), ``message``."""
+        if not self.logs:
+            return pd.DataFrame(columns=["time", "message"])
+        return pd.DataFrame(
+            {
+                "time": _time_index([t for t, _ in self.logs]),
+                "message": [m for _, m in self.logs],
+            }
+        )
 
     @property
     def rejected(self) -> pd.DataFrame:

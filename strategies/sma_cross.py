@@ -1,28 +1,25 @@
-"""SMA crossover: long when the fast SMA crosses above the slow SMA, exit on cross below."""
+"""SMA crossover: long when the fast SMA crosses above the slow SMA, exit on the cross below."""
 
-from honba.strategy import Strategy, indicators
+import honba as hb
 
 
-class SmaCross(Strategy):
-    timeframe = "1D"
-    params = {"fast": 10, "slow": 30, "qty": 10}  # noqa: RUF012
+class SmaCross(hb.Strategy):
+    """Single-symbol trend follower on daily bars (one symbol per run)."""
 
-    def _smas(self):
-        closes = self.candles[:, 2]
-        fast = indicators.sma(closes, self.params["fast"], sequential=True)
-        slow = indicators.sma(closes, self.params["slow"], sequential=True)
-        return fast, slow
+    timeframe = "1d"
 
-    def should_long(self) -> bool:
-        if len(self.candles) < self.params["slow"] + 1:
-            return False
-        fast, slow = self._smas()
-        return indicators.crossed_above(fast, slow)
+    fast = hb.Param(10, low=2, high=50)
+    slow = hb.Param(30, low=5, high=200)
+    qty = hb.Param(10, low=1, high=100_000)
 
-    def go_long(self):
-        self.buy = self.params["qty"]
-
-    def update_position(self):
-        fast, slow = self._smas()
-        if self.position.is_long and indicators.crossed_below(fast, slow):
-            self.liquidate()
+    def on_bar(self, ctx):
+        """Buy on a golden cross, close on a death cross."""
+        close = self.history().close
+        if len(close) < self.slow + 1:
+            return
+        fast = hb.ta.sma(close, self.fast, sequential=True)
+        slow = hb.ta.sma(close, self.slow, sequential=True)
+        if self.position.is_flat and hb.ta.crossed_above(fast, slow):
+            self.buy(self.qty, tag="cross_up")
+        elif self.position.is_long and hb.ta.crossed_below(fast, slow):
+            self.close(tag="cross_down")

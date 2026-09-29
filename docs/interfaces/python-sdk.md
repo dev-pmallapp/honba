@@ -303,6 +303,25 @@ in the environment, else the keyring entry stored by `honba-dhan` (service `honb
 client id; install the `keyring` extra). Requests are rate limited (`min_interval`, default 0.25s)
 and 429 / 5xx responses are retried with exponential backoff honouring `Retry-After`.
 
+### Instrument master
+
+```python
+from honba.data import InstrumentMaster
+
+master = InstrumentMaster.from_csv("api-scrip-master-detailed.csv")     # compact file works too
+master = master.with_freeze_quantities("freeze_qty.csv")                # NSE file: SYMBOL, VOL_FRZ_QTY
+master.search("nifty", segment="equity_futures")                        # exact > prefix > substring
+master.expiries("NIFTY", instrument="FUTIDX")                           # sorted dates
+master.contracts("NIFTY", expiry, option_type="CE")                     # by strike
+cfg = hb.BacktestConfig(instruments=master.to_engine_instruments(["SBIN", "NIFTY-Sep2026-FUT"]))
+```
+
+Records carry exchange, Dhan `exchange_segment`, `security_id`, symbol, name, ISIN, series,
+`lot_size`, `tick_size` (Dhan quotes paise; divided by `tick_divisor=100`), `freeze_qty`, expiry,
+strike and option type. The scrip master has no freeze quantity: it is merged from the NSE freeze
+file. `to_engine_instruments` maps each exact trading symbol to `hb.Instrument` (segment, lot,
+tick, freeze); `InstrumentMaster.dhan_security` feeds `DhanLoader`.
+
 ## Development
 
 ```bash

@@ -2,6 +2,7 @@
 
 from ._frames import CANDLE_COLUMNS
 from .dhan import DhanCredentials, DhanError, DhanLoader, DhanSecurity
+from .instruments import InstrumentMaster, InstrumentRecord
 from .io import load_csv, load_parquet
 from .store import AppendResult, CandleLoader, CandleStore
 
@@ -14,6 +15,8 @@ __all__ = [
     "DhanError",
     "DhanLoader",
     "DhanSecurity",
+    "InstrumentMaster",
+    "InstrumentRecord",
     "load_csv",
     "load_parquet",
 ]

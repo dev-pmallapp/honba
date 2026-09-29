@@ -95,7 +95,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O11 | Quotes (LTP, bid/ask) | none | SDK (`honba-dhan`) | P2 | Live only; backtest uses bars. |
 | O12 | Market depth (L5) | none | SDK (`honba-dhan`) | P2 | Live only; Dhan offers 20-level depth. |
 | O13 | Historical data / intervals | done (`DhanLoader`, 1d + 1m..1h) | SDK (`honba-dhan`) | P1 | Same loader as J22. |
-| O14 | Symbol search / instrument master / expiry list | none | SDK | P1 | Instrument master supplies `lot_size`, `tick_size`, `freeze_qty`, segment to the engine config. |
+| O14 | Symbol search / instrument master / expiry list | done (`honba.data.InstrumentMaster`) | SDK | P1 | Instrument master supplies `lot_size`, `tick_size`, `freeze_qty`, segment to the engine config. |
 | O15 | Account: funds, order book, trade book, position book, holdings | done (ctx) | Bridge (backtest ctx) / `honba-dhan` (live) | P0 (ctx) / P2 (live) | Backtest ctx must expose open orders, fills, positions with avg price, holdings (CNC) vs positions (MIS). |
 | O16 | Margin calculator | partial (percent-based margin in the engine) | Engine | P2 | SPAN approximation for NRML; MIS leverage table. |
 | O17 | Analyzer / sandbox (paper with live data, simulated margin, auto square-off) | none | Engine (barter mock + live feed) | P2 | Reuses backtest execution model on live Dhan data. |

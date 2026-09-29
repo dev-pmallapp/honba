@@ -30,12 +30,13 @@ from honba.strategy.types import (
     Order,
     Position,
     Reject,
+    RoundTrip,
     SessionState,
     Trail,
     TrailUpdate,
 )
 
-from .config import BacktestConfig
+from .config import BacktestConfig, MarginConfig
 from .engine import BacktestReport, BacktestRequest, BarHandler, ReportSummary
 
 __all__ = ["BarterEngine"]
@@ -58,12 +59,13 @@ _CAPABILITIES = EngineCapabilities(
 )
 
 
-# ``_core.contract_version()`` (added with the engine's liquidate_at_end / margin keys) lets the
+# ``_core.contract_version()`` (2: margin, liquidate_at_end, attached_exit_same_bar, engine
+# round trips) lets the
 # SDK detect a stale or too-new build. Builds without the function are accepted (older engine,
 # contract 0) but lack the features listed in ``_FEATURE_MIN_CONTRACT``.
 CONTRACT_MIN = 0
-CONTRACT_MAX = 1
-_FEATURE_MIN_CONTRACT = {"liquidate_at_end": 1}
+CONTRACT_MAX = 2
+_FEATURE_MIN_CONTRACT = {"liquidate_at_end": 2, "margin": 2, "attached_exit_same_bar": 2}
 
 
 def core_contract(core: Any) -> int:
@@ -161,6 +163,14 @@ def config_to_wire(config: BacktestConfig, symbols: list[str], start_ms: int | N
         wire["session"] = _session_wire(config.session)
     if config.liquidate_at_end:
         wire["liquidate_at_end"] = True
+    if config.attached_exit_same_bar:
+        wire["attached_exit_same_bar"] = True
+    if config.margin != MarginConfig():
+        wire["margin"] = {
+            "mis_leverage": float(config.margin.mis_leverage),
+            "nrml_margin_pct": float(config.margin.nrml_margin_pct),
+            "short_margin_pct": float(config.margin.short_margin_pct),
+        }
     if start_ms is not None:
         wire["start_ms"] = int(start_ms)
     return wire
@@ -334,6 +344,21 @@ def ctx_from_wire(raw: dict[str, Any]) -> BarContext:
     )
 
 
+def _round_trip(raw: dict[str, Any]) -> RoundTrip:
+    return RoundTrip(
+        symbol=raw["symbol"],
+        side=raw["side"],
+        qty=float(raw["qty"]),
+        entry_time_ms=int(raw["entry_time_ms"]),
+        exit_time_ms=int(raw["exit_time_ms"]),
+        entry_price=float(raw["entry_price"]),
+        exit_price=float(raw["exit_price"]),
+        gross_pnl=float(raw["gross_pnl"]),
+        costs=float(raw["costs"]),
+        product=raw.get("product"),
+    )
+
+
 def report_from_wire(raw: dict[str, Any]) -> BacktestReport:
     """The report JSON as a :class:`BacktestReport` (``raw`` keeps the original)."""
     s = raw.get("summary") or {}
@@ -348,6 +373,7 @@ def report_from_wire(raw: dict[str, Any]) -> BacktestReport:
         costs=_costs(s.get("costs")),
         num_trades=int(s.get("num_trades", 0)),
         num_closing_trades=int(s.get("num_closing_trades", 0)),
+        num_round_trips=s.get("num_round_trips"),
         num_orders=int(s.get("num_orders", 0)),
         num_rejected=int(s.get("num_rejected", 0)),
         max_drawdown=float(s.get("max_drawdown", 0.0)),
@@ -364,6 +390,10 @@ def report_from_wire(raw: dict[str, Any]) -> BacktestReport:
         orders=[_order(o) for o in raw.get("orders") or ()],
         rejected=[_reject(r) for r in raw.get("rejected") or ()],
         equity_curve=[(int(t), float(e)) for t, e in raw.get("equity_curve") or ()],
+        round_trips=(
+            [_round_trip(t) for t in raw["round_trips"]] if "round_trips" in raw else None
+        ),
+        contract_version=raw.get("contract_version"),
         positions={s_: _position(p) for s_, p in (raw.get("positions") or {}).items()},
         instruments=dict(raw.get("instruments") or {}),
         start_ms=raw.get("start_ms"),
@@ -386,9 +416,11 @@ class BarterEngine:
     def capabilities(self) -> EngineCapabilities:
         """Everything the neutral layer can express; newer-contract features when built in."""
         version = core_contract(_load_core())
+        extra = {f for f, low in _FEATURE_MIN_CONTRACT.items() if version >= low}
         return replace(
             _CAPABILITIES,
-            liquidate_at_end=version >= _FEATURE_MIN_CONTRACT["liquidate_at_end"],
+            liquidate_at_end="liquidate_at_end" in extra,
+            extra=frozenset(extra - {"liquidate_at_end"}),
         )
 
     def run(self, request: BacktestRequest, on_bar: BarHandler) -> BacktestReport:

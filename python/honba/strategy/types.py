@@ -7,10 +7,14 @@ These are the SDK's own vocabulary. Engines translate to and from them (the bart
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Literal
 
 __all__ = [
+    "CancelReason",
+    "FillReason",
+    "RejectReason",
     "CNC",
     "IST",
     "MIS",
@@ -40,6 +44,68 @@ NRML: Product = "NRML"
 MTF: Product = "MTF"
 
 _EPS = 1e-9
+
+
+class RejectReason(StrEnum):
+    """Reason codes of :class:`Reject` events (engines may add others; those stay plain str)."""
+
+    UNKNOWN_SYMBOL = "unknown_symbol"
+    INVALID_QTY = "invalid_qty"
+    INVALID_PRICE = "invalid_price"
+    INVALID_TRIGGER = "invalid_trigger"
+    INVALID_STOP_LOSS = "invalid_stop_loss"
+    INVALID_TAKE_PROFIT = "invalid_take_profit"
+    INVALID_TRAIL = "invalid_trail"
+    UNSUPPORTED_TRAIL = "unsupported_trail"
+    INVALID_LOT = "invalid_lot"
+    INVALID_TICK = "invalid_tick"
+    ABOVE_FREEZE_QTY = "above_freeze_qty"
+    NO_PRICE = "no_price"
+    NO_BAR = "no_bar"  # market order on a symbol without a bar at this timestamp
+    NO_POSITION = "no_position"  # exit change on an entry whose position is closed
+    DUPLICATE_ID = "duplicate_id"
+    UNKNOWN_ORDER = "unknown_order"
+    ORDER_CLOSED = "order_closed"
+    NOT_AN_ENTRY = "not_an_entry"
+    MARKET_CLOSED = "market_closed"
+    AFTER_SQUARE_OFF = "after_square_off"  # new MIS exposure after the square-off time
+    WARMUP = "warmup"
+    INSUFFICIENT_CASH = "insufficient_cash"
+    INSUFFICIENT_MARGIN = "insufficient_margin"
+    INSUFFICIENT_POSITION = "insufficient_position"
+
+
+class CancelReason(StrEnum):
+    """Reason codes of :class:`Cancel` events (``expire`` kinds use ``DAY`` / ``IOC``)."""
+
+    USER = "user"
+    OCO = "oco"
+    POSITION_CLOSED = "position_closed"
+    PARENT_CLOSED = "parent_closed"
+    SQUARE_OFF = "square_off"
+    END_OF_DATA = "end_of_data"
+    DAY = "day"
+    IOC = "ioc"
+
+
+class FillReason(StrEnum):
+    """Why a fill happened (``Fill.reason``)."""
+
+    SIGNAL = "signal"
+    LIMIT = "limit"
+    STOP = "stop"
+    STOP_LOSS = "stop_loss"
+    TAKE_PROFIT = "take_profit"
+    TRAILING_STOP = "trailing_stop"
+    SQUARE_OFF = "square_off"
+    LIQUIDATE_END = "liquidate_end"  # end-of-data flatten
+
+
+def _coerce(enum: type[StrEnum], value: str) -> str:
+    try:
+        return enum(value)
+    except ValueError:
+        return value
 
 
 def _ist(time_ms: int) -> datetime:
@@ -253,7 +319,10 @@ class Reject:
     symbol: str
     side: Side | None
     qty: float
-    reason: str
+    reason: RejectReason | str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "reason", _coerce(RejectReason, self.reason))
 
 
 @dataclass(frozen=True, slots=True)

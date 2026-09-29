@@ -9,7 +9,7 @@ from typing import Literal
 from honba.strategy.market import Instrument, TradingSession
 from honba.strategy.types import IST
 
-__all__ = ["BacktestConfig", "CostModel"]
+__all__ = ["BacktestConfig", "CostModel", "MarginConfig"]
 
 
 # Conservative all-in rate for the value-proportional Indian buy-side charges (STT 0.1%,
@@ -70,6 +70,26 @@ class CostModel:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class MarginConfig:
+    """Margin required to open exposure (buying power = equity - margin of open positions).
+
+    ``mis_leverage`` divides the notional for MIS (5 = 20% margin); ``nrml_margin_pct`` is the
+    margin percent of NRML / MTF positions (about 15-20 for futures); ``short_margin_pct`` that
+    of short positions. CNC always needs the full value. Defaults: no leverage.
+    """
+
+    mis_leverage: float = 1.0
+    nrml_margin_pct: float = 100.0
+    short_margin_pct: float = 100.0
+
+    def __post_init__(self) -> None:
+        if not self.mis_leverage >= 1 or not 0 < self.nrml_margin_pct <= 1000:
+            raise ValueError("mis_leverage must be >= 1 and nrml_margin_pct in (0, 1000]")
+        if not 0 < self.short_margin_pct <= 1000:
+            raise ValueError("short_margin_pct must be in (0, 1000]")
+
+
 def _to_ms(value: datetime | date | str | int | float) -> int:
     if isinstance(value, (int, float)):
         return int(value if value >= 10**11 else value * 1000)
@@ -109,6 +129,8 @@ class BacktestConfig:
     warmup_bars: int = 0
     timeframe: str | None = None
     liquidate_at_end: bool = False
+    margin: MarginConfig = field(default_factory=MarginConfig)
+    attached_exit_same_bar: bool = False
     validation: Literal["error", "warn", "off"] = "error"
     sort_candles: bool = False
 

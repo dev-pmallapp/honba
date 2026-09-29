@@ -308,16 +308,31 @@ class BuyOnce(hb.Strategy):
             self.buy(10)
 
 
-def test_liquidate_at_end_sdk_fallback_realises_the_round_trip_with_close_fills():
+def test_liquidate_at_end_sdk_fallback_realises_the_round_trip_with_close_fills(monkeypatch):
     data = {"X": daily([(100, 101, 99, 100)] * 4 + [(100, 111, 99, 110)])}
-    for engine in ("simple", "barter"):
-        if engine == "barter":
-            _core_module()
-        cfg = hb.BacktestConfig(capital=100_000.0, liquidate_at_end=True)
-        res = hb.backtest(BuyOnce, data, cfg, engine=engine)
-        assert res.positions["X"].is_flat, engine
-        assert len(res.round_trips) == 1 and res.round_trips[0].exit_tag == "liquidate_end"
-        assert res.summary["net_pnl"] == pytest.approx(res.round_trips[0].pnl)
+    cfg = hb.BacktestConfig(capital=100_000.0, liquidate_at_end=True)
+    simple = hb.backtest(BuyOnce, data, cfg, engine="simple")  # SDK-side close_all
+    assert simple.positions["X"].is_flat and simple.round_trips[0].exit_tag == "liquidate_end"
+    core = _core_module()
+    monkeypatch.delattr(core, "contract_version", raising=False)  # older build: SDK fallback
+    old = hb.backtest(BuyOnce, data, cfg, engine="barter")
+    assert old.positions["X"].is_flat and old.round_trips[0].exit_tag == "liquidate_end"
+    assert old.summary["net_pnl"] == pytest.approx(old.round_trips[0].pnl)
+
+
+@pytest.mark.parametrize("fill", ["close", "next_open"])
+def test_native_liquidate_at_end_realises_the_round_trip(fill):
+    _core_module()
+    data = {"X": daily([(100, 101, 99, 100)] * 4 + [(100, 111, 99, 110)])}
+    cfg = hb.BacktestConfig(capital=100_000.0, fill=fill, liquidate_at_end=True)
+    res = hb.backtest(BuyOnce, data, cfg, engine="barter")
+    assert res.positions["X"].is_flat and len(res.round_trips) == 1
+    trip = res.round_trips[0]
+    assert trip.exit_reason == "liquidate_end" and trip.exit_price == pytest.approx(110.0)
+    assert trip.gross_pnl == pytest.approx(100.0)
+    assert res.fills.iloc[-1].reason == hb.FillReason.LIQUIDATE_END
+    assert res.summary["net_pnl"] == pytest.approx(trip.pnl)
+    assert (res.report.contract_version or 0) >= 2
 
 
 def test_liquidate_at_end_with_next_open_needs_an_engine_that_supports_it(monkeypatch):
@@ -328,7 +343,7 @@ def test_liquidate_at_end_with_next_open_needs_an_engine_that_supports_it(monkey
     core = _core_module()
     monkeypatch.delattr(core, "contract_version", raising=False)
     with pytest.raises(hb.UnsupportedFeature, match="liquidate_at_end"):
-        hb.backtest(BuyOnce, data, cfg, engine="barter")  # engine build without native support
+        hb.backtest(BuyOnce, data, cfg, engine="barter")  # older build: no native support
 
 
 class _NextOpenSimple(SimpleEngine):
@@ -361,3 +376,123 @@ def test_liquidate_at_end_is_passed_to_engines_that_declare_it_and_sdk_stays_out
     )
     assert seen["cfg"] is True
     assert [type(a).__name__ for a in seen["actions"]] == ["PlaceOrder"]  # no SDK-side close_all
+
+
+# ------------------------------------------------------------ margin, same-bar exits, round trips
+
+
+def test_margin_and_attached_exit_config_reach_the_engine_and_are_capability_checked():
+    from honba.research._barter_adapter import config_to_wire
+
+    wire = config_to_wire(CFG, ["X"], None)
+    assert "margin" not in wire and "attached_exit_same_bar" not in wire  # defaults omitted
+    cfg = CFG.with_(
+        margin=hb.MarginConfig(mis_leverage=5, nrml_margin_pct=15, short_margin_pct=30),
+        attached_exit_same_bar=True,
+    )
+    wire = config_to_wire(cfg, ["X"], None)
+    assert wire["margin"] == {
+        "mis_leverage": 5.0,
+        "nrml_margin_pct": 15.0,
+        "short_margin_pct": 30.0,
+    }
+    assert wire["attached_exit_same_bar"] is True
+    with pytest.raises(hb.UnsupportedFeature) as info:
+        hb.backtest(SmaCross, {"X": daily(flat(100, 30))}, cfg, engine="simple")
+    assert info.value.missing == ["attached_exit_same_bar", "margin"]
+    with pytest.raises(ValueError):
+        hb.MarginConfig(mis_leverage=0.5)
+
+
+def test_leverage_and_same_bar_exit_behave_on_the_real_engine():
+    _core_module()
+    assert get_engine("barter").capabilities().supports("margin")
+
+    class Big(hb.Strategy):
+        def on_bar(self, ctx):
+            if len(self.history()) == 2:
+                self.buy(30, product=hb.MIS, tag="big")  # 3000 notional vs 1000 capital
+
+    data = {"X": daily(flat(100, 4))}
+    plain = hb.backtest(Big, data, hb.BacktestConfig(capital=1_000.0))
+    assert plain.rejected.reason.tolist() == [hb.RejectReason.INSUFFICIENT_CASH] or (
+        plain.rejected.reason.tolist() == [hb.RejectReason.INSUFFICIENT_MARGIN]
+    )
+    levered = hb.backtest(
+        Big, data, hb.BacktestConfig(capital=1_000.0, margin=hb.MarginConfig(mis_leverage=5))
+    )
+    assert levered.rejected.empty and levered.fills.qty.iloc[0] == 30
+
+    class Bracket(hb.Strategy):
+        def on_bar(self, ctx):
+            if len(self.history()) == 2:
+                self.buy(1, stop_loss=95)
+
+    rows = [*flat(100, 2), (100, 101, 90, 92), (92, 92, 92, 92)]  # entry bar also trades 90
+    later = hb.backtest(Bracket, {"X": daily(rows)}, CFG)
+    same = hb.backtest(Bracket, {"X": daily(rows)}, CFG.with_(attached_exit_same_bar=True))
+    assert len(later.fills) <= len(same.fills)
+
+
+def test_reject_reasons_are_typed_and_delivered_to_on_reject():
+    _core_module()
+    got = []
+
+    class R(hb.Strategy):
+        def on_reject(self, reject):
+            got.append(reject.reason)
+
+        def on_bar(self, ctx):
+            n = len(self.history())
+            if n == 2:
+                self.buy(10_000_000)  # far beyond cash
+            if n == 3:
+                self.sell(5)  # no position, shorting off
+
+    hb.backtest(R, {"X": daily(flat(100, 5))}, CFG)
+    assert got == [hb.RejectReason.INSUFFICIENT_CASH, hb.RejectReason.INSUFFICIENT_POSITION]
+    assert isinstance(got[0], hb.RejectReason) and got[0] == "insufficient_cash"
+    unknown = hb.strategy.Reject(1, None, "X", None, 0.0, "exchange: boom")
+    assert unknown.reason == "exchange: boom" and not isinstance(unknown.reason, hb.RejectReason)
+    assert {r.value for r in hb.RejectReason} >= {"no_bar", "no_position", "insufficient_margin"}
+
+
+def test_engine_round_trips_agree_with_sdk_rebuilt_ones():
+    _core_module()
+    from honba.strategy.roundtrip import round_trips_from_fills
+
+    data = {"A": trending(200, seed=7), "B": trending(200, seed=8, drift=-0.05)}
+
+    class Two(hb.Strategy):
+        fast = hb.Param(5, low=2, high=20)
+
+        def on_bar(self, ctx):
+            for sym in self.symbols:
+                close = self.history(sym).close
+                if len(close) < 21:
+                    continue
+                f, s_ = hb.ta.sma(close, 5, True), hb.ta.sma(close, 20, True)
+                if self.positions[sym].is_flat and hb.ta.crossed_above(f, s_):
+                    self.buy(10, sym, tag="up")
+                elif self.positions[sym].is_long and hb.ta.crossed_below(f, s_):
+                    self.close(sym, tag="down")
+
+    cfg = hb.BacktestConfig(capital=1e6, costs=hb.CostModel.india(), liquidate_at_end=True)
+    res = hb.backtest(Two, data, cfg)
+    engine_trips = res.report.round_trips
+    assert engine_trips and res.report.summary.num_round_trips == len(engine_trips)
+    rebuilt = round_trips_from_fills(res.report.fills)
+    key = lambda t: (t.exit_time_ms, t.symbol)  # noqa: E731
+    assert len(rebuilt) == len(engine_trips)
+    for mine, theirs in zip(sorted(rebuilt, key=key), sorted(engine_trips, key=key), strict=True):
+        assert (mine.symbol, mine.side, mine.entry_time_ms, mine.exit_time_ms) == (
+            theirs.symbol, theirs.side, theirs.entry_time_ms, theirs.exit_time_ms
+        )  # fmt: skip
+        for f in ("qty", "entry_price", "exit_price", "gross_pnl", "costs", "pnl", "return_pct"):
+            assert getattr(mine, f) == pytest.approx(getattr(theirs, f)), f
+    # the result exposes the engine's trips, enriched with tags / reasons from the fills
+    assert [t.symbol for t in res.round_trips] == [t.symbol for t in engine_trips]
+    assert {t.entry_tag for t in res.round_trips} <= {"up", None}
+    assert any(t.exit_reason for t in res.round_trips)
+    assert res.summary["win_rate"] == res.metrics.win_rate
+    assert res.summary["engine_win_rate"] == pytest.approx(res.metrics.win_rate)  # net now

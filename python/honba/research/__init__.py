@@ -6,7 +6,7 @@ is selected.
 """
 
 from .backtest import backtest, sweep
-from .config import BacktestConfig, CostModel
+from .config import BacktestConfig, CostModel, MarginConfig
 from .engine import (
     BacktestEngine,
     BacktestReport,
@@ -32,6 +32,7 @@ __all__ = [
     "CostModel",
     "EngineCapabilities",
     "Issue",
+    "MarginConfig",
     "Metrics",
     "ReportSummary",
     "UnsupportedFeature",

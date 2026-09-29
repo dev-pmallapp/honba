@@ -45,6 +45,7 @@ from .types import (
     Order,
     Position,
     Reject,
+    RejectReason,
     RoundTrip,
     SessionState,
     Trail,
@@ -480,7 +481,9 @@ class Strategy(ABC):
         if self._ctx is not None and self._ctx.warmup:
             # Warm-up bars feed history only: surface the refusal like an engine reject.
             self._pending_rejects.append(
-                Reject(self._ctx.time_ms, action.id, sym, action.side, action.qty, "warmup")
+                Reject(
+                    self._ctx.time_ms, action.id, sym, action.side, action.qty, RejectReason.WARMUP
+                )
             )
             self._terminal[action.id] = "rejected"
             return None

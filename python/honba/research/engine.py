@@ -20,9 +20,17 @@ from typing import Any, Protocol, runtime_checkable
 from honba.strategy.actions import Action
 from honba.strategy.capabilities import EngineCapabilities, UnsupportedFeature
 from honba.strategy.series import Bars
-from honba.strategy.types import BarContext, Costs, Fill, Order, Position, Reject
+from honba.strategy.types import (
+    BarContext,
+    Costs,
+    Fill,
+    Order,
+    Position,
+    Reject,
+    RoundTrip,
+)
 
-from .config import BacktestConfig
+from .config import BacktestConfig, MarginConfig
 
 __all__ = [
     "BacktestEngine",
@@ -78,6 +86,7 @@ class ReportSummary:
     costs: Costs = field(default_factory=Costs)
     num_trades: int = 0
     num_closing_trades: int = 0
+    num_round_trips: int | None = None
     num_orders: int = 0
     num_rejected: int = 0
     max_drawdown: float = 0.0
@@ -104,12 +113,14 @@ class BacktestReport:
     orders: list[Order] = field(default_factory=list)
     rejected: list[Reject] = field(default_factory=list)
     equity_curve: list[tuple[int, float]] = field(default_factory=list)
+    round_trips: list[RoundTrip] | None = None  # engine-computed (net); None = SDK computes
     positions: dict[str, Position] = field(default_factory=dict)
     instruments: dict[str, dict[str, Any]] = field(default_factory=dict)
     start_ms: int | None = None
     num_bars: int = 0
     warmup_bars: int = 0
     engine: str = ""
+    contract_version: int | None = None
     raw: Any = None
 
 
@@ -140,6 +151,10 @@ def config_features(request: BacktestRequest) -> set[str]:
         need.add("instruments")
     if request.start_ms is not None:
         need.add("warmup")
+    if cfg.margin != MarginConfig():
+        need.add("margin")
+    if cfg.attached_exit_same_bar:
+        need.add("attached_exit_same_bar")
     return need
 
 

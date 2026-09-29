@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any
 
@@ -68,8 +68,28 @@ class BacktestResult:
 
     @cached_property
     def round_trips(self) -> list[RoundTrip]:
-        """Completed round trips rebuilt from fills (costs included)."""
-        return round_trips_from_fills(self.report.fills)
+        """Completed round trips (net of costs).
+
+        Taken from the engine when its report carries them, enriched with the entry / exit
+        tags, exit reason and fill count rebuilt from fills; otherwise rebuilt from fills alone.
+        """
+        rebuilt = round_trips_from_fills(self.report.fills)
+        if self.report.round_trips is None:
+            return rebuilt
+        extra = {(t.symbol, t.entry_time_ms, t.exit_time_ms): t for t in rebuilt}
+        out = []
+        for trip in self.report.round_trips:
+            match = extra.get((trip.symbol, trip.entry_time_ms, trip.exit_time_ms))
+            out.append(
+                replace(
+                    trip,
+                    entry_tag=match.entry_tag if match else None,
+                    exit_tag=match.exit_tag if match else None,
+                    exit_reason=match.exit_reason if match else trip.exit_reason,
+                    fills=match.fills if match else trip.fills,
+                )
+            )
+        return out
 
     @cached_property
     def equity(self) -> pd.Series:

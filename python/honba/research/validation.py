@@ -125,7 +125,12 @@ def _alignment_issues(candles: dict[str, Bars]) -> list[Issue]:
 def _square_off_issues(
     sym: str, t: np.ndarray, session: TradingSession, tf: Timeframe | None
 ) -> list[Issue]:
-    """MIS positions are squared off on the first bar at/after ``mis_square_off``."""
+    """Flag data whose sessions do not reach ``mis_square_off``.
+
+    The engine squares MIS positions off on the first in-session bar whose interval covers the
+    square-off time, or on the session's last bar when no bar gets there (early data end, daily
+    bars): positions are always flat by the session end, but earlier than configured.
+    """
     if not session.mis_square_off:
         return []
     square_off = _parse_minutes(session.mis_square_off)
@@ -134,8 +139,8 @@ def _square_off_issues(
             Issue(
                 sym,
                 "square_off",
-                f"MIS product with {tf} bars: no bar can square positions off at "
-                f"{session.mis_square_off}",
+                f"MIS product with {tf} bars: each session's only bar is also its square-off "
+                f"bar, so MIS positions cannot outlive the bar that opened them",
                 "warning",
             )
         ]
@@ -149,8 +154,8 @@ def _square_off_issues(
         Issue(
             sym,
             "square_off",
-            f"{short} session(s) have no bar at/after {session.mis_square_off}: open MIS "
-            "positions would not be squared off",
+            f"{short} session(s) have no bar reaching {session.mis_square_off}: MIS positions "
+            "are squared off on that session's last bar (earlier than configured)",
             "warning",
             short,
         )

@@ -20,7 +20,7 @@
 //! decision bar's close fill immediately at that close.
 
 use crate::{
-    config::InstrumentMeta,
+    config::{InstrumentMeta, MarginConfig},
     data::Bar,
     model::{
         Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
@@ -135,6 +135,7 @@ pub struct BookConfig {
     /// Exchange rules per instrument index.
     pub instruments: Vec<InstrumentMeta>,
     pub allow_short: bool,
+    pub margin: MarginConfig,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
     /// Per instrument: timestamps of its MIS square-off bars (see
@@ -1280,26 +1281,68 @@ impl Book {
         if !(notional.is_finite() && notional <= MAX_NOTIONAL && computable) {
             return Err("invalid_qty");
         }
-        match side {
-            ActionSide::Buy => {
-                let required =
-                    price * qty + self.costs_for(instrument, side, product, price, qty).total;
-                if !approx_le(required, self.proj_cash) {
-                    return Err("insufficient_cash");
-                }
-            }
-            ActionSide::Sell => {
-                // Cash equity can only be shorted intraday (MIS); F&O shorts are allowed
-                let long = self.proj_qty[instrument];
-                let short_ok = self.cfg.allow_short
-                    || product == Product::MIS
-                    || self.meta(instrument).segment != Segment::EquityCash;
-                if !short_ok && !approx_le(qty, long) {
-                    return Err("insufficient_position");
-                }
+        let position = self.proj_qty[instrument];
+        if side == ActionSide::Sell {
+            // Cash equity can only be shorted intraday (MIS); F&O shorts are allowed
+            let short_ok = self.cfg.allow_short
+                || product == Product::MIS
+                || self.meta(instrument).segment != Segment::EquityCash;
+            if !short_ok && !approx_le(qty, position) {
+                return Err("insufficient_position");
             }
         }
+
+        // Only the part that opens / increases exposure needs margin; reducing is always allowed
+        let after = position + side.sign() * qty;
+        let opened = if position.abs() <= EPS || position.signum() == after.signum() {
+            (after.abs() - position.abs()).max(0.0)
+        } else {
+            after.abs()
+        };
+        if opened <= EPS * qty.max(1.0) {
+            return Ok(());
+        }
+        // Margin of this instrument after the fill (a flip releases the old side's margin)
+        let product_after = match self.positions[instrument].product {
+            Some(current) if position.abs() > EPS && position.signum() == after.signum() => current,
+            _ => product,
+        };
+        let costs = self.costs_for(instrument, side, product, price, qty).total;
+        let required =
+            after.abs() * price * self.cfg.margin.rate(product_after, after < 0.0) + costs;
+        let available = self.buying_power() + self.blocked(instrument);
+        if !approx_le(required, available) {
+            let cash_buy = side == ActionSide::Buy && product == Product::CNC;
+            return Err(if cash_buy {
+                "insufficient_cash"
+            } else {
+                "insufficient_margin"
+            });
+        }
         Ok(())
+    }
+
+    /// Projected equity minus the margin blocked by every open (and in-flight) position,
+    /// marked at the latest close. Short-sale proceeds sit in cash but are offset by the
+    /// short liability, so they never fund purchases.
+    fn buying_power(&self) -> f64 {
+        (0..self.proj_qty.len()).fold(self.proj_cash, |power, instrument| {
+            power + self.proj_qty[instrument] * self.mark(instrument) - self.blocked(instrument)
+        })
+    }
+
+    fn mark(&self, instrument: usize) -> f64 {
+        self.last_close[instrument].unwrap_or(self.positions[instrument].avg_price)
+    }
+
+    /// Margin blocked by the projected position in `instrument`.
+    fn blocked(&self, instrument: usize) -> f64 {
+        let qty = self.proj_qty[instrument];
+        if qty.abs() <= EPS {
+            return 0.0;
+        }
+        let product = self.positions[instrument].product.unwrap_or(Product::CNC);
+        qty.abs() * self.mark(instrument) * self.cfg.margin.rate(product, qty < 0.0)
     }
 
     /// Validate and create a fill intent for `order` at `price`; rejects the order on failure.

@@ -96,6 +96,17 @@ fn prepare(
             "latency_ms must be <= {MAX_LATENCY_MS} (barter times out requests after 1s)"
         )));
     }
+    let margin = &config.margin;
+    let pct_ok = |pct: f64| pct.is_finite() && pct > 0.0 && pct <= 100.0;
+    if !(margin.mis_leverage.is_finite()
+        && margin.mis_leverage >= 1.0
+        && pct_ok(margin.nrml_margin_pct)
+        && pct_ok(margin.short_margin_pct))
+    {
+        return Err(BacktestError::Config(
+            "margin: mis_leverage must be >= 1 and *_margin_pct in (0, 100]".into(),
+        ));
+    }
     for (symbol, meta) in &config.instruments {
         let positive = |value: Option<f64>| value.is_none_or(|v| v.is_finite() && v > 0.0);
         if !(positive(meta.lot_size) && positive(meta.tick_size) && positive(meta.freeze_qty)) {
@@ -317,6 +328,7 @@ fn setup_run(
             })
             .collect(),
         allow_short: prepared.config.allow_short,
+        margin: prepared.config.margin,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),
         square_off_at: prepared
             .bars

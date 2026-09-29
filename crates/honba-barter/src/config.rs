@@ -23,6 +23,7 @@ use std::collections::BTreeMap;
 /// | `costs`            | object    | `null`      | [`CostsConfig`]; `null` = flat `fees_percent`.            |
 /// | `instruments`      | object    | `{}`        | Per-symbol [`InstrumentMeta`].                            |
 /// | `session`          | object    | `null`      | [`SessionConfig`]; `null` = always open.                  |
+/// | `margin`           | object    | 1x / 100%   | [`MarginConfig`]: `mis_leverage`, `nrml_margin_pct`, `short_margin_pct`. |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BacktestConfig {
@@ -38,6 +39,8 @@ pub struct BacktestConfig {
     /// tick validation.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub instruments: BTreeMap<String, InstrumentMeta>,
+    /// Margin required to open positions (see [`MarginConfig`]).
+    pub margin: MarginConfig,
     /// Trading hours / holidays / MIS square-off; `null` = always open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<SessionConfig>,
@@ -71,9 +74,50 @@ impl Default for BacktestConfig {
             intrabar_priority: IntrabarPriority::StopFirst,
             costs: None,
             session: None,
+            margin: MarginConfig::default(),
             instruments: BTreeMap::new(),
             start_ms: None,
             fill_model: FillModel::Close,
+        }
+    }
+}
+
+/// `margin` config: fraction of notional blocked to open exposure, checked against
+/// buying power = equity - margin blocked by open positions (marked at the latest close).
+///
+/// Short-sale proceeds never fund purchases (the short liability offsets them). Orders that
+/// only reduce a position (exits, covering, MIS square-off) are never rejected; a loss beyond
+/// equity (gap through a stop) is booked as is, so cash / equity can go negative only through
+/// losses, never through new exposure.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MarginConfig {
+    /// Intraday leverage for MIS (margin = notional / mis_leverage), both sides.
+    pub mis_leverage: f64,
+    /// Margin percent for NRML / MTF longs and shorts (e.g. ~15-20 for futures).
+    pub nrml_margin_pct: f64,
+    /// Margin percent for other (CNC via `allow_short`) shorts.
+    pub short_margin_pct: f64,
+}
+
+impl Default for MarginConfig {
+    fn default() -> Self {
+        Self {
+            mis_leverage: 1.0,
+            nrml_margin_pct: 100.0,
+            short_margin_pct: 100.0,
+        }
+    }
+}
+
+impl MarginConfig {
+    /// Fraction of notional blocked for a `product` position (`short` side).
+    pub fn rate(&self, product: Product, short: bool) -> f64 {
+        match product {
+            Product::MIS => 1.0 / self.mis_leverage,
+            Product::NRML | Product::MTF => self.nrml_margin_pct / 100.0,
+            Product::CNC if short => self.short_margin_pct / 100.0,
+            Product::CNC => 1.0,
         }
     }
 }

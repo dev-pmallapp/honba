@@ -1,9 +1,11 @@
 # Feature Parity (Jesse, OpenAlgo) and SDK Redesign
 
-Status: proposal, 2026-09-29. Scope: what honba must cover from Jesse and OpenAlgo, where
+Status: implemented (P0 done, statuses updated 2026-09-29); P1/P2 remain proposals. Scope: what honba must cover from Jesse and OpenAlgo, where
 each capability lives (barter engine, PyO3 bridge, Python SDK), and the idiomatic SDK that
 replaces the Jesse/OpenAlgo look-alike draft in `python/honba/strategy` and
 `python/honba/research`.
+
+Update: the P0 SDK below is implemented (`docs/interfaces/python-sdk.md`); the sketches in section 3 were adapted (`self.history(tf=)` instead of `self.bars(tf)`, `PortfolioStrategy` folded into the single multi-symbol `Strategy`, `trail_stop` replaced by engine-native `Trail`).
 
 Direction: the SDK does not copy Jesse's or OpenAlgo's API shape or naming. It must cover
 their **features**. The existing `Strategy` (Jesse lifecycle) and `BarContext.placeorder`
@@ -14,15 +16,15 @@ their **features**. The existing `Strategy` (Jesse lifecycle) and `BarContext.pl
 | Area | State | Where |
 |---|---|---|
 | Engine | Bar-by-bar backtest on barter `Engine` + barter `MockExchange`, paced by a `BarGate`; decisions via a `Decider` trait; honba cash ledger (barter mock does not credit sale proceeds). | `crates/honba-barter` |
-| Orders | **Market only.** `Action {symbol, side, qty}`; submitted as barter `OrderKind::Market` + `ImmediateOrCancel`, request price = latest close, so fills happen at the close of the decision bar. barter's `MockExchange::validate_order_kind_supported` rejects anything but `Market`. | `honba-barter/src/strategy.rs` |
+| Orders | *(historical, before P0)* **Market only.** `Action {symbol, side, qty}`; submitted as barter `OrderKind::Market` + `ImmediateOrCancel`, request price = latest close, so fills happen at the close of the decision bar. barter's `MockExchange::validate_order_kind_supported` rejects anything but `Market`. | `honba-barter/src/strategy.rs` |
 | Pre-trade checks | `unknown_symbol`, `invalid_qty`, `no_price`, `insufficient_cash`, `insufficient_position` (unless `allow_short`). | same |
-| Costs | Flat `fees_percent`. `IndianTaxCalculator` (brokerage, STT, exchange, SEBI, stamp, GST) exists in `honba-core/src/tax.rs` but is **not wired in**. | `honba-core` |
-| Risk | `RiskGuard` trait + `RiskError::{DrawdownBreached, InsufficientMargin, MarketClosed}` only. **No circuit limits, no session, no lot/tick rules implemented.** | `honba-core/src/risk.rs` |
+| Costs | *(historical)* Flat `fees_percent`. `IndianTaxCalculator` (brokerage, STT, exchange, SEBI, stamp, GST) exists in `honba-core/src/tax.rs` but is **not wired in**. | `honba-core` |
+| Risk | *(historical; sessions, lot/tick/freeze, square-off now live in `honba-barter`)* `RiskGuard` trait + `RiskError::{DrawdownBreached, InsufficientMargin, MarketClosed}` only. **No circuit limits, no session, no lot/tick rules implemented.** | `honba-core/src/risk.rs` |
 | Instruments | `Instrument` enum has `lot_size`/`tick_size` (Equity, Option), `ProductType {CNC, MIS, MTF, NRML}`, `OrderType {Market, Limit, StopLoss, StopLossLimit}`, `TimeFrame`. None of these reach the engine config. | `honba-core/src/types.rs` |
 | Report | summary (net_pnl, cagr, max_drawdown, sharpe, sortino, calmar, win_rate, profit_factor, fees, counts), per-instrument metrics, fills (`trades`), `rejected`, equity curve, final positions. | `honba-barter/src/report.rs` |
 | Sweeps | Rust `run_sweep` (N deciders, one runtime); Python `sweep()` grid, sequential. | both |
-| PyO3 | `_core` exposes only `calculate_dsr`, `calculate_pbo`; `run_backtest` being added by the Rust agent. | `honba-pyo3` |
-| Python SDK | Draft: `Strategy` (Jesse lifecycle), `StrategyAdapter`, OpenAlgo-style `BarContext`, `backtest`, `sweep`, `BacktestResult`, 6 numpy indicators (`sma, ema, rsi, atr, stddev, crossed_*`), pandas/polars candle loader. Engine faked in tests. | `python/honba` |
+| PyO3 | `_core` exposes `run_backtest`, `calculate_dsr`, `calculate_pbo`. | `honba-pyo3` |
+| Python SDK | **Done (P0)**: backend-agnostic `Strategy` / `Param` / order API, neutral types, engine protocol + registry (`barter`, `simple`), session-anchored multi-timeframe, sizing, 14 numpy indicators, `backtest` / `sweep`, net round-trip metrics, candle validation. Tested against the real `_core`. See `python-sdk.md`. | `python/honba` |
 | Anti-overfit | DSR, PBO in Rust. | `honba-overfit` |
 | Broker | Dhan client stub + keyring token storage. | `honba-dhan` |
 
@@ -38,38 +40,38 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 
 | # | Feature | Status | Belongs in | Pri | Notes (Indian market) |
 |---|---|---|---|---|---|
-| J1 | Event-driven candle backtest | draft | Engine | P0 | Works (market orders, close fill). Needs next-bar-open fill option, session awareness. |
-| J2 | Routes / multi-symbol | draft | Engine + SDK | P0 | Engine is multi-symbol; SDK runs one instance per symbol. Needs a portfolio-level strategy (one instance sees all symbols) for pairs / cross-sectional. |
-| J3 | Data routes / multi-timeframe (`get_candles(tf)`) | none | SDK (P0), Engine (P2) | P0 | Resample base bars in Python; a higher-TF bar becomes visible only after it closes. NSE session buckets must anchor at 09:15 IST, not UTC midnight (e.g. 1h bars: 09:15, 10:15 ... 15:15 partial). Daily bar = session, not calendar UTC day. |
-| J4 | No look-ahead (strategy sees only closed candles) | draft | Engine + SDK | P0 | Holds for base TF today; must hold for resampled TFs and for intrabar stop/limit triggers. |
-| J5 | Warm-up candles | none | Engine (`start_ms`) + SDK | P0 | Indicators need history before the first tradable bar; metrics must start at `start_ms`. |
-| J6 | Indicator library (~170, `sequential=`) | draft (6) | SDK (wrap), Engine later | P1 | Wrap a vetted library (TA-Lib / polars-ta-extension) behind `honba.ta`; do not hand-roll 170. Rust `honba-indicators` for hot paths later. India extras: VWAP anchored to session, Supertrend, CPR/pivots, OI-based (P2). |
-| J7 | Position sizing helpers (`risk_to_qty`, `size_to_qty`, `kelly_criterion`, `estimate_risk`) | none | SDK | P0 | Must round down to `lot_size` (F&O) and respect `freeze_qty`; equity cash lot = 1. |
-| J8 | Stop-loss / take-profit on entry (`self.stop_loss = ...`) | none | Engine | P0 | Needs conditional orders evaluated intrabar against bar high/low; gap-through fills at open. Circuit lock can prevent exit fill. |
-| J9 | Partial exits (list of TP/SL legs) | none | Engine (orders) + SDK (sugar) | P1 | Legs must be multiples of lot size. |
-| J10 | Trailing stop (`update_position` moves SL) | none | SDK (P0 via modify), Engine native trail (P1) | P0 | With modify/cancel in the contract, trailing is Python logic per bar; a native `trail` field avoids per-bar Python round trips. |
-| J11 | Limit and stop entries (price vs current decides type) | none | Engine | P0 | barter `MockExchange` only accepts Market: honba must hold resting orders itself and submit a Market request at the computed fill price when triggered. Tick-size rounding (0.05, price-banded). |
-| J12 | `should_cancel_entry`, order cancel | none | Engine (cancel op) + SDK | P0 | Default: cancel unfilled entry at next bar (Jesse) or DAY TIF expiry at session close (India). |
-| J13 | Position lifecycle hooks (`on_open_position`, `on_close_position`, `on_increased/reduced_position`, `on_cancel`) | none | Bridge (fills in ctx) + SDK | P0 | Needs per-bar fill/cancel events in the bar context. Today SDK guesses entry price. |
-| J14 | Position details (avg entry, pnl, `average_stop_loss`, `trades`, `orders`) | draft | Engine (report in ctx) | P0 | Engine must send avg price, realised pnl, product per position and open orders. |
-| J15 | Hyperparameters (typed, ranges) + DNA | none | SDK | P0 | Declared params with bounds/types feed sweep and optimizer. |
-| J16 | Optimisation (Optuna + Ray, objective: sharpe/calmar/sortino/omega/serenity/smart ratios, train/test split) | draft (grid only) | SDK | P1 | Optuna in Python; parallelism via processes (Python callbacks hold the GIL, so Rust `run_sweep` concurrency does not help for Python strategies). Must record trial count for DSR. |
+| J1 | Event-driven candle backtest | done | Engine | P0 | Works (market orders, close fill). Needs next-bar-open fill option, session awareness. |
+| J2 | Routes / multi-symbol | done | Engine + SDK | P0 | Engine is multi-symbol; SDK runs one instance per symbol. Needs a portfolio-level strategy (one instance sees all symbols) for pairs / cross-sectional. |
+| J3 | Data routes / multi-timeframe (`get_candles(tf)`) | done | SDK (P0), Engine (P2) | P0 | Resample base bars in Python; a higher-TF bar becomes visible only after it closes. NSE session buckets must anchor at 09:15 IST, not UTC midnight (e.g. 1h bars: 09:15, 10:15 ... 15:15 partial). Daily bar = session, not calendar UTC day. |
+| J4 | No look-ahead (strategy sees only closed candles) | done | Engine + SDK | P0 | Holds for base TF today; must hold for resampled TFs and for intrabar stop/limit triggers. |
+| J5 | Warm-up candles | done | Engine (`start_ms`) + SDK | P0 | Indicators need history before the first tradable bar; metrics must start at `start_ms`. |
+| J6 | Indicator library (~170, `sequential=`) | draft (14 numpy indicators) | SDK (wrap), Engine later | P1 | Wrap a vetted library (TA-Lib / polars-ta-extension) behind `honba.ta`; do not hand-roll 170. Rust `honba-indicators` for hot paths later. India extras: VWAP anchored to session, Supertrend, CPR/pivots, OI-based (P2). |
+| J7 | Position sizing helpers (`risk_to_qty`, `size_to_qty`, `kelly_criterion`, `estimate_risk`) | done | SDK | P0 | Must round down to `lot_size` (F&O) and respect `freeze_qty`; equity cash lot = 1. |
+| J8 | Stop-loss / take-profit on entry (`self.stop_loss = ...`) | done | Engine | P0 | Needs conditional orders evaluated intrabar against bar high/low; gap-through fills at open. Circuit lock can prevent exit fill. |
+| J9 | Partial exits (list of TP/SL legs) | none (single-level bracket only) | Engine (orders) + SDK (sugar) | P1 | Legs must be multiples of lot size. |
+| J10 | Trailing stop (`update_position` moves SL) | done (engine-native trail) | SDK (P0 via modify), Engine native trail (P1) | P0 | With modify/cancel in the contract, trailing is Python logic per bar; a native `trail` field avoids per-bar Python round trips. |
+| J11 | Limit and stop entries (price vs current decides type) | done | Engine | P0 | barter `MockExchange` only accepts Market: honba must hold resting orders itself and submit a Market request at the computed fill price when triggered. Tick-size rounding (0.05, price-banded). |
+| J12 | `should_cancel_entry`, order cancel | done | Engine (cancel op) + SDK | P0 | Default: cancel unfilled entry at next bar (Jesse) or DAY TIF expiry at session close (India). |
+| J13 | Position lifecycle hooks (`on_open_position`, `on_close_position`, `on_increased/reduced_position`, `on_cancel`) | done | Bridge (fills in ctx) + SDK | P0 | Needs per-bar fill/cancel events in the bar context. Today SDK guesses entry price. |
+| J14 | Position details (avg entry, pnl, `average_stop_loss`, `trades`, `orders`) | done | Engine (report in ctx) | P0 | Engine must send avg price, realised pnl, product per position and open orders. |
+| J15 | Hyperparameters (typed, ranges) + DNA | done | SDK | P0 | Declared params with bounds/types feed sweep and optimizer. |
+| J16 | Optimisation (Optuna + Ray, objective: sharpe/calmar/sortino/omega/serenity/smart ratios, train/test split) | draft (grid `sweep` with bounds, constraints, process pool; no Optuna) | SDK | P1 | Optuna in Python; parallelism via processes (Python callbacks hold the GIL, so Rust `run_sweep` concurrency does not help for Python strategies). Must record trial count for DSR. |
 | J17 | Monte Carlo on trades (shuffle / resample) | none | SDK | P1 | Pure post-processing of the trade list. |
 | J18 | Monte Carlo on candles (block bootstrap, gaussian noise/resampler pipelines) | none | SDK | P2 | Python generates synthetic candles, reruns backtests. Respect circuit bands when perturbing. |
 | J19 | Rule significance test (bootstrap) | none | SDK | P2 | Complements honba DSR/PBO. |
-| J20 | Metrics (expectancy, avg win/loss, streaks, holding periods, long/short split, omega, serenity, largest win/loss, underwater period, trades/day) | draft (subset) | SDK (from trades/equity) | P0 | Derive in Python from fills/round trips and equity; keep Rust report lean. Annualise with ~250 NSE sessions, not 365. |
+| J20 | Metrics (expectancy, avg win/loss, streaks, holding periods, long/short split, omega, serenity, largest win/loss, underwater period, trades/day) | done | SDK (from trades/equity) | P0 | Derive in Python from fills/round trips and equity; keep Rust report lean. Annualise with ~250 NSE sessions, not 365. |
 | J21 | Charts / reports (equity, drawdown, monthly returns, benchmark, candle chart with trades, custom lines) | none | SDK | P1 | Benchmark default NIFTY 50 / NIFTY 500 TRI. Plotly/HTML tearsheet; web2 can reuse JSON. |
-| J22 | Import candles (exchange drivers) + candle store | none | SDK + `honba-dhan` | P1 | Dhan historical API, CSV/Parquet catalog. Validate against session calendar (overnight/holiday gaps are not missing data). Corporate-action adjustment (splits/bonus) for equity. |
-| J23 | Candle validation (contiguous, monotonic) | draft (sort only) | SDK | P0 | Session-aware gap check, duplicate timestamps, OHLC sanity (low <= open/close <= high). |
-| J24 | Research API (`research.backtest` with in-memory candles) | draft | SDK | P0 | Current `backtest()`; to be reshaped (section 3). |
+| J22 | Import candles (exchange drivers) + candle store | draft (frame ingest + validation, no loaders) | SDK + `honba-dhan` | P1 | Dhan historical API, CSV/Parquet catalog. Validate against session calendar (overnight/holiday gaps are not missing data). Corporate-action adjustment (splits/bonus) for equity. |
+| J23 | Candle validation (contiguous, monotonic) | done | SDK | P0 | Session-aware gap check, duplicate timestamps, OHLC sanity (low <= open/close <= high). |
+| J24 | Research API (`research.backtest` with in-memory candles) | done | SDK | P0 | Current `backtest()`; to be reshaped (section 3). |
 | J25 | Filters (`filters()` gates entries) | none | SDK | P1 | Trivial in Python. |
-| J26 | Trading hours / `is_trading_hours` | none | Engine | P0 | NSE 09:15-15:30 IST, pre-open 09:00-09:08, holiday calendar, muhurat session. Engine must know sessions for MIS square-off and DAY TIF. |
-| J27 | Fees (maker/taker) | draft (flat %) | Engine | P0 | Wire `IndianTaxCalculator` per fill (see 1.3). |
+| J26 | Trading hours / `is_trading_hours` | done | Engine | P0 | NSE 09:15-15:30 IST, pre-open 09:00-09:08, holiday calendar, muhurat session. Engine must know sessions for MIS square-off and DAY TIF. |
+| J27 | Fees (maker/taker) | done | Engine | P0 | Wire `IndianTaxCalculator` per fill (see 1.3). |
 | J28 | Leverage / futures margin / liquidation | none | Engine | P2 | India: MIS intraday leverage (broker-defined, ~5x equity), NRML SPAN+exposure. No liquidation engine; broker auto-square-off on margin shortfall. |
-| J29 | Shorting | draft (`allow_short`) | Engine | P0 | Equity cash shorts are intraday (MIS) only; must be squared off same day. Overnight shorts only via F&O (NRML). |
+| J29 | Shorting | done | Engine | P0 | Equity cash shorts are intraday (MIS) only; must be squared off same day. Overnight shorts only via F&O (NRML). |
 | J30 | Portfolio rebalance / universes | none | SDK | P1 | Universe = index constituents (NIFTY 50/100/500) with point-in-time membership (P2). |
 | J31 | Shared vars across routes | none | SDK | P1 | Replaced by portfolio-level strategy. |
-| J32 | Logging (`self.log`), debug mode | none | SDK | P1 | Log lines tagged with bar time into the result. |
+| J32 | Logging (`self.log`), debug mode | done (`Strategy.log`) | SDK | P1 | Log lines tagged with bar time into the result. |
 | J33 | Live / paper trading parity (same strategy code) | none | Engine (barter live) + `honba-dhan` | P2 | Same `Strategy` class runs on a live runner: barter engine + Dhan execution client + Dhan websocket data. Daily token expiry / re-login. |
 | J34 | Notifications (Telegram/Discord/Slack) | none | Out (P2) | P2 | Live only. |
 | J35 | ML pipeline (`record_features`, `ml_predict`, export) | none | SDK | P2 | Feature/label recording hook in strategy; fits with `docs/research/llm-ml-enhancement.md`. |
@@ -80,13 +82,13 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 
 | # | Feature | Status | Belongs in | Pri | Notes (Indian market) |
 |---|---|---|---|---|---|
-| O1 | Order types MARKET / LIMIT / SL / SL-M | none (market only) | Engine | P0 | Same machinery as J8/J11. SL = stop-limit, SL-M = stop-market. Tick rounding. |
-| O2 | Product types CNC / MIS / NRML (MTF) | none | Engine | P0 | Drives costs (STT differs MIS vs CNC), short rules, auto square-off, settlement. |
-| O3 | Smart order (target position size) | draft | SDK | P0 | Pure delta computation; must account for open orders to avoid double-sending. |
+| O1 | Order types MARKET / LIMIT / SL / SL-M | done | Engine | P0 | Same machinery as J8/J11. SL = stop-limit, SL-M = stop-market. Tick rounding. |
+| O2 | Product types CNC / MIS / NRML (MTF) | done | Engine | P0 | Drives costs (STT differs MIS vs CNC), short rules, auto square-off, settlement. |
+| O3 | Smart order (target position size) | done | SDK | P0 | Pure delta computation; must account for open orders to avoid double-sending. |
 | O4 | Basket order (many orders at once) | draft (list of actions) | SDK | P1 | Actions are already a list per bar; add tag/group for reporting. |
 | O5 | Split order (slice large qty) | none | SDK | P1 | Needed for F&O freeze quantity (exchange max qty per order); slices must be lot multiples. |
-| O6 | Modify order / cancel order / cancel all | none | Engine | P0 | Contract ops `modify`, `cancel`, `cancel_all`. |
-| O7 | Close position / close all | draft | SDK | P0 | Smart order to 0; `close_all` iterates positions. |
+| O6 | Modify order / cancel order / cancel all | done | Engine | P0 | Contract ops `modify`, `cancel`, `cancel_all`. |
+| O7 | Close position / close all | done | SDK | P0 | Smart order to 0; `close_all` iterates positions. |
 | O8 | Options order by offset (ATM/ITMn/OTMn, expiry) | none | SDK (resolver) + data | P2 | Needs option chain history and instrument master (strikes, expiries, lot sizes). Weekly expiry rules changed (one weekly index expiry per exchange). |
 | O9 | Multi-leg options orders (straddle, iron condor) | none | SDK (basket of legs) + Engine (margin) | P2 | Margin benefit of hedged legs matters for sizing; approximate first. |
 | O10 | Option chain, Greeks, IV, OI, PCR, max pain | draft (Greeks in Rust) | SDK + `honba-indicators` | P2 | Black-Scholes exists in `honba-indicators`. |
@@ -94,10 +96,10 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O12 | Market depth (L5) | none | SDK (`honba-dhan`) | P2 | Live only; Dhan offers 20-level depth. |
 | O13 | Historical data / intervals | none | SDK (`honba-dhan`) | P1 | Same loader as J22. |
 | O14 | Symbol search / instrument master / expiry list | none | SDK | P1 | Instrument master supplies `lot_size`, `tick_size`, `freeze_qty`, segment to the engine config. |
-| O15 | Account: funds, order book, trade book, position book, holdings | draft (positions, cash) | Bridge (backtest ctx) / `honba-dhan` (live) | P0 (ctx) / P2 (live) | Backtest ctx must expose open orders, fills, positions with avg price, holdings (CNC) vs positions (MIS). |
+| O15 | Account: funds, order book, trade book, position book, holdings | done (ctx) | Bridge (backtest ctx) / `honba-dhan` (live) | P0 (ctx) / P2 (live) | Backtest ctx must expose open orders, fills, positions with avg price, holdings (CNC) vs positions (MIS). |
 | O16 | Margin calculator | none | Engine | P2 | SPAN approximation for NRML; MIS leverage table. |
 | O17 | Analyzer / sandbox (paper with live data, simulated margin, auto square-off) | none | Engine (barter mock + live feed) | P2 | Reuses backtest execution model on live Dhan data. |
-| O18 | Auto square-off of intraday positions | none | Engine | P0 | MIS positions closed at a configurable time (brokers ~15:15-15:25) at that bar's price; exit reason `square_off`. Also valid in backtests. |
+| O18 | Auto square-off of intraday positions | done | Engine | P0 | MIS positions closed at a configurable time (brokers ~15:15-15:25) at that bar's price; exit reason `square_off`. Also valid in backtests. |
 | O19 | Python strategy hosting + IST scheduler | none | Out | P2 | Later: `honba run` service. |
 | O20 | Webhooks (TradingView, Amibroker, ChartInk, GoCharting) | none | Out (honba server) | P2 | Would map alerts to SDK orders on the live runner. |
 | O21 | Action center (semi-auto, manual approval) | none | Out | P2 | Live runner hook `approve(order)`. |
@@ -105,7 +107,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O23 | Flow visual builder | none | Out | - | Not planned. |
 | O24 | PnL tracker, latency monitor, traffic logs | none | Out | P2 | web2 can show backtest/live PnL from report JSON. |
 | O25 | WebSocket streaming proxy | none | Out (live) | P2 | barter-data style stream from Dhan feed. |
-| O26 | Indian costs breakdown (STT, GST, stamp, exchange, SEBI) | draft (not wired) | Engine | P0 | See 1.3. |
+| O26 | Indian costs breakdown (STT, GST, stamp, exchange, SEBI) | done | Engine | P0 | See 1.3. |
 | O27 | Broker abstraction (36 brokers) | none | Out | - | honba targets Dhan first; the execution-client boundary is barter's `ExecutionClient`. |
 | O28 | Secure credential storage (OS keyring), daily session expiry | draft | `honba-dhan` | P2 | Keyring storage exists; add expiry/re-login. |
 | O29 | MCP server / AI agent | draft (stub) | SDK | P1 | Same as J36. |
@@ -114,14 +116,14 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 
 | # | Mechanic | Status | Belongs in | Pri | Notes |
 |---|---|---|---|---|---|
-| I1 | Per-fill statutory costs | draft | Engine | P0 | Wire `IndianTaxCalculator` into the ledger. Fix before wiring: it takes `MarketSegment` only, so `EquityCash` is always treated as delivery (STT on both sides, zero brokerage). Needs `ProductType`: intraday equity STT is sell-side only at a lower rate and stamp duty differs; options exchange charge is on premium at a different rate than futures/cash; brokerage should be a pluggable plan (flat per order, % capped). DP charge per scrip on delivery sells is missing. Rates change with budgets: keep them in a versioned, dated table. Report must carry the cost breakdown per fill. |
+| I1 | Per-fill statutory costs | done | Engine | P0 | Wire `IndianTaxCalculator` into the ledger. Fix before wiring: it takes `MarketSegment` only, so `EquityCash` is always treated as delivery (STT on both sides, zero brokerage). Needs `ProductType`: intraday equity STT is sell-side only at a lower rate and stamp duty differs; options exchange charge is on premium at a different rate than futures/cash; brokerage should be a pluggable plan (flat per order, % capped). DP charge per scrip on delivery sells is missing. Rates change with budgets: keep them in a versioned, dated table. Report must carry the cost breakdown per fill. |
 | I2 | T+1 settlement / holdings vs positions | none | Engine | P1 | CNC buys become holdings next session. Config for how much sale credit is usable the same day (broker-dependent) and T+1 for withdrawal. BTST (sell before delivery) allowed. |
-| I3 | Lot size | none | Engine (validate) + SDK (round) | P0 | F&O qty must be a multiple of `lot_size`; reject otherwise (`invalid_lot`). Lot sizes change over time: point-in-time table (P2). |
-| I4 | Tick size | none | Engine (validate) + SDK (round) | P0 | Limit/trigger prices rounded to `tick_size`. |
+| I3 | Lot size | done | Engine (validate) + SDK (round) | P0 | F&O qty must be a multiple of `lot_size`; reject otherwise (`invalid_lot`). Lot sizes change over time: point-in-time table (P2). |
+| I4 | Tick size | done | Engine (validate) + SDK (round) | P0 | Limit/trigger prices rounded to `tick_size`. |
 | I5 | Freeze quantity | none | Engine (validate) + SDK (split) | P1 | Reject single orders above freeze qty; SDK auto-splits. |
 | I6 | Circuit limits / price bands | none | Engine | P1 | Not in `risk.rs` today. Per-symbol band (2/5/10/20% of previous close; F&O stocks have dynamic bands). Reject orders priced outside the band; a bar locked at a band (high == low == band) fills no market orders on the blocked side. Index-wide market circuit halts trading. |
-| I7 | Sessions / holidays / pre-open | none | Engine | P0 | Calendar in config; DAY TIF expiry at session close; no trading outside session. |
-| I8 | Short-selling restriction | draft | Engine | P0 | Cash equity shorts MIS-only (I7/O18 square-off); no overnight cash shorts. |
+| I7 | Sessions / holidays / pre-open | done | Engine | P0 | Calendar in config; DAY TIF expiry at session close; no trading outside session. |
+| I8 | Short-selling restriction | done | Engine | P0 | Cash equity shorts MIS-only (I7/O18 square-off); no overnight cash shorts. |
 | I9 | Slippage / impact cost | none | Engine | P1 | `slippage_bps` (fixed) first; volume-participation cap later. Important for small/mid caps. |
 | I10 | Corporate actions (split, bonus, dividend) | none | SDK (data) | P1 | Adjust history; dividends credited to cash for CNC holdings (P2). |
 

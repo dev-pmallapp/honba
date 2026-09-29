@@ -29,7 +29,7 @@ def _time_ms(frame: pd.DataFrame) -> np.ndarray:
     if pd.api.types.is_datetime64_any_dtype(values):
         values = pd.DatetimeIndex(values)
         values = values.tz_localize(IST) if values.tz is None else values
-        return (values.tz_convert("UTC").asi8 // 1_000_000).astype(np.int64)
+        return (values.tz_convert("UTC").as_unit("ns").asi8 // 1_000_000).astype(np.int64)
     if pd.api.types.is_object_dtype(values):  # e.g. python dates / ISO strings
         return _time_ms(frame.assign(**{col or "time": pd.to_datetime(values)}))
     ints = pd.to_numeric(values).astype("int64").to_numpy()

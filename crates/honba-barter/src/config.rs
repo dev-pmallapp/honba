@@ -246,6 +246,11 @@ pub struct InstrumentMeta {
     /// Product for orders that don't name one (default: CNC for equity cash, NRML otherwise).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_product: Option<Product>,
+    /// Price band (circuit limit) in percent of the previous session's close: limit / trigger
+    /// prices outside it are rejected (`outside_price_band`), and a bar locked at a band
+    /// (`high == low` at the upper / lower band) fills no buys / sells.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_band_pct: Option<f64>,
 }
 
 impl InstrumentMeta {

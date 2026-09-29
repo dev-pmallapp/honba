@@ -16,7 +16,8 @@
 //! `report.round_trips` (net win rate / profit factor), reasons `no_bar`, `no_position`,
 //! `insufficient_margin`, `end_of_data`, fill reason `liquidate_end`, role `liquidation`;
 //! 3 = `slippage` (bps / volume share, `max_volume_share` partial fills: order status
-//! `partially_filled`, fill `remaining_qty`).
+//! `partially_filled`, fill `remaining_qty`); `instruments.*.price_band_pct` (reason
+//! `outside_price_band`, circuit-locked bars).
 //!
 //! `candles`: `{symbol: [(time_ms, open, high, low, close, volume), ...]}`. `on_bar(ctx)` is
 //! called once per distinct bar timestamp and returns a list of actions (or `None`). Every key
@@ -48,6 +49,7 @@
 //!   "instruments": {"NIFTYFUT": {"segment": "equity_cash" | "equity_futures" |
 //!                     "equity_options" | "commodity" | "currency",
 //!                    "lot_size": 75, "tick_size": 0.05, "freeze_qty": 1800,
+//!                    "price_band_pct": 20.0,   // circuit band, % of previous session close
 //!                    "default_product": "CNC" | "MIS" | "NRML" | "MTF"}},
 //!   "session": {"tz": "Asia/Kolkata", "open": "09:15", "close": "15:30",
 //!               "mis_square_off": "15:20", "holidays": ["2025-10-21"],
@@ -81,7 +83,8 @@
 //! Ids are unique per run; generated ids are `o<n>`; attached exits are `<id>:sl` / `<id>:tp`.
 //! Rejection reasons: `unknown_symbol`, `invalid_qty`, `invalid_price`, `invalid_trigger`,
 //! `invalid_stop_loss`, `invalid_take_profit`, `invalid_trail`, `unsupported_trail`,
-//! `invalid_lot`, `invalid_tick`, `above_freeze_qty`, `no_price`, `duplicate_id`,
+//! `invalid_lot`, `invalid_tick`, `above_freeze_qty`, `outside_price_band` (the order's own
+//! limit / trigger, placed or modified, outside today's band), `no_price`, `duplicate_id`,
 //! `unknown_order`, `order_closed`, `not_an_entry`, `market_closed`, `after_square_off`,
 //! `warmup`, `no_bar` (market order on a symbol without a bar at this timestamp, close fill
 //! model), `no_position` (exit change on an entry whose position is closed), and at fill time
@@ -131,6 +134,11 @@
 //! square off MIS positions, apply the fills, call `on_bar`, execute what is immediately
 //! executable (close fill model) and record the equity point. Every fill is executed through
 //! barter's mock exchange as a market order at the computed price.
+//!
+//! Price bands: with `price_band_pct`, the band is `previous trading date's last close x (1 +-
+//! pct%)` (on the tick; none on the first date). A bar locked at a band (`high == low` at the
+//! upper / lower band) fills no buy / sell orders of any kind (they keep working; a stop that
+//! triggered executes at a later open); MIS square-off and `liquidate_at_end` still execute.
 //!
 //! Partial fills: with `slippage.max_volume_share` an order may fill over several bars; it is
 //! `partially_filled` while working, a triggered stop's rest executes at later opens, IOC

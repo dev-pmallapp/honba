@@ -462,6 +462,10 @@ pub struct Book {
     cur_bar: Vec<Option<Bar>>,
     /// Quantity filled per instrument in the current bar (volume cap).
     volume_used: Vec<f64>,
+    /// Close of the previous trading date per instrument (price band reference).
+    band_ref: Vec<Option<f64>>,
+    /// Trading date of the latest bar per instrument.
+    bar_date: Vec<Option<NaiveDate>>,
     pub orders: Vec<Order>,
     pub fills: Vec<FillEvent>,
     pub rejections: Vec<Rejection>,
@@ -500,6 +504,8 @@ impl Book {
             has_bar: vec![false; n],
             cur_bar: vec![None; n],
             volume_used: vec![0.0; n],
+            band_ref: vec![None; n],
+            bar_date: vec![None; n],
             proj_qty: vec![0.0; n],
             orders: Vec::new(),
             fills: Vec::new(),
@@ -791,8 +797,16 @@ impl Book {
         for (has_bar, bar) in self.has_bar.iter_mut().zip(bars) {
             *has_bar = bar.is_some();
         }
-        for (current, bar) in self.cur_bar.iter_mut().zip(bars) {
-            *current = *bar;
+        for (instrument, bar) in bars.iter().enumerate() {
+            self.cur_bar[instrument] = *bar;
+            if let Some(bar) = bar {
+                // First bar of a new trading date: the band moves to the previous close
+                let date = self.trading_date(bar.time_ms);
+                if self.bar_date[instrument] != Some(date) {
+                    self.bar_date[instrument] = Some(date);
+                    self.band_ref[instrument] = self.last_close[instrument];
+                }
+            }
         }
         self.volume_used.fill(0.0);
         for ((close, recent), bar) in self.last_close.iter_mut().zip(&mut self.recent).zip(bars) {
@@ -1404,6 +1418,61 @@ impl Book {
         Ok(())
     }
 
+    /// Lower / upper price band of `instrument` for the current trading date (on the tick).
+    pub fn price_band(&self, instrument: usize) -> Option<(f64, f64)> {
+        let meta = self.meta(instrument);
+        let pct = meta.price_band_pct?;
+        let reference = self.band_ref[instrument]?;
+        let (lower, upper) = (
+            reference * (1.0 - pct / 100.0),
+            reference * (1.0 + pct / 100.0),
+        );
+        Some(match meta.tick_size {
+            Some(tick) if tick > 0.0 => (
+                ((lower / tick) - 1e-9).ceil() * tick,
+                ((upper / tick) + 1e-9).floor() * tick,
+            ),
+            _ => (lower, upper),
+        })
+    }
+
+    /// Limit / trigger prices must lie within the price band.
+    fn check_band(&self, instrument: usize, prices: &[Option<f64>]) -> Check {
+        let Some((lower, upper)) = self.price_band(instrument) else {
+            return Ok(());
+        };
+        let tolerance = EPS * upper.abs().max(1.0);
+        if prices
+            .iter()
+            .flatten()
+            .any(|p| *p < lower - tolerance || *p > upper + tolerance)
+        {
+            return Err("outside_price_band");
+        }
+        Ok(())
+    }
+
+    /// Is the current bar of `instrument` locked at the band against `side` (upper circuit:
+    /// no sellers, so buys cannot fill; lower circuit: sells cannot).
+    fn locked(&self, instrument: usize, side: ActionSide) -> bool {
+        let (Some(bar), Some((lower, upper))) =
+            (self.cur_bar[instrument], self.price_band(instrument))
+        else {
+            return false;
+        };
+        let tolerance = self
+            .meta(instrument)
+            .tick_size
+            .map_or(EPS * bar.high.abs().max(1.0), |tick| tick / 2.0);
+        if bar.high - bar.low > tolerance {
+            return false;
+        }
+        match side {
+            ActionSide::Buy => bar.low >= upper - tolerance,
+            ActionSide::Sell => bar.high <= lower + tolerance,
+        }
+    }
+
     /// Prices must sit on the instrument tick.
     fn check_ticks(&self, instrument: usize, prices: &[Option<f64>]) -> Check {
         match self.meta(instrument).tick_size {
@@ -1521,6 +1590,15 @@ impl Book {
     ) -> Option<FillIntent> {
         let order = &self.orders[index];
         let instrument = order.instrument?;
+        if self.locked(instrument, order.side) {
+            // Circuit: no counterparty in this bar; the order keeps working (a stop that
+            // triggered executes at a later open)
+            if order.kind == OrderType::Stop {
+                self.orders[index].triggered = true;
+            }
+            return None;
+        }
+        let order = &self.orders[index];
         let mut qty = order.remaining();
         if order.reduce_only {
             let position = self.proj_qty[instrument];
@@ -1956,6 +2034,18 @@ impl Book {
             self.reject_request(time_ms, &request, Some(id), "no_bar");
             return None;
         }
+        let band_prices = [
+            request
+                .price
+                .filter(|_| matches!(request.kind, OrderType::Limit | OrderType::StopLimit)),
+            request
+                .trigger
+                .filter(|_| matches!(request.kind, OrderType::Stop | OrderType::StopLimit)),
+        ];
+        if let Err(reason) = self.check_band(instrument, &band_prices) {
+            self.reject_request(time_ms, &request, Some(id), reason);
+            return None;
+        }
         let reference = request.price.or(request.trigger).unwrap_or(close);
         if let Err(reason) = Self::check_bracket(
             request.side,
@@ -2135,17 +2225,29 @@ impl Book {
             return;
         }
         if let Some(instrument) = order.instrument {
-            let checks = self.check_qty(instrument, qty).and_then(|()| {
-                self.check_ticks(
-                    instrument,
-                    &[
-                        modify.price,
-                        modify.trigger,
-                        modify.stop_loss,
-                        modify.take_profit,
-                    ],
-                )
-            });
+            let checks = self
+                .check_qty(instrument, qty)
+                .and_then(|()| {
+                    self.check_ticks(
+                        instrument,
+                        &[
+                            modify.price,
+                            modify.trigger,
+                            modify.stop_loss,
+                            modify.take_profit,
+                        ],
+                    )
+                })
+                .and_then(|()| {
+                    // Only the order's own new prices face the band
+                    let price = modify
+                        .price
+                        .filter(|_| matches!(order.kind, OrderType::Limit | OrderType::StopLimit));
+                    let trigger = modify
+                        .trigger
+                        .filter(|_| matches!(order.kind, OrderType::Stop | OrderType::StopLimit));
+                    self.check_band(instrument, &[price, trigger])
+                });
             if let Err(reason) = checks {
                 self.reject_op(time_ms, Some(modify.id), reason);
                 return;

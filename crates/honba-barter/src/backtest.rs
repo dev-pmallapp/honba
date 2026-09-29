@@ -134,6 +134,14 @@ fn prepare(
                 "instruments.{symbol}: lot_size, tick_size and freeze_qty must be > 0"
             )));
         }
+        if meta
+            .price_band_pct
+            .is_some_and(|pct| !(pct.is_finite() && pct > 0.0 && pct < 100.0))
+        {
+            return Err(BacktestError::Config(format!(
+                "instruments.{symbol}: price_band_pct must be in (0, 100)"
+            )));
+        }
     }
     let quote = config.quote.to_lowercase();
     if quote.is_empty() {

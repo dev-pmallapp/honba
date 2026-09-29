@@ -5,7 +5,7 @@ use crate::{
     config::{self, BacktestConfig, FillModel, IntrabarPriority, INDIA_RATE_TABLE, MAX_LATENCY_MS},
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
-    report::{build_report, BacktestReport, ReportInputs},
+    report::{build_report, BacktestReport, ReportInputs, TradingYear},
     session::{Session, IST},
     strategy::{lock, Decider, DeciderStrategy, DeciderStrategyConfig, HonbaEngineState, RunState},
 };
@@ -13,7 +13,6 @@ use barter::{
     backtest::{backtest, BacktestArgsConstant, BacktestArgsDynamic},
     engine::state::{builder::EngineStateBuilder, trading::TradingState},
     risk::DefaultRiskManager,
-    statistic::time::Annual252,
     system::config::{ExecutionConfig, InstrumentConfig},
 };
 use barter_execution::{
@@ -95,6 +94,11 @@ fn prepare(
         return Err(BacktestError::Config(format!(
             "latency_ms must be <= {MAX_LATENCY_MS} (barter times out requests after 1s)"
         )));
+    }
+    if !(1..=366).contains(&config.trading_days_per_year) {
+        return Err(BacktestError::Config(
+            "trading_days_per_year must be in 1..=366".into(),
+        ));
     }
     let margin = &config.margin;
     let pct_ok = |pct: f64| pct.is_finite() && pct > 0.0 && pct <= 100.0;
@@ -287,7 +291,7 @@ fn cost_model(config: &BacktestConfig) -> Result<CostModel, BacktestError> {
 /// Everything one run needs; the gate makes market data and strategy per-run.
 struct RunSetup {
     id: String,
-    args_constant: Arc<BacktestArgsConstant<CandleMarketData, Annual252, HonbaEngineState>>,
+    args_constant: Arc<BacktestArgsConstant<CandleMarketData, TradingYear, HonbaEngineState>>,
     args_dynamic: BacktestArgsDynamic<DeciderStrategy, DefaultRiskManager<HonbaEngineState>>,
     schedule: Vec<(i64, usize)>,
     run: Arc<Mutex<RunState>>,
@@ -378,7 +382,7 @@ fn setup_run(
             instruments: prepared.instruments.clone(),
             executions: vec![prepared.execution.clone()],
             market_data,
-            summary_interval: Annual252,
+            summary_interval: TradingYear(prepared.config.trading_days_per_year),
             engine_state,
         }),
         args_dynamic: BacktestArgsDynamic {
@@ -419,6 +423,7 @@ async fn execute(prepared: &Prepared, setup: RunSetup) -> Result<BacktestReport,
         book: &run.book,
         bars_decided: run.bars_decided,
         trading_summary: &summary.trading_summary,
+        utc_offset_ms: i64::from(run.book.config().utc_offset.local_minus_utc()) * 1000,
     }))
 }
 

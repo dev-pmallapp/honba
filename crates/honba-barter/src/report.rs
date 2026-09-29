@@ -29,13 +29,15 @@
 //!     "num_orders": int,
 //!     "num_rejected": int,
 //!     "max_drawdown": float,            // peak-to-trough fraction of equity, >= 0
-//!     "sharpe": float|null,             // daily equity returns, annualised x sqrt(252)
+//!     "sharpe": float|null,             // daily (exchange date) equity returns,
+//!                                       // annualised x sqrt(trading_days_per_year)
 //!     "sortino": float|null,            // as sharpe, downside deviation
 //!     "calmar": float|null,             // cagr / max_drawdown
-//!     "win_rate": float|null,           // winning / closing fills (realised_pnl > 0)
-//!     "profit_factor": float|null       // gross realised profit / gross realised loss
+//!     "num_round_trips": int,
+//!     "win_rate": float|null,           // round trips with net_pnl > 0 / round trips
+//!     "profit_factor": float|null       // sum of winning / losing round-trip net_pnl
 //!   },
-//!   "instruments": {                    // per symbol; metrics from barter's TearSheet (Annual(252))
+//!   "instruments": {                    // per symbol; metrics from barter's TearSheet (Annual(trading_days_per_year))
 //!     "<symbol>": {
 //!       "pnl": float,                   // barter realised PnL of closed positions
 //!       "pnl_return": float|null, "sharpe": float|null, "sortino": float|null,
@@ -50,6 +52,9 @@
 //!   "rejected": [ { "time_ms": int, "id": str|null, "symbol": str, "side": "buy"|"sell"|null,
 //!                   "qty": float, "reason": str } ],
 //!   "equity_curve": [[time_ms, equity], ...],  // one point per bar timestamp >= start_ms
+//!   "round_trips": [ { "symbol", "side": "long"|"short", "product", "entry_time_ms",
+//!                      "exit_time_ms", "qty", "entry_price", "exit_price", "gross_pnl",
+//!                      "costs", "net_pnl", "return_pct" } ],   // closed trips only
 //!   "final_positions": { "<symbol>": float },
 //!   "positions": { "<symbol>": Position }      // final position details
 //! }
@@ -64,9 +69,11 @@ use crate::{
     config::BacktestConfig,
     model::{ActionSide, CostBreakdown, FillReason, OrderView, PositionView, Product},
 };
-use barter::statistic::{summary::TradingSummary, time::Annual252};
+use barter::statistic::{summary::TradingSummary, time::TimeInterval};
+use chrono::TimeDelta;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::collections::BTreeMap;
 
 /// Complete result of one backtest. See the [module docs](self) for the JSON schema.
@@ -86,6 +93,7 @@ pub struct BacktestReport {
     pub orders: Vec<OrderView>,
     pub rejected: Vec<RejectedRecord>,
     pub equity_curve: Vec<(i64, f64)>,
+    pub round_trips: Vec<RoundTrip>,
     pub final_positions: BTreeMap<String, f64>,
     pub positions: BTreeMap<String, PositionView>,
 }
@@ -115,6 +123,7 @@ pub struct SummaryMetrics {
     pub sharpe: Option<f64>,
     pub sortino: Option<f64>,
     pub calmar: Option<f64>,
+    pub num_round_trips: usize,
     pub win_rate: Option<f64>,
     pub profit_factor: Option<f64>,
 }
@@ -180,7 +189,134 @@ fn f64_of(value: Decimal) -> f64 {
 }
 
 const MS_PER_DAY: i64 = 86_400_000;
-const TRADING_DAYS: f64 = 252.0;
+
+/// barter summary interval of `days` trading days (`trading_days_per_year`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TradingYear(pub u32);
+
+impl TimeInterval for TradingYear {
+    fn name(&self) -> SmolStr {
+        SmolStr::new(format!("Annual({})", self.0))
+    }
+
+    fn interval(&self) -> TimeDelta {
+        TimeDelta::days(i64::from(self.0))
+    }
+}
+
+/// A closed position cycle: from flat (or a flip) back to flat (or the next flip).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoundTrip {
+    pub symbol: String,
+    /// `long` or `short`.
+    pub side: String,
+    pub product: Product,
+    pub entry_time_ms: i64,
+    pub exit_time_ms: i64,
+    /// Total quantity opened (= closed).
+    pub qty: f64,
+    pub entry_price: f64,
+    pub exit_price: f64,
+    /// Realised PnL before costs.
+    pub gross_pnl: f64,
+    /// Costs of the trip's fills (a flipping fill's costs are split pro rata by quantity).
+    pub costs: f64,
+    pub net_pnl: f64,
+    /// `net_pnl / (qty x entry_price)`.
+    pub return_pct: f64,
+}
+
+#[derive(Debug, Clone)]
+struct OpenTrip {
+    trip: RoundTrip,
+    entry_value: f64,
+    exit_value: f64,
+}
+
+/// Pair fills into round trips per symbol (partial exits accumulate; flips close one trip and
+/// open the next). Trips still open at the end are not included.
+pub fn round_trips(fills: &[crate::model::FillEvent]) -> Vec<RoundTrip> {
+    let mut position: std::collections::HashMap<&str, (f64, Option<OpenTrip>)> =
+        std::collections::HashMap::new();
+    let mut done = Vec::new();
+    let open = |fill: &crate::model::FillEvent, qty: f64, costs: f64| OpenTrip {
+        trip: RoundTrip {
+            symbol: fill.symbol.clone(),
+            side: if fill.side == ActionSide::Buy {
+                "long"
+            } else {
+                "short"
+            }
+            .into(),
+            product: fill.product,
+            entry_time_ms: fill.time_ms,
+            exit_time_ms: fill.time_ms,
+            qty,
+            entry_price: fill.price,
+            exit_price: 0.0,
+            gross_pnl: 0.0,
+            costs,
+            net_pnl: 0.0,
+            return_pct: 0.0,
+        },
+        entry_value: qty * fill.price,
+        exit_value: 0.0,
+    };
+    let finish = |mut open: OpenTrip, time_ms: i64| {
+        let trip = &mut open.trip;
+        trip.exit_time_ms = time_ms;
+        trip.entry_price = open.entry_value / trip.qty;
+        trip.exit_price = open.exit_value / trip.qty;
+        trip.net_pnl = trip.gross_pnl - trip.costs;
+        trip.return_pct = if open.entry_value > 0.0 {
+            trip.net_pnl / open.entry_value
+        } else {
+            0.0
+        };
+        open.trip
+    };
+
+    for fill in fills {
+        let (qty, trip) = position.entry(fill.symbol.as_str()).or_insert((0.0, None));
+        let delta = fill.side.sign() * fill.qty;
+        let flat = qty.abs() <= 1e-9;
+        if flat || qty.signum() == delta.signum() {
+            match trip {
+                Some(open) if !flat => {
+                    open.trip.qty += fill.qty;
+                    open.entry_value += fill.qty * fill.price;
+                    open.trip.costs += fill.costs.total;
+                }
+                _ => *trip = Some(open(fill, fill.qty, fill.costs.total)),
+            }
+            *qty += delta;
+            continue;
+        }
+
+        let closing = fill.qty.min(qty.abs());
+        let share = closing / fill.qty;
+        if let Some(open) = trip.as_mut() {
+            open.exit_value += closing * fill.price;
+            open.trip.gross_pnl += fill.realised_pnl;
+            open.trip.costs += fill.costs.total * share;
+        }
+        *qty += delta;
+        if qty.abs() <= 1e-9 * fill.qty.max(1.0) {
+            *qty = 0.0;
+            done.extend(trip.take().map(|open| finish(open, fill.time_ms)));
+        } else if qty.signum() == delta.signum() {
+            // Flipped: close the old trip, open the remainder as a new one
+            done.extend(trip.take().map(|open| finish(open, fill.time_ms)));
+            *trip = Some(open(
+                fill,
+                fill.qty - closing,
+                fill.costs.total * (1.0 - share),
+            ));
+        }
+    }
+    done.sort_by_key(|trip| trip.exit_time_ms);
+    done
+}
 
 /// Portfolio statistics derived from an equity curve.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -195,6 +331,8 @@ pub(crate) fn equity_stats(
     curve: &[(i64, f64)],
     initial_cash: f64,
     risk_free_return: f64,
+    trading_days: f64,
+    utc_offset_ms: i64,
 ) -> EquityStats {
     // Max drawdown over every point, starting from the initial cash
     let mut peak = initial_cash;
@@ -210,7 +348,8 @@ pub(crate) fn equity_stats(
     let mut daily: Vec<f64> = Vec::new();
     let mut last_day = None;
     for &(time_ms, equity) in curve {
-        let day = time_ms.div_euclid(MS_PER_DAY);
+        // Exchange-local trading date
+        let day = (time_ms + utc_offset_ms).div_euclid(MS_PER_DAY);
         if last_day == Some(day) {
             *daily.last_mut().expect("non-empty when last_day is set") = equity;
         } else {
@@ -224,7 +363,7 @@ pub(crate) fn equity_stats(
         .map(|pair| pair[1] / pair[0] - 1.0)
         .collect::<Vec<_>>();
 
-    let risk_free_daily = risk_free_return / TRADING_DAYS;
+    let risk_free_daily = risk_free_return / trading_days;
     let (sharpe, sortino) = if returns.len() >= 2 {
         let n = returns.len() as f64;
         let mean = returns.iter().sum::<f64>() / n;
@@ -236,7 +375,7 @@ pub(crate) fn equity_stats(
             / n)
             .sqrt();
         let excess = mean - risk_free_daily;
-        let annualise = TRADING_DAYS.sqrt();
+        let annualise = trading_days.sqrt();
         (
             (variance > 0.0).then(|| excess / variance.sqrt() * annualise),
             (downside > 0.0).then(|| excess / downside * annualise),
@@ -272,7 +411,8 @@ pub(crate) struct ReportInputs<'a> {
     pub schedule: &'a [(i64, usize)],
     pub book: &'a Book,
     pub bars_decided: usize,
-    pub trading_summary: &'a TradingSummary<Annual252>,
+    pub trading_summary: &'a TradingSummary<TradingYear>,
+    pub utc_offset_ms: i64,
 }
 
 pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
@@ -284,6 +424,7 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         book,
         bars_decided,
         trading_summary,
+        utc_offset_ms,
     } = inputs;
     let symbols = &book.config().symbols;
 
@@ -377,6 +518,8 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         &book.equity_curve,
         config.initial_cash,
         config.risk_free_return,
+        f64::from(config.trading_days_per_year),
+        utc_offset_ms,
     );
 
     let closing = trades
@@ -384,9 +527,12 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         .map(|trade| trade.realised_pnl)
         .filter(|pnl| *pnl != 0.0)
         .collect::<Vec<_>>();
-    let gross_profit = closing.iter().filter(|pnl| **pnl > 0.0).sum::<f64>();
-    let gross_loss = -closing.iter().filter(|pnl| **pnl < 0.0).sum::<f64>();
-    let wins = closing.iter().filter(|pnl| **pnl > 0.0).count();
+    // Win rate / profit factor over round trips, net of costs
+    let round_trips = round_trips(&book.fills);
+    let net = round_trips.iter().map(|t| t.net_pnl).collect::<Vec<_>>();
+    let gross_profit = net.iter().filter(|pnl| **pnl > 0.0).sum::<f64>();
+    let gross_loss = -net.iter().filter(|pnl| **pnl < 0.0).sum::<f64>();
+    let wins = net.iter().filter(|pnl| **pnl > 0.0).count();
 
     let summary = SummaryMetrics {
         initial_cash: config.initial_cash,
@@ -413,7 +559,8 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
             .cagr
             .filter(|_| stats.max_drawdown > 0.0)
             .map(|cagr| cagr / stats.max_drawdown),
-        win_rate: (!closing.is_empty()).then(|| wins as f64 / closing.len() as f64),
+        num_round_trips: round_trips.len(),
+        win_rate: (!net.is_empty()).then(|| wins as f64 / net.len() as f64),
         profit_factor: (gross_loss > 0.0).then(|| gross_profit / gross_loss),
     };
 
@@ -438,6 +585,7 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         orders: book.orders.iter().map(|order| order.view()).collect(),
         rejected,
         equity_curve: book.equity_curve.clone(),
+        round_trips,
         final_positions,
         positions,
     }
@@ -451,7 +599,7 @@ mod tests {
     fn equity_stats_drawdown_and_ratios() {
         let day = MS_PER_DAY;
         let curve = [(0, 100.0), (day, 110.0), (2 * day, 99.0), (3 * day, 120.0)];
-        let stats = equity_stats(&curve, 100.0, 0.0);
+        let stats = equity_stats(&curve, 100.0, 0.0, 250.0, 0);
         assert!((stats.max_drawdown - 0.1).abs() < 1e-12);
         assert!(stats.sharpe.is_some());
         assert!(stats.sortino.is_some());
@@ -464,6 +612,8 @@ mod tests {
             &[(0, 100.0), (MS_PER_DAY, 100.0), (2 * MS_PER_DAY, 100.0)],
             100.0,
             0.0,
+            250.0,
+            0,
         );
         assert_eq!(stats.max_drawdown, 0.0);
         assert_eq!(stats.sharpe, None);

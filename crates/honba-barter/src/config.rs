@@ -23,6 +23,7 @@ use std::collections::BTreeMap;
 /// | `costs`            | object    | `null`      | [`CostsConfig`]; `null` = flat `fees_percent`.            |
 /// | `instruments`      | object    | `{}`        | Per-symbol [`InstrumentMeta`].                            |
 /// | `session`          | object    | `null`      | [`SessionConfig`]; `null` = always open.                  |
+/// | `trading_days_per_year` | int  | `250`       | Annualisation factor for sharpe / sortino / tear sheets.  |
 /// | `liquidate_at_end` | bool      | `false`     | Close all positions at the final bar's close.             |
 /// | `margin`           | object    | 1x / 100%   | [`MarginConfig`]: `mis_leverage`, `nrml_margin_pct`, `short_margin_pct`. |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -40,6 +41,8 @@ pub struct BacktestConfig {
     /// tick validation.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub instruments: BTreeMap<String, InstrumentMeta>,
+    /// Annualisation for sharpe / sortino and barter tear sheets (NSE: ~250 sessions).
+    pub trading_days_per_year: u32,
     /// Close every open position at the final bar's close (reason `liquidate_end`,
     /// whatever the fill model) and cancel working orders (`end_of_data`).
     pub liquidate_at_end: bool,
@@ -80,6 +83,7 @@ impl Default for BacktestConfig {
             session: None,
             margin: MarginConfig::default(),
             liquidate_at_end: false,
+            trading_days_per_year: 250,
             instruments: BTreeMap::new(),
             start_ms: None,
             fill_model: FillModel::Close,

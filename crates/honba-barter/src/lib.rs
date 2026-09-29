@@ -130,5 +130,8 @@ pub use model::{
     ModifyRequest, OrderRequest, OrderRole, OrderStatus, OrderType, OrderView, PositionView,
     Product, Segment, SessionView, TimeInForce, TrailMode, TrailSpec,
 };
-pub use report::{BacktestReport, InstrumentMetrics, SummaryMetrics, TradeRecord};
+pub use report::{
+    round_trips, BacktestReport, InstrumentMetrics, RoundTrip, SummaryMetrics, TradeRecord,
+    TradingYear,
+};
 pub use strategy::{Decider, DeciderError, DeciderStrategy, HonbaEngineState};

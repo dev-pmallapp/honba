@@ -28,8 +28,9 @@ class EngineCapabilities:
     freeze validation), ``cost:<model>``, ``fill:<model>``, ``warmup``, ``liquidate_at_end``
     (the engine flattens open positions itself at the end of the data), and the ``extra`` names
     ``margin``, ``attached_exit_same_bar``, ``slippage`` (adverse fill prices, volume-capped
-    partial fills), ``price_bands`` (circuit limits on instruments). ``check`` and
-    ``supports`` are the only consumers of the concrete fields.
+    partial fills), ``price_bands`` (circuit limits on instruments), ``freeze_split`` (native
+    freeze-quantity order splitting; without it slice orders with :func:`honba.split_order`).
+    ``check`` and ``supports`` are the only consumers of the concrete fields.
     """
 
     name: str = "engine"

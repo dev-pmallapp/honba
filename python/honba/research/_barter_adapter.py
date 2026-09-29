@@ -71,6 +71,7 @@ _FEATURE_MIN_CONTRACT = {
     "attached_exit_same_bar": 2,
     "slippage": 3,
     "price_bands": 3,
+    "freeze_split": 3,
 }
 
 
@@ -188,6 +189,8 @@ def config_to_wire(config: BacktestConfig, symbols: list[str], start_ms: int | N
             "nrml_margin_pct": float(config.margin.nrml_margin_pct),
             "short_margin_pct": float(config.margin.short_margin_pct),
         }
+    if config.freeze_policy != "reject":
+        wire["freeze_policy"] = config.freeze_policy
     if config.slippage is not None:
         wire["slippage"] = _slippage_wire(config.slippage)
     if start_ms is not None:

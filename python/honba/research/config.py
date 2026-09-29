@@ -152,7 +152,12 @@ class BacktestConfig:
     end of warm-up: bars before it feed indicators but place no orders and are not measured.
     ``timeframe`` overrides the strategy's base timeframe. ``validation`` is ``"error"``
     (raise on bad candles), ``"warn"`` (warn) or ``"off"``. ``slippage`` (a :class:`Slippage`)
-    adds adverse fill prices and a volume participation cap (partial fills).
+    adds adverse fill prices and a volume participation cap (partial fills). ``freeze_policy``
+    decides what happens to orders above an instrument's ``freeze_qty``: ``"reject"`` (reason
+    ``above_freeze_qty``) or ``"split"`` (the engine executes them as freeze-sized, lot-multiple
+    child orders; fills carry ``slice`` and every slice pays its own costs). Engines without
+    native splitting (``freeze_split`` capability) raise ``UnsupportedFeature`` for ``"split"``:
+    slice the order yourself with :func:`honba.split_order`.
     """
 
     capital: float = 1_000_000.0
@@ -174,6 +179,7 @@ class BacktestConfig:
     margin: MarginConfig = field(default_factory=MarginConfig)
     attached_exit_same_bar: bool = False
     slippage: Slippage | None = None
+    freeze_policy: Literal["reject", "split"] = "reject"
     validation: Literal["error", "warn", "off"] = "error"
     sort_candles: bool = False
 
@@ -184,6 +190,8 @@ class BacktestConfig:
             raise ValueError("trading_days_per_year must be >= 1")
         if self.warmup_bars < 0:
             raise ValueError("warmup_bars must be >= 0")
+        if self.freeze_policy not in ("reject", "split"):
+            raise ValueError(f"freeze_policy must be reject or split, got {self.freeze_policy!r}")
 
     def with_(self, **changes: object) -> BacktestConfig:
         """Copy with fields replaced."""

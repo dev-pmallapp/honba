@@ -19,7 +19,8 @@ def split_order(
     quantity evenly over the fewest slices (lots differ by at most one). ``freeze_qty`` of
     ``None`` or zero means no limit. Raises ``ValueError`` when ``qty`` is not a lot multiple or
     ``freeze_qty`` is smaller than one lot. Use it when the engine has no native order splitting
-    (see ``EngineCapabilities``).
+    (no ``freeze_split`` capability) or when the strategy wants control of the slices; engines
+    with native splitting do it for ``BacktestConfig(freeze_policy="split")``.
     """
     if not lot_size > 0:
         raise ValueError("lot_size must be positive")

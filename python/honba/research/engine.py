@@ -159,6 +159,8 @@ def config_features(request: BacktestRequest) -> set[str]:
         need.add("attached_exit_same_bar")
     if cfg.slippage is not None:
         need.add("slippage")
+    if cfg.freeze_policy == "split":
+        need.add("freeze_split")
     return need
 
 

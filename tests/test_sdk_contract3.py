@@ -161,3 +161,64 @@ def test_price_bands_are_a_capability_and_simple_engine_names_them():
     assert hb.research.get_engine("barter").capabilities().supports("price_bands")
     with pytest.raises(ValueError, match="price_band_pct"):
         hb.Instrument(price_band_pct=0)
+
+
+# ------------------------------------------------------------------------------ freeze qty
+
+FUT = {"X": hb.Instrument("equity_futures", lot_size=75.0, freeze_qty=150.0)}
+
+
+class BuyLots(Recorder):
+    qty = 450
+
+    def on_bar(self, ctx):
+        if len(self.history()) == 2 and self.position.is_flat:
+            self.buy(self.qty, tag="big")
+
+
+def test_freeze_policy_reject_is_the_default_and_split_executes_slices_with_own_costs():
+    costs = hb.CostModel.india()
+    rej = run(BuyLots, flat(1000, 4), CFG.with_(instruments=FUT, costs=costs))
+    assert [r.reason for r in rej.report.rejected] == [hb.RejectReason.ABOVE_FREEZE_QTY]
+    assert rej.fills.empty
+
+    cfg = CFG.with_(instruments=FUT, costs=costs, freeze_policy="split")
+    res = run(BuyLots, flat(1000, 4), cfg)
+    assert not res.report.rejected
+    assert res.fills.qty.tolist() == [150.0, 150.0, 150.0]
+    assert res.fills.slice.tolist() == ["s1#1", "s1#2", "s1#3"]
+    assert set(res.fills.order_id) == {"s1"}
+    assert res.positions["X"].qty == 450.0
+    assert res.fills.brokerage.tolist() == [pytest.approx(20.0)] * 3  # per-slice brokerage cap
+    assert res.summary["total_fees"] == pytest.approx(res.fills.fees.sum())
+
+
+def test_freeze_split_reaches_on_fill_as_neutral_slice_key():
+    seen = {}
+
+    class Probe(BuyLots):
+        def on_start(self):
+            super().on_start()
+            seen["s"] = self
+
+    run(Probe, flat(1000, 4), CFG.with_(instruments=FUT, freeze_policy="split"))
+    assert [f.slice for f in seen["s"].fills] == ["s1#1", "s1#2", "s1#3"]
+    assert all(isinstance(f, hb.Fill) for f in seen["s"].fills)
+
+
+def test_split_order_helper_stays_the_fallback_for_engines_without_native_split():
+    cfg = CFG.with_(instruments=FUT, freeze_policy="split")
+    simple_caps_missing(cfg, BuyLots, "freeze_split")
+    assert hb.split_order(450, 150, 75) == [150.0, 150.0, 150.0]
+
+    class Manual(Recorder):
+        def on_bar(self, ctx):
+            if len(self.history()) == 2:
+                for piece in hb.split_order(450, 150, 75):
+                    self.buy(piece)
+
+    res = run(Manual, flat(1000, 4), CFG.with_(instruments=FUT))
+    assert res.fills.qty.tolist() == [150.0, 150.0, 150.0] and not res.report.rejected
+    assert hb.research.get_engine("barter").capabilities().supports("freeze_split")
+    with pytest.raises(ValueError, match="freeze_policy"):
+        hb.BacktestConfig(freeze_policy="sometimes")  # type: ignore[arg-type]

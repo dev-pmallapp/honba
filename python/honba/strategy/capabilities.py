@@ -25,8 +25,8 @@ class EngineCapabilities:
     Features are named strings: ``order:<kind>``, ``tif:<tif>``, ``product:<product>``,
     ``trail:<mode>``, ``bracket`` (attached stop_loss / take_profit), ``modify``, ``cancel``,
     ``multi_symbol``, ``session`` (hours, holidays, MIS square-off), ``instruments`` (lot / tick /
-    freeze validation), ``cost:<model>``, ``fill:<model>``, ``warmup``, ``liquidate_at_end`` (the engine flattens
-    open positions itself at the end of the data). ``check`` and
+    freeze validation), ``cost:<model>``, ``fill:<model>``, ``warmup``, ``liquidate_at_end``
+    (the engine flattens open positions itself at the end of the data). ``check`` and
     ``supports`` are the only consumers of the concrete fields.
     """
 

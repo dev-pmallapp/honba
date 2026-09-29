@@ -274,7 +274,7 @@ def test_annualisation_is_configurable_and_passed_to_the_engine():
         hb.BacktestConfig(trading_days_per_year=0)
 
 
-# ------------------------------------------------------------------------------- contract / liquidation
+# ---------------------------------------- contract / liquidation
 
 
 def _core_module():

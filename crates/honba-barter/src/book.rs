@@ -135,6 +135,8 @@ pub struct BookConfig {
     /// Exchange rules per instrument index.
     pub instruments: Vec<InstrumentMeta>,
     pub allow_short: bool,
+    /// Close every position at the final bar's close.
+    pub liquidate_at_end: bool,
     pub margin: MarginConfig,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
@@ -628,12 +630,40 @@ impl Book {
         if self.positions[instrument].product != Some(Product::MIS) || qty.abs() <= EPS {
             return None;
         }
+        let id = format!("sq-{}-{}", self.cfg.symbols[instrument], date);
+        Some(self.forced_exit(
+            instrument,
+            id,
+            OrderRole::SquareOff,
+            FillReason::SquareOff,
+            bar.close,
+            bar_index,
+            time_ms,
+        ))
+    }
+
+    /// Mandatory market exit of the whole projected position at `price` (no cash / margin /
+    /// short checks: it only reduces exposure).
+    #[allow(clippy::too_many_arguments)]
+    fn forced_exit(
+        &mut self,
+        instrument: usize,
+        id: String,
+        role: OrderRole,
+        reason: FillReason,
+        price: f64,
+        bar_index: usize,
+        time_ms: i64,
+    ) -> FillIntent {
+        let qty = self.proj_qty[instrument];
         let side = if qty > 0.0 {
             ActionSide::Sell
         } else {
             ActionSide::Buy
         };
-        let id = format!("sq-{}-{}", self.cfg.symbols[instrument], date);
+        let product = self.positions[instrument]
+            .product
+            .unwrap_or_else(|| self.default_product(instrument));
         let index = self.push_order(Order {
             id,
             instrument: Some(instrument),
@@ -646,9 +676,9 @@ impl Book {
             price: None,
             trigger: None,
             tif: TimeInForce::Day,
-            product: Product::MIS,
+            product,
             tag: None,
-            role: OrderRole::SquareOff,
+            role,
             parent: None,
             status: OrderStatus::Open,
             reason: None,
@@ -661,19 +691,50 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: bar_index,
-            first_eval_date: Some(date),
+            first_eval_date: Some(self.trading_date(time_ms)),
             created_ms: time_ms,
             updated_ms: time_ms,
         });
-        // Mandatory exit: no cash / short checks
-        Some(self.intent(
-            index,
-            qty.abs(),
-            bar.close,
-            FillReason::SquareOff,
-            time_ms,
-            bar_index,
-        ))
+        self.intent(index, qty.abs(), price, reason, time_ms, bar_index)
+    }
+
+    /// End of data (`liquidate_at_end`): cancel every working order and close every position
+    /// at its latest close.
+    pub fn liquidate_all(&mut self, bar_index: usize, time_ms: i64) -> Vec<FillIntent> {
+        self.sync_projection();
+        self.advance_open_floor();
+        let working = self
+            .orders
+            .iter()
+            .enumerate()
+            .skip(self.open_floor)
+            .filter(|(_, o)| o.is_open())
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        for index in working {
+            if self.orders[index].is_open() {
+                self.close_order(index, OrderStatus::Cancelled, "end_of_data", time_ms);
+            }
+        }
+        let open_positions = (0..self.proj_qty.len())
+            .filter(|&instrument| self.proj_qty[instrument].abs() > EPS)
+            .collect::<Vec<_>>();
+        open_positions
+            .into_iter()
+            .filter_map(|instrument| {
+                let price = self.last_close[instrument]?;
+                let id = format!("liq-{}", self.cfg.symbols[instrument]);
+                Some(self.forced_exit(
+                    instrument,
+                    id,
+                    OrderRole::Liquidation,
+                    FillReason::LiquidateEnd,
+                    price,
+                    bar_index,
+                    time_ms,
+                ))
+            })
+            .collect()
     }
 
     fn sync_projection(&mut self) {
@@ -1624,7 +1685,7 @@ impl Book {
                     self.close_order(sibling, OrderStatus::Cancelled, "oco", time_ms);
                 }
             }
-            OrderRole::SquareOff => {}
+            OrderRole::SquareOff | OrderRole::Liquidation => {}
         }
 
         let Some(instrument) = self.orders[order].instrument else {

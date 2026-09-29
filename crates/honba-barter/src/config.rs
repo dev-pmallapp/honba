@@ -23,6 +23,7 @@ use std::collections::BTreeMap;
 /// | `costs`            | object    | `null`      | [`CostsConfig`]; `null` = flat `fees_percent`.            |
 /// | `instruments`      | object    | `{}`        | Per-symbol [`InstrumentMeta`].                            |
 /// | `session`          | object    | `null`      | [`SessionConfig`]; `null` = always open.                  |
+/// | `liquidate_at_end` | bool      | `false`     | Close all positions at the final bar's close.             |
 /// | `margin`           | object    | 1x / 100%   | [`MarginConfig`]: `mis_leverage`, `nrml_margin_pct`, `short_margin_pct`. |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -39,6 +40,9 @@ pub struct BacktestConfig {
     /// tick validation.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub instruments: BTreeMap<String, InstrumentMeta>,
+    /// Close every open position at the final bar's close (reason `liquidate_end`,
+    /// whatever the fill model) and cancel working orders (`end_of_data`).
+    pub liquidate_at_end: bool,
     /// Margin required to open positions (see [`MarginConfig`]).
     pub margin: MarginConfig,
     /// Trading hours / holidays / MIS square-off; `null` = always open.
@@ -75,6 +79,7 @@ impl Default for BacktestConfig {
             costs: None,
             session: None,
             margin: MarginConfig::default(),
+            liquidate_at_end: false,
             instruments: BTreeMap::new(),
             start_ms: None,
             fill_model: FillModel::Close,

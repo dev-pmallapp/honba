@@ -84,6 +84,8 @@ enum Phase {
     AwaitOpenFills,
     /// Waiting for fills of the decider's actions.
     AwaitDecisionFills,
+    /// Final bar with `liquidate_at_end`: waiting for the liquidation fills.
+    AwaitLiquidation,
     Done,
 }
 
@@ -341,6 +343,20 @@ impl AlgoStrategy for DeciderStrategy {
                     }
                 }
                 Phase::AwaitDecisionFills => {
+                    if !self.fills_settled(state, run) {
+                        break;
+                    }
+                    let last_bar = run.next_bar + 1 == self.config.schedule.len();
+                    if last_bar && run.book.config().liquidate_at_end {
+                        let time_ms = self.config.schedule[run.next_bar].0;
+                        let intents = run.book.liquidate_all(run.next_bar, time_ms);
+                        requests.extend(self.to_requests(state, &mut run.book, intents));
+                        run.phase = Phase::AwaitLiquidation;
+                        continue;
+                    }
+                    run.phase = Phase::AwaitLiquidation;
+                }
+                Phase::AwaitLiquidation => {
                     if !self.fills_settled(state, run) {
                         break;
                     }

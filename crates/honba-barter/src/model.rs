@@ -427,6 +427,8 @@ pub enum FillReason {
     TakeProfit,
     TrailingStop,
     SquareOff,
+    /// `liquidate_at_end` exit at the final bar's close.
+    LiquidateEnd,
 }
 
 /// A fill.
@@ -518,6 +520,8 @@ pub enum OrderRole {
     StopLoss,
     TakeProfit,
     SquareOff,
+    /// `liquidate_at_end` exit.
+    Liquidation,
 }
 
 /// An order as exposed in `open_orders` and the report's `orders`.

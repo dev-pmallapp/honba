@@ -329,6 +329,7 @@ fn setup_run(
             .collect(),
         allow_short: prepared.config.allow_short,
         margin: prepared.config.margin,
+        liquidate_at_end: prepared.config.liquidate_at_end,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),
         square_off_at: prepared
             .bars

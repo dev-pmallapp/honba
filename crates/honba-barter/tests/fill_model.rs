@@ -107,3 +107,49 @@ fn warmup_bars_feed_history_but_not_orders_or_metrics() {
     assert_eq!(report.equity_curve[0].0, START_MS + 3 * DAY_MS);
     assert_eq!(report.summary.num_rejected, 3);
 }
+
+#[test]
+fn liquidate_at_end_closes_positions_under_both_fill_models() {
+    for fill_model in [FillModel::Close, FillModel::NextOpen] {
+        let bars = daily(&[
+            (100.0, 100.0, 100.0, 100.0),
+            (101.0, 101.0, 101.0, 101.0),
+            (102.0, 102.0, 102.0, 102.0),
+            (103.0, 104.0, 102.0, 103.5),
+        ]);
+        let cfg = BacktestConfig {
+            fill_model,
+            liquidate_at_end: true,
+            ..config(&["SBIN"])
+        };
+        let (report, _) = run(
+            cfg,
+            "SBIN",
+            bars,
+            [
+                (1, vec![Action::buy("SBIN", 10.0)]),
+                // a resting order and an order placed on the final bar are cancelled
+                (
+                    2,
+                    vec![OrderRequest::market("SBIN", ActionSide::Buy, 1.0)
+                        .limit(50.0)
+                        .with_id("rest")
+                        .into()],
+                ),
+                (3, vec![Action::buy("SBIN", 1.0)]),
+            ],
+        );
+        let last = report.trades.last().unwrap();
+        assert_eq!(
+            (last.reason, last.side, last.price),
+            (FillReason::LiquidateEnd, ActionSide::Sell, 103.5),
+            "{fill_model:?}"
+        );
+        assert_eq!(report.final_positions["SBIN"], 0.0);
+        assert!(report.orders.iter().all(|o| o.status != OrderStatus::Open));
+        let rest = report.orders.iter().find(|o| o.id == "rest").unwrap();
+        assert_eq!(rest.reason.as_deref(), Some("end_of_data"));
+        assert_eq!(report.equity_curve.last().unwrap().0, START_MS + 3 * DAY_MS);
+        assert_close(report.summary.final_equity, report.summary.final_cash);
+    }
+}

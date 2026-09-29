@@ -96,6 +96,7 @@ class ReportSummary:
     calmar: float | None = None
     win_rate: float | None = None
     profit_factor: float | None = None
+    unsettled_cash: float = 0.0  # CNC sale proceeds still unsettled at the end (T+1)
 
     def as_dict(self) -> dict[str, Any]:
         """Flat dict (``costs`` as a dict)."""
@@ -159,6 +160,8 @@ def config_features(request: BacktestRequest) -> set[str]:
         need.add("attached_exit_same_bar")
     if cfg.slippage is not None:
         need.add("slippage")
+    if cfg.settlement is not None and cfg.settlement.cnc != "T+0":
+        need.add("settlement")
     if cfg.freeze_policy == "split":
         need.add("freeze_split")
     return need

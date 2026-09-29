@@ -258,8 +258,19 @@ class Strategy(ABC):
 
     @property
     def cash(self) -> float:
-        """Available cash."""
+        """Cash, including unsettled sale proceeds (see :attr:`available_cash`)."""
         return self.ctx.cash
+
+    @property
+    def unsettled_cash(self) -> float:
+        """CNC sale proceeds awaiting T+1 settlement (part of ``cash``; 0 without settlement)."""
+        return self.ctx.unsettled_cash
+
+    @property
+    def available_cash(self) -> float:
+        """Cash that new buys can spend: ``cash`` minus unsettled proceeds not yet creditable."""
+        avail = self.ctx.available_cash
+        return self.ctx.cash if avail is None else avail
 
     @property
     def equity(self) -> float:

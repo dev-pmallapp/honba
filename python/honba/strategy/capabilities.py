@@ -30,7 +30,8 @@ class EngineCapabilities:
     ``margin``, ``attached_exit_same_bar``, ``slippage`` (adverse fill prices, volume-capped
     partial fills), ``price_bands`` (circuit limits on instruments), ``freeze_split`` (native
     freeze-quantity order splitting; without it slice orders with :func:`honba.split_order`),
-    ``partial_exits`` (lists of stop-loss / take-profit legs, ``stop_update`` events).
+    ``partial_exits`` (lists of stop-loss / take-profit legs, ``stop_update`` events),
+    ``settlement`` (T+1 delivery settlement: ``unsettled_cash``, ``Position.qty_settled``).
     ``check`` and ``supports`` are the only consumers of the concrete fields.
     """
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from honba.strategy.actions import PlaceOrder
 from honba.strategy.types import StopUpdate
-from sdk_helpers import daily, flat
+from sdk_helpers import daily, flat, intraday
 
 import honba as hb
 
@@ -398,3 +398,140 @@ def test_partial_exits_are_a_capability_and_simple_engine_names_it():
         hb.backtest(Simple, {"X": daily(flat(100, 4))}, CFG, engine="simple")
     assert "partial_exits" in err.value.missing
     assert hb.research.get_engine("barter").capabilities().supports("partial_exits")
+
+
+# ------------------------------------------------------------------------------ settlement
+
+
+def _intraday_flat(days: int = 2, price: float = 100.0):
+    frame = intraday(days, 5)
+    for col in ("open", "high", "low", "close"):
+        frame[col] = price
+    return frame
+
+
+class SellAndRebuy(Recorder):
+    """Day 1: buy X (bar 3), then rotate X -> Y on bar 12 with the sale proceeds."""
+
+    def on_start(self):
+        super().on_start()
+        self.snap = {}
+
+    def on_bar(self, ctx):
+        n = len(self.history("X"))
+        settled = ctx.positions.get("X", hb.Position()).qty_settled
+        self.snap[n] = {
+            "cash": ctx.cash,
+            "unsettled": ctx.unsettled_cash,
+            "available": ctx.available_cash,
+            "settled": settled,
+            "strategy_available": self.available_cash,
+        }
+        if n == 3:
+            self.buy(100, "X")
+        if n == 12:
+            self.sell(100, "X")
+            self.buy(100, "Y", tag="rotate")
+
+
+def _rotate(credit, cnc="T+1"):
+    strat = {}
+
+    class Probe(SellAndRebuy):
+        def on_start(self):
+            super().on_start()
+            strat["s"] = self
+
+    frame = _intraday_flat()
+    cfg = hb.BacktestConfig(
+        capital=10_000.0, settlement=hb.Settlement(cnc, same_day_sell_credit=credit)
+    )
+    res = hb.backtest(Probe, {"X": frame, "Y": frame.copy()}, cfg)
+    return res, strat["s"].snap
+
+
+def test_t1_sale_proceeds_do_not_fund_a_same_day_buy_without_credit():
+    res, snap = _rotate(0.0)
+    assert [(r.id, r.reason) for r in res.report.rejected] == [
+        ("s3", hb.RejectReason.INSUFFICIENT_CASH)
+    ]
+    assert res.positions["Y"].is_flat
+    assert snap[4]["settled"] == 0.0  # bought today: not a holding yet
+    same_day = snap[13]  # next bar of the sale, same trading date
+    assert (same_day["cash"], same_day["unsettled"]) == (10_000.0, 10_000.0)
+    assert same_day["available"] == same_day["strategy_available"] == 0.0
+    next_day = snap[max(snap)]  # first bar of the next date: settled
+    assert (next_day["cash"], next_day["unsettled"], next_day["available"]) == (
+        10_000.0,
+        0.0,
+        10_000.0,
+    )
+    assert res.summary["unsettled_cash"] == 0.0
+
+
+def test_t1_full_same_day_credit_lets_the_rotation_through():
+    res, snap = _rotate(1.0)
+    assert not res.report.rejected
+    assert res.positions["Y"].qty == 100.0
+    assert snap[13]["unsettled"] == 10_000.0  # still unsettled, but already spent on Y
+
+
+def test_t0_default_settles_at_once_and_settlement_is_a_capability():
+    res, _ = _rotate(0.0, cnc="T+0")
+    assert not res.report.rejected and res.positions["Y"].qty == 100.0
+    plain = hb.backtest(
+        SellAndRebuy,
+        {"X": _intraday_flat(), "Y": _intraday_flat()},
+        hb.BacktestConfig(capital=10_000.0),
+    )
+    assert plain.summary["unsettled_cash"] == 0.0
+    cfg = hb.BacktestConfig(settlement=hb.Settlement("T+1"))
+    simple_caps_missing(cfg, BuyOnBar3, "settlement")
+    assert hb.research.get_engine("barter").capabilities().supports("settlement")
+    with pytest.raises(ValueError, match="same_day_sell_credit"):
+        hb.Settlement("T+1", same_day_sell_credit=1.5)
+
+
+def test_sizer_cap_cash_uses_available_cash():
+    seen = {}
+
+    class Cap(Recorder):
+        def on_bar(self, ctx):
+            n = len(self.history("X"))
+            if n == 3:
+                self.buy(100, "X")
+            if n == 12:
+                self.sell(100, "X")
+            if n == 13:
+                seen["qty"] = self.size.by_value(10_000.0, symbol="X", cap_cash=True)
+
+    frame = _intraday_flat()
+    cfg = hb.BacktestConfig(capital=10_000.0, settlement=hb.Settlement("T+1", 0.0))
+    hb.backtest(Cap, {"X": frame}, cfg)
+    assert seen["qty"] == 0.0  # 10_000 cash but all of it unsettled
+    seen.clear()
+    cfg = hb.BacktestConfig(capital=10_000.0, settlement=hb.Settlement("T+1", 1.0))
+    hb.backtest(Cap, {"X": frame}, cfg)
+    assert seen["qty"] == 100.0
+
+
+# ------------------------------------------------------------------- older builds tolerated
+
+
+def test_contract_2_builds_are_still_accepted_but_name_the_missing_contract_3_features(
+    monkeypatch,
+):
+    from honba import _core
+    from honba.research import _barter_adapter as adapter
+
+    monkeypatch.setattr(_core, "contract_version", lambda: 2, raising=False)
+    caps = adapter.BarterEngine().capabilities()
+    assert caps.supports("margin") and caps.supports("liquidate_at_end")
+    for feature in ("slippage", "price_bands", "freeze_split", "partial_exits", "settlement"):
+        assert not caps.supports(feature)
+    cfg = CFG.with_(slippage=hb.Slippage.bps(5), settlement=hb.Settlement("T+1"))
+    with pytest.raises(hb.UnsupportedFeature) as err:
+        hb.backtest(BuyOnBar3, {"X": daily(flat(100, 4))}, cfg, engine="barter")
+    assert {"slippage", "settlement"} <= set(err.value.missing)
+    monkeypatch.undo()
+    assert adapter.BarterEngine().capabilities().supports("settlement")

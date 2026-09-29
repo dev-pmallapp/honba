@@ -9,7 +9,7 @@ from typing import Literal
 from honba.strategy.market import Instrument, TradingSession
 from honba.strategy.types import IST
 
-__all__ = ["BacktestConfig", "CostModel", "MarginConfig", "Slippage"]
+__all__ = ["BacktestConfig", "CostModel", "MarginConfig", "Settlement", "Slippage"]
 
 
 # Conservative all-in rate for the value-proportional Indian buy-side charges (STT 0.1%,
@@ -91,6 +91,27 @@ class MarginConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class Settlement:
+    """Settlement of delivery (CNC) trades: when sale proceeds and purchases become usable.
+
+    ``cnc="T+0"`` (default) settles at once. ``"T+1"``: CNC sale proceeds settle at the first bar
+    of a later trading date; until then only ``same_day_sell_credit`` (a fraction, broker
+    dependent) of them can fund new buys, the rest counts as ``unsettled_cash`` and is missing
+    from ``available_cash``. CNC purchases become holdings (``Position.qty_settled``) on the next
+    trading date; selling them earlier (BTST) is allowed.
+    """
+
+    cnc: Literal["T+0", "T+1"] = "T+0"
+    same_day_sell_credit: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.cnc not in ("T+0", "T+1"):
+            raise ValueError(f"settlement cnc must be 'T+0' or 'T+1', got {self.cnc!r}")
+        if not 0 <= self.same_day_sell_credit <= 1:
+            raise ValueError("same_day_sell_credit must be in [0, 1]")
+
+
+@dataclass(frozen=True, slots=True)
 class Slippage:
     """Adverse price movement on market-like fills and the bar-volume participation cap.
 
@@ -157,7 +178,8 @@ class BacktestConfig:
     ``above_freeze_qty``) or ``"split"`` (the engine executes them as freeze-sized, lot-multiple
     child orders; fills carry ``slice`` and every slice pays its own costs). Engines without
     native splitting (``freeze_split`` capability) raise ``UnsupportedFeature`` for ``"split"``:
-    slice the order yourself with :func:`honba.split_order`.
+    slice the order yourself with :func:`honba.split_order`. ``settlement`` (a
+    :class:`Settlement`, default ``None`` = T+0) enables T+1 delivery settlement.
     """
 
     capital: float = 1_000_000.0
@@ -180,6 +202,7 @@ class BacktestConfig:
     attached_exit_same_bar: bool = False
     slippage: Slippage | None = None
     freeze_policy: Literal["reject", "split"] = "reject"
+    settlement: Settlement | None = None
     validation: Literal["error", "warn", "off"] = "error"
     sort_candles: bool = False
 

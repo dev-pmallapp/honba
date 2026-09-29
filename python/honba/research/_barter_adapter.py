@@ -75,6 +75,7 @@ _FEATURE_MIN_CONTRACT = {
     "price_bands": 3,
     "freeze_split": 3,
     "partial_exits": 3,
+    "settlement": 3,
 }
 
 
@@ -206,6 +207,11 @@ def config_to_wire(config: BacktestConfig, symbols: list[str], start_ms: int | N
             "nrml_margin_pct": float(config.margin.nrml_margin_pct),
             "short_margin_pct": float(config.margin.short_margin_pct),
         }
+    if config.settlement is not None:
+        wire["settlement"] = {
+            "cnc": config.settlement.cnc,
+            "same_day_sell_credit": float(config.settlement.same_day_sell_credit),
+        }
     if config.freeze_policy != "reject":
         wire["freeze_policy"] = config.freeze_policy
     if config.slippage is not None:
@@ -312,6 +318,7 @@ def _position(raw: dict[str, Any] | float | None) -> Position:
         float(raw.get("realised_pnl", 0.0)),
         float(raw.get("unrealised_pnl", 0.0)),
         float(raw.get("pnl", 0.0)),
+        raw.get("qty_settled"),
     )
 
 
@@ -397,6 +404,8 @@ def ctx_from_wire(raw: dict[str, Any]) -> BarContext:
             str(session.get("date", "")),
             session.get("minutes_to_close"),
         ),
+        float(raw.get("unsettled_cash", 0.0)) + 0.0,  # + 0.0: no negative zero
+        raw.get("available_cash"),
     )
 
 
@@ -439,6 +448,7 @@ def report_from_wire(raw: dict[str, Any]) -> BacktestReport:
         calmar=s.get("calmar"),
         win_rate=s.get("win_rate"),
         profit_factor=s.get("profit_factor"),
+        unsettled_cash=float(s.get("unsettled_cash", 0.0)) + 0.0,
     )
     return BacktestReport(
         summary=summary,

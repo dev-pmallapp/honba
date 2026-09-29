@@ -235,7 +235,11 @@ class Leg:
 
 @dataclass(frozen=True, slots=True)
 class Position:
-    """Position in one symbol (``qty`` is signed: positive long, negative short)."""
+    """Position in one symbol (``qty`` is signed: positive long, negative short).
+
+    ``qty_settled`` is the delivered (holdings) part of a CNC long: with T+1 settlement a CNC
+    purchase only counts from the next trading date (T+0 engines: the whole long quantity).
+    """
 
     qty: float = 0.0
     avg_price: float = 0.0
@@ -243,6 +247,11 @@ class Position:
     realised_pnl: float = 0.0
     unrealised_pnl: float = 0.0
     pnl: float = 0.0
+    qty_settled: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.qty_settled is None:  # engines without settlement: the whole long is delivered
+            object.__setattr__(self, "qty_settled", max(self.qty, 0.0))
 
     @property
     def is_long(self) -> bool:
@@ -478,6 +487,10 @@ class BarContext:
     its older bar; check ``bar.time_ms == ctx.time_ms``). ``events`` are the fills, cancels,
     rejects and stop moves (:class:`TrailUpdate`, :class:`StopUpdate`) since the previous bar,
     in order.
+
+    ``cash`` includes CNC sale proceeds that have not settled yet (T+1): ``unsettled_cash`` is
+    that amount and ``available_cash`` what new buys can spend (``cash`` minus the unsettled
+    proceeds beyond ``Settlement.same_day_sell_credit``); without settlement it equals ``cash``.
     """
 
     time_ms: int
@@ -489,6 +502,12 @@ class BarContext:
     open_orders: tuple[Order, ...]
     events: tuple[Event, ...]
     session: SessionState
+    unsettled_cash: float = 0.0
+    available_cash: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.available_cash is None:  # no settlement: all cash is usable
+            object.__setattr__(self, "available_cash", self.cash)
 
     @property
     def time(self) -> datetime:

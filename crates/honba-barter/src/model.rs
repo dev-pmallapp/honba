@@ -450,6 +450,9 @@ pub struct FillEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     pub reason: FillReason,
+    /// Quantity of the order still working after this fill (0 when the order is done).
+    #[serde(default)]
+    pub remaining_qty: f64,
 }
 
 /// Something that happened to an order since the previous `on_bar`.
@@ -506,6 +509,8 @@ pub enum OrderStatus {
     Open,
     /// Attached exit waiting for its entry to fill.
     Pending,
+    /// Open with part of its quantity filled (reported only; internally still open).
+    PartiallyFilled,
     Filled,
     Cancelled,
     Expired,

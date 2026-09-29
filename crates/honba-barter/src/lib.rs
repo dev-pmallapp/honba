@@ -10,11 +10,13 @@
 //!
 //! # `_core.run_backtest(config_json, candles, on_bar) -> report_json` contract
 //!
-//! Contract version [`CONTRACT_VERSION`] = **2** (`_core.contract_version()`; also
+//! Contract version [`CONTRACT_VERSION`] = **3** (`_core.contract_version()`; also
 //! `report.contract_version`). History: 1 = orders / brackets / trailing / sessions / costs;
 //! 2 = `margin`, `liquidate_at_end`, `trading_days_per_year`, `attached_exit_same_bar`,
 //! `report.round_trips` (net win rate / profit factor), reasons `no_bar`, `no_position`,
-//! `insufficient_margin`, `end_of_data`, fill reason `liquidate_end`, role `liquidation`.
+//! `insufficient_margin`, `end_of_data`, fill reason `liquidate_end`, role `liquidation`;
+//! 3 = `slippage` (bps / volume share, `max_volume_share` partial fills: order status
+//! `partially_filled`, fill `remaining_qty`).
 //!
 //! `candles`: `{symbol: [(time_ms, open, high, low, close, volume), ...]}`. `on_bar(ctx)` is
 //! called once per distinct bar timestamp and returns a list of actions (or `None`). Every key
@@ -38,6 +40,8 @@
 //!   "liquidate_at_end": false,       // close everything at the final bar's close
 //!   "attached_exit_same_bar": false, // attached exits may trigger on the entry's bar
 //!   "margin": {"mis_leverage": 1.0, "nrml_margin_pct": 100.0, "short_margin_pct": 100.0},
+//!   "slippage": {"model": "bps" | "volume_share", "bps": 0.0, "impact_bps": 0.0,
+//!                "max_volume_share": null},   // see config::SlippageConfig
 //!   "costs": {"model": "flat" | "india",
 //!             "brokerage": {"per_order": 20, "pct": 0.03, "cnc_free": true, "dp_per_sell": 0},
 //!             "table": "2024-10-01"},
@@ -102,15 +106,16 @@
 //!  "events": [                       // since the previous on_bar, in order
 //!    {"type": "fill", "time_ms", "id", "fill_id", "symbol", "side", "qty", "price", "value",
 //!     "costs": Costs, "realised_pnl", "product", "tag", "reason": "signal" | "limit" | "stop" |
-//!     "stop_loss" | "take_profit" | "trailing_stop" | "square_off" | "liquidate_end"},
+//!     "stop_loss" | "take_profit" | "trailing_stop" | "square_off" | "liquidate_end",
+//!     "remaining_qty"},               // order quantity still working after this fill
 //!    {"type": "cancel" | "expire", "time_ms", "id", "symbol", "reason"},
 //!    {"type": "reject", "time_ms", "id", "symbol", "side", "qty", "reason"},
 //!    {"type": "trail_update", "time_ms", "id", "symbol", "old_stop", "new_stop"}],
 //!  "session": {"is_open": bool, "date": "YYYY-MM-DD", "minutes_to_close": int|null}}
 //! Order = {"id", "symbol", "side", "kind", "qty", "filled_qty", "avg_fill_price", "price",
 //!          "trigger", "tif", "product", "tag", "role": "entry" | "stop_loss" | "take_profit" |
-//!          "square_off" | "liquidation", "parent", "status": "open" | "pending" | "filled" | "cancelled" |
-//!          "expired" | "rejected", "reason", "stop_loss", "take_profit", "trail",
+//!          "square_off" | "liquidation", "parent", "status": "open" | "pending" |
+//!          "partially_filled" | "filled" | "cancelled" | "expired" | "rejected", "reason", "stop_loss", "take_profit", "trail",
 //!          "trail_stop", "created_ms", "updated_ms"}
 //! Costs = {"brokerage", "stt", "exchange_fee", "sebi_fee", "stamp_duty", "gst", "dp", "total"}
 //! ```
@@ -126,9 +131,14 @@
 //! square off MIS positions, apply the fills, call `on_bar`, execute what is immediately
 //! executable (close fill model) and record the equity point. Every fill is executed through
 //! barter's mock exchange as a market order at the computed price.
+//!
+//! Partial fills: with `slippage.max_volume_share` an order may fill over several bars; it is
+//! `partially_filled` while working, a triggered stop's rest executes at later opens, IOC
+//! remainders expire, DAY remainders expire with their session. Attached exits cover the
+//! filled quantity of their entry.
 
 /// Version of the `_core.run_backtest` JSON contract (config, actions, ctx, report).
-pub const CONTRACT_VERSION: u32 = 2;
+pub const CONTRACT_VERSION: u32 = 3;
 
 pub mod backtest;
 pub mod book;
@@ -143,7 +153,7 @@ pub mod strategy;
 pub use backtest::{run_backtest, run_sweep, BacktestError};
 pub use config::{
     BacktestConfig, BrokerageConfig, CostModel, CostsConfig, FillModel, InstrumentMeta,
-    IntrabarPriority, MarginConfig, SessionConfig,
+    IntrabarPriority, MarginConfig, SessionConfig, SlippageConfig, SlippageModel,
 };
 pub use data::{Bar, BarGate, CandleData, CandleMarketData};
 pub use ledger::Ledger;

@@ -20,7 +20,7 @@
 //! decision bar's close fill immediately at that close.
 
 use crate::{
-    config::{InstrumentMeta, MarginConfig},
+    config::{InstrumentMeta, MarginConfig, SlippageConfig},
     data::Bar,
     model::{
         Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
@@ -148,6 +148,8 @@ pub struct BookConfig {
     /// Attached exits may trigger on the bar their entry filled in (stop first).
     pub attached_exit_same_bar: bool,
     pub margin: MarginConfig,
+    /// Slippage and volume participation cap.
+    pub slippage: Option<SlippageConfig>,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
     /// Per instrument: timestamps of its MIS square-off bars (see
@@ -277,7 +279,10 @@ impl Order {
             tag: self.tag.clone(),
             role: self.role,
             parent: self.parent.clone(),
-            status: self.status,
+            status: match self.status {
+                OrderStatus::Open if self.filled_qty > 0.0 => OrderStatus::PartiallyFilled,
+                status => status,
+            },
             reason: self.reason.clone(),
             stop_loss: self.stop_loss,
             take_profit: self.take_profit,
@@ -302,6 +307,8 @@ pub struct FillIntent {
     pub costs: CostBreakdown,
     pub time_ms: i64,
     pub bar_index: usize,
+    /// Quantity was cut by the volume cap: the order keeps working for the rest.
+    pub capped: bool,
 }
 
 /// A request honba refused (or an order that failed at fill time).
@@ -364,6 +371,8 @@ fn match_order(order: &Order, bar: &Bar) -> Match {
             .map_or(Match::None, |price| {
                 Match::Fill(price, order.limit_reason())
             }),
+        // A stop that already triggered (partially filled) works as a market order
+        OrderType::Stop if order.triggered => Match::Fill(bar.open, order.stop_reason()),
         OrderType::Stop => order
             .trigger
             .and_then(|trigger| stop_touch(side, trigger, bar))
@@ -449,6 +458,10 @@ pub struct Book {
     pub last_close: Vec<Option<f64>>,
     /// Instruments with a bar at the current timestamp.
     has_bar: Vec<bool>,
+    /// Bar of each instrument at the current timestamp.
+    cur_bar: Vec<Option<Bar>>,
+    /// Quantity filled per instrument in the current bar (volume cap).
+    volume_used: Vec<f64>,
     pub orders: Vec<Order>,
     pub fills: Vec<FillEvent>,
     pub rejections: Vec<Rejection>,
@@ -485,6 +498,8 @@ impl Book {
             positions: vec![Position::default(); n],
             last_close: vec![None; n],
             has_bar: vec![false; n],
+            cur_bar: vec![None; n],
+            volume_used: vec![0.0; n],
             proj_qty: vec![0.0; n],
             orders: Vec::new(),
             fills: Vec::new(),
@@ -708,7 +723,8 @@ impl Book {
             created_ms: time_ms,
             updated_ms: time_ms,
         });
-        self.intent(index, qty.abs(), price, reason, time_ms, bar_index)
+        let price = self.slipped(instrument, side, price, qty.abs());
+        self.intent(index, qty.abs(), price, reason, time_ms, bar_index, false)
     }
 
     /// End of data (`liquidate_at_end`): cancel every working order and close every position
@@ -775,6 +791,10 @@ impl Book {
         for (has_bar, bar) in self.has_bar.iter_mut().zip(bars) {
             *has_bar = bar.is_some();
         }
+        for (current, bar) in self.cur_bar.iter_mut().zip(bars) {
+            *current = *bar;
+        }
+        self.volume_used.fill(0.0);
         for ((close, recent), bar) in self.last_close.iter_mut().zip(&mut self.recent).zip(bars) {
             if let Some(bar) = bar {
                 *close = Some(bar.close);
@@ -806,8 +826,9 @@ impl Book {
                     o.instrument == Some(instrument)
                         && o.is_open()
                         && o.tif == TimeInForce::Day
-                        // market orders (next_open) execute at the next available open
-                        && o.kind != OrderType::Market
+                        // market orders (next_open) execute at the next available open;
+                        // remainders of partially filled ones expire like any day order
+                        && (o.kind != OrderType::Market || o.filled_qty > 0.0)
                         && o.first_eval_date
                             .is_some_and(|first| self.day_expired(first, date, time_ms))
                 })
@@ -856,16 +877,18 @@ impl Book {
 
                 match result {
                     Match::Fill(price, reason) => {
-                        if let Some(intent) =
-                            self.try_fill(index, price, reason, time_ms, bar_index)
-                        {
-                            let entry = self.orders[index].role == OrderRole::Entry;
-                            intents.push(intent);
-                            if entry && self.cfg.attached_exit_same_bar {
-                                intents.extend(
-                                    self.same_bar_exit(index, price, bar, bar_index, time_ms),
-                                );
+                        match self.try_fill(index, price, reason, time_ms, bar_index) {
+                            Some(intent) => {
+                                let entry = self.orders[index].role == OrderRole::Entry;
+                                intents.push(intent);
+                                if entry && self.cfg.attached_exit_same_bar {
+                                    intents.extend(
+                                        self.same_bar_exit(index, price, bar, bar_index, time_ms),
+                                    );
+                                }
                             }
+                            // Nothing could fill this bar (volume cap): IOC orders end here
+                            None => self.expire_ioc(index, time_ms),
                         }
                     }
                     Match::Triggered => {
@@ -1511,13 +1534,74 @@ impl Book {
                 return None;
             }
         }
-        if let Err(reason) = self.check_fill(instrument, order.side, order.product, qty, price) {
+        let mut capped = false;
+        if let Some(room) = self.volume_room(instrument, qty) {
+            if room < qty - EPS * qty.max(1.0) {
+                qty = room;
+                capped = true;
+            }
+            if qty <= EPS {
+                // Bar volume used up: the order keeps working
+                return None;
+            }
+        }
+        let order = &self.orders[index];
+        let (side, product) = (order.side, order.product);
+        let price = if matches!(order.kind, OrderType::Market | OrderType::Stop) {
+            self.slipped(instrument, side, price, qty)
+        } else {
+            price
+        };
+        if let Err(reason) = self.check_fill(instrument, side, product, qty, price) {
             self.close_order(index, OrderStatus::Rejected, reason, time_ms);
             return None;
         }
-        Some(self.intent(index, qty, price, reason, time_ms, bar_index))
+        if self.volume_capped() {
+            self.volume_used[instrument] += qty;
+        }
+        Some(self.intent(index, qty, price, reason, time_ms, bar_index, capped))
     }
 
+    fn volume_capped(&self) -> bool {
+        self.cfg
+            .slippage
+            .is_some_and(|s| s.max_volume_share.is_some())
+    }
+
+    /// Quantity the volume cap still allows in `instrument`'s current bar for an order with
+    /// `remaining` quantity (in lots, or whole units for integral orders); `None` = uncapped.
+    fn volume_room(&self, instrument: usize, remaining: f64) -> Option<f64> {
+        let share = self.cfg.slippage?.max_volume_share?;
+        let volume = self.cur_bar[instrument]?.volume;
+        if volume <= 0.0 {
+            return None;
+        }
+        let room = (share * volume - self.volume_used[instrument]).max(0.0);
+        let step = self.meta(instrument).lot_size.unwrap_or(1.0);
+        Some(if is_multiple(remaining, step) {
+            ((room / step) + 1e-9).floor() * step
+        } else {
+            room
+        })
+    }
+
+    /// `price` moved against a market-like fill of `qty` by the configured slippage (buys
+    /// up, sells down), rounded to the tick away from the market.
+    fn slipped(&self, instrument: usize, side: ActionSide, price: f64, qty: f64) -> f64 {
+        let Some(slippage) = self.cfg.slippage else {
+            return price;
+        };
+        let volume = self.cur_bar[instrument].map_or(0.0, |bar| bar.volume);
+        let bps = slippage.bps_for(qty, volume);
+        if bps.is_nan() || bps <= 0.0 {
+            return price;
+        }
+        let raw = price * (1.0 + side.sign() * bps / 10_000.0);
+        // round_stop rounds sells down and buys up: adverse for a fill
+        self.round_stop(instrument, side, raw)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn intent(
         &mut self,
         order: usize,
@@ -1526,6 +1610,7 @@ impl Book {
         reason: FillReason,
         time_ms: i64,
         bar_index: usize,
+        capped: bool,
     ) -> FillIntent {
         let (instrument, side, product) = {
             let order = &self.orders[order];
@@ -1553,6 +1638,7 @@ impl Book {
             costs,
             time_ms,
             bar_index,
+            capped,
         };
         self.pending.insert(intent.fill_id.clone(), intent.clone());
         intent
@@ -1977,7 +2063,14 @@ impl Book {
         let immediate = self.orders[index].marketable_at(close);
 
         match immediate {
-            Some(reason) => self.try_fill(index, close, reason, time_ms, bar_index),
+            Some(reason) => {
+                let intent = self.try_fill(index, close, reason, time_ms, bar_index);
+                if intent.is_none() {
+                    // Nothing fillable in this bar (volume cap): IOC orders end here
+                    self.expire_ioc(index, time_ms);
+                }
+                intent
+            }
             None if self.orders[index].tif == TimeInForce::Ioc => {
                 self.close_order(index, OrderStatus::Expired, "ioc", time_ms);
                 None
@@ -2241,10 +2334,20 @@ impl Book {
         order.filled_qty += intent.qty;
         order.filled_value += intent.qty * intent.price;
         order.updated_ms = intent.time_ms;
-        // Reduce-only orders clamped to the position are done once filled
-        if order.remaining() <= EPS * order.qty.max(1.0) || order.reduce_only {
+        // Reduce-only orders clamped to the position are done once filled (unless the volume
+        // cap cut the fill short)
+        if order.remaining() <= EPS * order.qty.max(1.0) || (order.reduce_only && !intent.capped) {
             order.status = OrderStatus::Filled;
         }
+        if order.kind == OrderType::Stop {
+            // The rest of a partially filled stop executes as a market order
+            order.triggered = true;
+        }
+        let remaining_qty = if order.status == OrderStatus::Filled {
+            0.0
+        } else {
+            order.remaining()
+        };
         let tag = order.tag.clone();
         let order_id = order.id.clone();
 
@@ -2267,10 +2370,13 @@ impl Book {
             product,
             tag,
             reason: intent.reason,
+            remaining_qty,
         };
         self.fills.push(fill.clone());
         self.events.push(Event::Fill(fill));
         self.after_fill(intent.order, intent.price, intent.bar_index, intent.time_ms);
+        // An IOC order's unfilled rest (volume cap) is cancelled once its fills are applied
+        self.expire_ioc(intent.order, intent.time_ms);
         true
     }
 

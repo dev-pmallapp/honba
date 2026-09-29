@@ -93,6 +93,7 @@ fn context_events_and_open_orders_json() {
             "qty",
             "realised_pnl",
             "reason",
+            "remaining_qty",
             "side",
             "symbol",
             "tag",

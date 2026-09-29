@@ -111,6 +111,22 @@ fn prepare(
             "margin: mis_leverage must be >= 1 and *_margin_pct in (0, 100]".into(),
         ));
     }
+    if let Some(slippage) = &config.slippage {
+        let valid = |bps: f64| bps.is_finite() && (0.0..10_000.0).contains(&bps);
+        if !(valid(slippage.bps) && valid(slippage.impact_bps)) {
+            return Err(BacktestError::Config(
+                "slippage: bps and impact_bps must be in [0, 10000)".into(),
+            ));
+        }
+        if slippage
+            .max_volume_share
+            .is_some_and(|share| !(share.is_finite() && share > 0.0 && share <= 1.0))
+        {
+            return Err(BacktestError::Config(
+                "slippage.max_volume_share must be in (0, 1]".into(),
+            ));
+        }
+    }
     for (symbol, meta) in &config.instruments {
         let positive = |value: Option<f64>| value.is_none_or(|v| v.is_finite() && v > 0.0);
         if !(positive(meta.lot_size) && positive(meta.tick_size) && positive(meta.freeze_qty)) {
@@ -333,6 +349,7 @@ fn setup_run(
             .collect(),
         allow_short: prepared.config.allow_short,
         margin: prepared.config.margin,
+        slippage: prepared.config.slippage,
         liquidate_at_end: prepared.config.liquidate_at_end,
         attached_exit_same_bar: prepared.config.attached_exit_same_bar,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),

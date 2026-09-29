@@ -19,6 +19,7 @@ from .engine import (
     register_engine,
 )
 from .metrics import Metrics, compute_metrics
+from .montecarlo import MonteCarloResult, monte_carlo_trades
 from .optimize import OptimizationResult, WalkForwardResult, optimize, walk_forward
 from .overfit import PBOResult, cscv_pbo, deflated_sharpe, dsr, pbo
 from .result import BacktestResult
@@ -36,6 +37,7 @@ __all__ = [
     "Issue",
     "MarginConfig",
     "Metrics",
+    "MonteCarloResult",
     "OptimizationResult",
     "PBOResult",
     "ReportSummary",
@@ -48,6 +50,7 @@ __all__ = [
     "deflated_sharpe",
     "dsr",
     "get_engine",
+    "monte_carlo_trades",
     "optimize",
     "pbo",
     "register_engine",

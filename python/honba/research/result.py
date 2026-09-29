@@ -14,6 +14,7 @@ from honba.strategy.types import IST, Fill, Order, Position, Reject, RoundTrip
 from .config import BacktestConfig
 from .engine import BacktestReport
 from .metrics import Metrics, compute_metrics, drawdown_series
+from .montecarlo import MonteCarloResult, monte_carlo_trades
 
 __all__ = ["BacktestResult"]
 
@@ -186,6 +187,33 @@ class BacktestResult:
     def instruments(self) -> dict[str, dict[str, Any]]:
         """Per-symbol engine metrics."""
         return dict(self.report.instruments)
+
+    def monte_carlo(
+        self,
+        n: int = 1000,
+        method: str = "shuffle",
+        *,
+        block: int | None = None,
+        ruin: float = 0.5,
+        seed: int | None = None,
+        keep_paths: bool = False,
+    ) -> MonteCarloResult:
+        """Monte Carlo over the net round-trip PnLs (see :mod:`honba.research.montecarlo`).
+
+        ``method`` is ``shuffle`` (reorder), ``resample`` (bootstrap) or ``block`` (moving-block
+        bootstrap of ``block`` trades); ``ruin`` the loss fraction of ``config.capital`` that
+        counts as ruin. Returns drawdown / return / ruin distributions and percentiles.
+        """
+        return monte_carlo_trades(
+            [t.pnl for t in self.round_trips],
+            self.config.capital,
+            n=n,
+            method=method,  # type: ignore[arg-type]
+            block=block,
+            ruin=ruin,
+            seed=seed,
+            keep_paths=keep_paths,
+        )
 
     def metric(self, name: str, default: Any = None) -> Any:
         """One value by name: SDK :attr:`metrics` first, then the engine summary."""

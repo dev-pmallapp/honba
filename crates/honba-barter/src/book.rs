@@ -1829,6 +1829,15 @@ impl Book {
             self.reject_op(time_ms, Some(modify.id), "order_closed");
             return;
         }
+        // Exits of an entry only make sense while its position is still open
+        let exits = brackets || modify.trail.is_some();
+        let in_position = order
+            .instrument
+            .is_some_and(|instrument| self.proj_qty[instrument] * order.side.sign() > EPS);
+        if exits && order.role == OrderRole::Entry && order.filled_qty > 0.0 && !in_position {
+            self.reject_op(time_ms, Some(modify.id), "no_position");
+            return;
+        }
         let qty = modify.qty.unwrap_or(order.qty);
         let price = modify.price.or(order.price);
         let trigger = modify.trigger.or(order.trigger);

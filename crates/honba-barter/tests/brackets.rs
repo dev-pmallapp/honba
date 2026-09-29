@@ -262,3 +262,32 @@ fn short_bracket_and_validation() {
     assert_eq!((exit.side, exit.price), (ActionSide::Buy, 90.0));
     assert_eq!(seen[1].positions["SBIN"].qty, 0.0);
 }
+
+#[test]
+fn modifying_exits_of_a_closed_position_is_rejected() {
+    let bars = daily(&flat(4, 100.0));
+    let (report, seen) = run(
+        config(&["SBIN"]),
+        "SBIN",
+        bars,
+        [
+            (0, vec![Action::buy("SBIN", 10.0)]), // o1, no exits
+            (1, vec![Action::sell("SBIN", 10.0)]),
+            (
+                2,
+                vec![ModifyRequest {
+                    id: "o1".into(),
+                    stop_loss: Some(90.0),
+                    ..ModifyRequest::default()
+                }
+                .into()],
+            ),
+        ],
+    );
+    assert!(seen[3].events.iter().any(|e| matches!(
+        e,
+        Event::Reject { id: Some(id), reason, .. } if id == "o1" && reason == "no_position"
+    )));
+    assert!(report.orders.iter().all(|o| o.id != "o1:sl"));
+    assert!(seen[3].open_orders.is_empty());
+}

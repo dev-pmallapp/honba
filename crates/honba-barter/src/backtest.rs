@@ -318,6 +318,17 @@ fn setup_run(
             .collect(),
         allow_short: prepared.config.allow_short,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),
+        square_off_at: prepared
+            .bars
+            .iter()
+            .map(|series| {
+                prepared
+                    .session
+                    .as_ref()
+                    .map(|session| session.square_off_bars(series))
+                    .unwrap_or_default()
+            })
+            .collect(),
         intraday: prepared
             .bars
             .iter()

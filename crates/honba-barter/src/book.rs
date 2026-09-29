@@ -137,6 +137,9 @@ pub struct BookConfig {
     pub allow_short: bool,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
+    /// Per instrument: timestamps of its MIS square-off bars (see
+    /// [`Session::square_off_bars`]).
+    pub square_off_at: Vec<std::collections::HashSet<i64>>,
     /// Per instrument: more than one bar per trading date (intraday data).
     pub intraday: Vec<bool>,
     /// Trading hours; `None` means always open (no square-off).
@@ -590,9 +593,14 @@ impl Book {
     ) -> Option<FillIntent> {
         let due = self
             .cfg
-            .session
-            .as_ref()
-            .is_some_and(|session| session.past_square_off(time_ms));
+            .square_off_at
+            .get(instrument)
+            .is_some_and(|due| due.contains(&time_ms))
+            || self
+                .cfg
+                .session
+                .as_ref()
+                .is_some_and(|session| session.past_square_off(time_ms));
         if !due || self.squared_off[instrument] == Some(date) {
             return None;
         }
@@ -1695,11 +1703,13 @@ impl Book {
             .product
             .or(position.product.filter(|_| reduces))
             .unwrap_or_else(|| self.default_product(instrument));
-        let past_square_off = self
-            .cfg
-            .session
-            .as_ref()
-            .is_some_and(|session| session.past_square_off(time_ms));
+        // At / after today's square-off bar (or clock time) no new MIS exposure
+        let past_square_off = self.squared_off[instrument] == Some(self.trading_date(time_ms))
+            || self
+                .cfg
+                .session
+                .as_ref()
+                .is_some_and(|session| session.past_square_off(time_ms));
         if past_square_off && product == Product::MIS && !reduces {
             self.reject_request(time_ms, &request, Some(id), "after_square_off");
             return None;

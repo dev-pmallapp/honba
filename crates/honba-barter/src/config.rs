@@ -88,8 +88,10 @@ pub struct SessionConfig {
     pub open: String,
     /// Local close time `HH:MM` (exclusive: a bar stamped at the close is outside the session).
     pub close: String,
-    /// MIS positions are closed at the close of the first bar at/after this time; new MIS
-    /// exposure is rejected after it (`after_square_off`).
+    /// MIS positions are closed (at the bar close, whatever the fill model) on the first
+    /// in-session bar whose interval covers or follows this time, or on the last in-session
+    /// bar of the date if none does (early end of data, daily bars). From that bar on, new
+    /// MIS exposure that day is rejected (`after_square_off`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mis_square_off: Option<String>,
     /// Exchange holidays `YYYY-MM-DD`.

@@ -1,6 +1,6 @@
 //! Exchange trading sessions (hours, holidays, MIS square-off time).
 
-use crate::config::SessionConfig;
+use crate::{config::SessionConfig, data::Bar};
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Weekday};
 use std::collections::HashSet;
 
@@ -106,6 +106,43 @@ impl Session {
         })
     }
 
+    /// Timestamps of the bars at which MIS positions are squared off, per trading date: the
+    /// first in-session bar whose interval covers or follows `mis_square_off` (bars are
+    /// stamped with their start; the interval is the series' smallest intraday spacing), or,
+    /// if no bar of that date gets there (early data end / daily bars), its last in-session
+    /// bar.
+    pub fn square_off_bars(&self, bars: &[Bar]) -> HashSet<i64> {
+        let Some(square_off) = self.square_off else {
+            return HashSet::new();
+        };
+        let in_session = bars
+            .iter()
+            .filter(|bar| self.is_open(bar.time_ms))
+            .map(|bar| (bar.time_ms, self.local(bar.time_ms)))
+            .collect::<Vec<_>>();
+        let step_ms = in_session
+            .windows(2)
+            .filter(|pair| pair[0].1.date() == pair[1].1.date())
+            .map(|pair| pair[1].0 - pair[0].0)
+            .filter(|step| *step > 0)
+            .min();
+
+        let mut due = HashSet::new();
+        for day in in_session.chunk_by(|a, b| a.1.date() == b.1.date()) {
+            let covering = day.iter().find(|(time_ms, local)| {
+                local.time() >= square_off
+                    || step_ms.is_some_and(|step| {
+                        (*local + chrono::TimeDelta::milliseconds(step)).time() > square_off
+                            || self.local(time_ms + step).date() != local.date()
+                    })
+            });
+            if let Some((time_ms, _)) = covering.or(day.last()) {
+                due.insert(*time_ms);
+            }
+        }
+        due
+    }
+
     /// At or after the close (on the same date).
     pub fn past_close(&self, time_ms: i64) -> bool {
         self.local(time_ms).time() >= self.close
@@ -142,5 +179,25 @@ mod tests {
         assert!(!session.past_square_off(ms("2025-10-20 15:15")));
         assert_eq!(parse_offset("+05:30").unwrap(), IST);
         assert!(parse_offset("Mars/Olympus").is_err());
+
+        let bar = |t: &str| Bar::new(ms(t), 1.0, 1.0, 1.0, 1.0, 1.0);
+        // 15m bars: the 15:15 bar covers 15:20
+        let quarter = ["2025-10-20 15:00", "2025-10-20 15:15", "2025-10-22 09:15"];
+        let due = session.square_off_bars(&quarter.map(bar));
+        assert_eq!(
+            due,
+            HashSet::from([ms("2025-10-20 15:15"), ms("2025-10-22 09:15")])
+        );
+        // Hourly bars: 15:15 covers it; data ending early: last bar of the day
+        let hourly = ["2025-10-20 13:15", "2025-10-20 14:15", "2025-10-20 15:15"];
+        assert_eq!(
+            session.square_off_bars(&hourly.map(bar)),
+            HashSet::from([ms("2025-10-20 15:15")])
+        );
+        let early = ["2025-10-20 10:00", "2025-10-20 10:05"];
+        assert_eq!(
+            session.square_off_bars(&early.map(bar)),
+            HashSet::from([ms("2025-10-20 10:05")])
+        );
     }
 }

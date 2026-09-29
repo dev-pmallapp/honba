@@ -180,7 +180,11 @@ fn mis_square_off_and_after_square_off_entries() {
 
 #[test]
 fn cash_equity_shorts_only_intraday() {
-    let bars = bars_at(&["2025-10-20 10:00", "2025-10-20 10:15"], 100.0);
+    // (the last bar of the day squares the MIS short off)
+    let bars = bars_at(
+        &["2025-10-20 10:00", "2025-10-20 10:15", "2025-10-20 10:30"],
+        100.0,
+    );
     let short = |product: Product| {
         Action::from(OrderRequest::market("SBIN", ActionSide::Sell, 5.0).product(product))
     };
@@ -243,5 +247,52 @@ fn square_off_does_not_cancel_an_exit_that_is_filling() {
         .trades
         .iter()
         .all(|t| t.reason != FillReason::SquareOff));
+    assert_eq!(report.final_positions["SBIN"], 0.0);
+}
+
+fn fifteen_minute_day(date: &str) -> Vec<String> {
+    (0..25)
+        .map(|i| {
+            let minutes = 9 * 60 + 15 + 15 * i;
+            format!("{date} {:02}:{:02}", minutes / 60, minutes % 60)
+        })
+        .collect()
+}
+
+#[test]
+fn square_off_with_bars_that_straddle_the_square_off_time() {
+    // 15m bars 09:15 .. 15:15 on two days: no bar is stamped at/after 15:20
+    let times = [
+        fifteen_minute_day("2025-10-20"),
+        fifteen_minute_day("2025-10-22"),
+    ]
+    .concat();
+    let refs = times.iter().map(String::as_str).collect::<Vec<_>>();
+    let bars = bars_at(&refs, 100.0);
+    let mis =
+        || Action::from(OrderRequest::market("SBIN", ActionSide::Buy, 10.0).product(Product::MIS));
+    let (report, seen) = run(
+        session_config(serde_json::json!({})),
+        "SBIN",
+        bars,
+        [(3, vec![mis()]), (24, vec![mis()]), (26, vec![mis()])],
+    );
+    // Squared off at the 15:15 bar (it covers 15:20), same day
+    let square = report
+        .trades
+        .iter()
+        .find(|t| t.reason == FillReason::SquareOff)
+        .expect("square-off fill");
+    assert_eq!(square.time_ms, ist("2025-10-20 15:15"));
+    assert_eq!(seen[25].positions["SBIN"].qty, 0.0, "flat overnight");
+    // A new MIS entry at the square-off bar is refused
+    assert_eq!(rejects(&seen[25].events), ["after_square_off"]);
+    // Next day MIS works again, and is squared off at end of data (last bar of the day)
+    assert_eq!(seen[27].positions["SBIN"].qty, 10.0);
+    let last = report.trades.last().unwrap();
+    assert_eq!(
+        (last.reason, last.time_ms),
+        (FillReason::SquareOff, ist("2025-10-22 15:15"))
+    );
     assert_eq!(report.final_positions["SBIN"], 0.0);
 }

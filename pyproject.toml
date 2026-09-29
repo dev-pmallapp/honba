@@ -19,18 +19,6 @@ classifiers = [
 ]
 
 dependencies = [
-    # PINNED EXACTLY, DELIBERATELY. v2 is a release-candidate line with no GA
-    # date, landing 20-40 breaking changes per ~13-day rc (rc3 removed Cython;
-    # rc4 renamed configs + changed backtest leverage defaults; rc5 deleted
-    # ForwardPrice and PortfolioStatistic.calculate_from_orders; rc6 reworks
-    # the catalog API). Never float a range against this.
-    #
-    # v1 is not a refuge: develop_v1 receives critical security backports only,
-    # for ~3 months after the v2 cutover, and no feature or parity work.
-    #
-    # To bump: read MIGRATION_V2.md, then re-run the golden backtest
-    # (docs/research/build-vs-extend.md §10, week 3) before trusting anything.
-    "nautilus-trader==2.0.0rc5",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32",
     "jinja2>=3.1",
@@ -104,34 +92,32 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 # ---------------------------------------------------------------------------
-# Architectural boundaries — enforced in CI, not by good intentions.
+# Architectural boundaries - enforced in CI, not by good intentions.
 #
-# NautilusTrader v2 breaks 20-40 things every fortnight. The cost of each bump
-# is proportional to how much of its surface we touch, so the research layer is
-# firewalled off from it entirely and speaks DataFrames instead. The Indian
-# dataset is likewise kept in our own Parquet schema, so it survives catalog
-# renames, a v3, or dropping Nautilus altogether.
+# The barter-rs engine (compiled extension ``honba._core``) is reached from
+# Python through exactly one module, ``honba.research._barter_adapter``. The
+# research layer otherwise speaks DataFrames, so the engine can change without
+# touching strategies or analysis code. The Indian dataset is kept in our own
+# Parquet schema.
 #
 # Run: lint-imports
-# See: docs/research/build-vs-extend.md §9
 # ---------------------------------------------------------------------------
 [tool.importlinter]
 root_package = "honba"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Research layer is engine-free (only _nautilus_adapter may import nautilus_trader)"
+name = "Only research._barter_adapter may import the barter engine (honba._core)"
 type = "forbidden"
-source_modules = ["honba.research"]
-forbidden_modules = ["nautilus_trader"]
-ignore_imports = ["honba.research._nautilus_adapter -> nautilus_trader"]
+source_modules = ["honba"]
+forbidden_modules = ["honba._core"]
+ignore_imports = ["honba.research._barter_adapter -> honba._core"]
 
 [[tool.importlinter.contracts]]
-name = "Data layer owns its Parquet schema (only _catalog_export may import nautilus_trader)"
+name = "Research layer is engine-free (no nautilus_trader anywhere)"
 type = "forbidden"
-source_modules = ["honba.data"]
+source_modules = ["honba"]
 forbidden_modules = ["nautilus_trader"]
-ignore_imports = ["honba.data._catalog_export -> nautilus_trader"]
 
 [[tool.importlinter.contracts]]
 name = "Research layer does not depend on other honba layers"

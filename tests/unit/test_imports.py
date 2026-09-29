@@ -66,7 +66,7 @@ def test_no_py_py_files() -> None:
 
 
 def test_research_layer_does_not_import_nautilus() -> None:
-    """The rc-churn firewall, spot-checked at runtime.
+    """The engine firewall, spot-checked at runtime.
 
     The authoritative check is the import-linter contract in pyproject.toml
     (``lint-imports``); this is a fast fail-early duplicate so a plain
@@ -80,7 +80,7 @@ def test_research_layer_does_not_import_nautilus() -> None:
     leaked = [
         name
         for name in sys.modules
-        if name.startswith("honba.research") and name.endswith("_nautilus_adapter")
+        if name.startswith("honba.research") and name.endswith("_barter_adapter")
     ]
     # Importing the research package must not pull in the adapter, and
     # therefore must not pull in nautilus_trader.

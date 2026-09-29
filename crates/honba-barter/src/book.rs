@@ -77,13 +77,14 @@ impl CostModel {
         side: ActionSide,
         price: f64,
         qty: f64,
-    ) -> CostBreakdown {
+    ) -> Option<CostBreakdown> {
         match self {
-            Self::Flat(rate) => CostBreakdown::flat(price * qty * rate),
+            Self::Flat(rate) => Some(CostBreakdown::flat(price * qty * rate))
+                .filter(|costs| costs.total.is_finite()),
             Self::India(plan) => {
                 let (Some(price), Some(qty)) = (Decimal::from_f64(price), Decimal::from_f64(qty))
                 else {
-                    return CostBreakdown::default();
+                    return None;
                 };
                 let segment = match segment {
                     Segment::EquityCash => MarketSegment::EquityCash,
@@ -103,9 +104,9 @@ impl CostModel {
                     ActionSide::Sell => OrderSide::Sell,
                 };
                 let costs =
-                    IndianTaxCalculator::calculate_for(segment, product, side, price, qty, plan);
+                    IndianTaxCalculator::calculate_for(segment, product, side, price, qty, plan)?;
                 let f = |d: Decimal| d.to_f64().unwrap_or_default();
-                CostBreakdown {
+                Some(CostBreakdown {
                     brokerage: f(costs.brokerage),
                     stt: f(costs.stt),
                     exchange_fee: f(costs.exchange_fee),
@@ -114,11 +115,15 @@ impl CostModel {
                     gst: f(costs.gst),
                     dp: f(costs.dp),
                     total: f(costs.total),
-                }
+                })
             }
         }
     }
 }
+
+/// Largest order notional honba accepts; beyond it Decimal arithmetic in barter / the tax
+/// calculator could overflow.
+pub const MAX_NOTIONAL: f64 = 1e15;
 
 /// Static configuration of a [`Book`].
 #[derive(Debug, Clone)]
@@ -1233,6 +1238,7 @@ impl Book {
         self.cfg
             .costs
             .costs(self.meta(instrument).segment, product, side, price, qty)
+            .unwrap_or_default()
     }
 
     /// Can `instrument` be traded `side` x `qty` at `price` given the projected portfolio.
@@ -1244,6 +1250,15 @@ impl Book {
         qty: f64,
         price: f64,
     ) -> Check {
+        let notional = price * qty;
+        let computable = self
+            .cfg
+            .costs
+            .costs(self.meta(instrument).segment, product, side, price, qty)
+            .is_some();
+        if !(notional.is_finite() && notional <= MAX_NOTIONAL && computable) {
+            return Err("invalid_qty");
+        }
         match side {
             ActionSide::Buy => {
                 let required =

@@ -126,13 +126,20 @@ pub fn run_backtest(
     });
     let engine_decider: Arc<dyn Decider> = Arc::clone(&decider) as Arc<dyn Decider>;
 
-    let result =
-        py.allow_threads(move || honba_barter::run_backtest(config, candles, engine_decider));
+    // run_backtest already turns engine panics into errors; this also guards the bridge itself
+    let result = py.allow_threads(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            honba_barter::run_backtest(config, candles, engine_decider)
+        }))
+    });
+    let result = result
+        .map_err(|_| PyRuntimeError::new_err("honba engine panicked"))
+        .map(|result| result.map_err(backtest_error_to_py));
 
     if let Some(error) = decider.take_error() {
         return Err(error);
     }
-    let report = result.map_err(backtest_error_to_py)?;
+    let report = result??;
     report
         .to_json()
         .map_err(|error| PyRuntimeError::new_err(format!("failed to serialise report: {error}")))

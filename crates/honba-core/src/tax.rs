@@ -173,6 +173,8 @@ impl IndianTaxCalculator {
     /// Unlike [`Self::calculate`], intraday (MIS) equity is charged STT on the sell side only
     /// at 0.025% and 0.003% stamp duty, exchange charges depend on the segment (options on
     /// premium), brokerage follows `plan`, and delivery sells can carry a DP charge.
+    ///
+    /// Returns `None` if the notional is too large to compute (arithmetic overflow).
     pub fn calculate_for(
         segment: MarketSegment,
         product: ProductType,
@@ -180,32 +182,40 @@ impl IndianTaxCalculator {
         price: Decimal,
         quantity: Decimal,
         plan: &BrokeragePlan,
-    ) -> TradeCosts {
+    ) -> Option<TradeCosts> {
         let rates = rates(segment, product);
-        let turnover = price * quantity.abs();
+        let turnover = price.checked_mul(quantity.abs())?;
+        let pct_of = |rate: Decimal| turnover.checked_mul(rate);
 
         let brokerage = if rates.delivery && plan.cnc_free {
             Decimal::ZERO
         } else if rates.flat_brokerage || plan.pct.is_zero() {
             plan.per_order
         } else {
-            (turnover * plan.pct / Decimal::ONE_HUNDRED).min(plan.per_order)
+            pct_of(plan.pct)?
+                .checked_div(Decimal::ONE_HUNDRED)?
+                .min(plan.per_order)
         };
         let (stt, stamp_duty) = match side {
-            OrderSide::Buy => (turnover * rates.stt_buy, turnover * rates.stamp_buy),
-            OrderSide::Sell => (turnover * rates.stt_sell, Decimal::ZERO),
+            OrderSide::Buy => (pct_of(rates.stt_buy)?, pct_of(rates.stamp_buy)?),
+            OrderSide::Sell => (pct_of(rates.stt_sell)?, Decimal::ZERO),
         };
-        let exchange_fee = turnover * rates.exchange;
-        let sebi_fee = turnover * Decimal::new(1, 6); // Rs 10 / crore
-        let gst = (brokerage + exchange_fee + sebi_fee) * Decimal::new(18, 2);
+        let exchange_fee = pct_of(rates.exchange)?;
+        let sebi_fee = pct_of(Decimal::new(1, 6))?; // Rs 10 / crore
+        let gst = brokerage
+            .checked_add(exchange_fee)?
+            .checked_add(sebi_fee)?
+            .checked_mul(Decimal::new(18, 2))?;
         let dp = if rates.delivery && side == OrderSide::Sell {
             plan.dp_per_sell
         } else {
             Decimal::ZERO
         };
-        let total = brokerage + stt + exchange_fee + sebi_fee + stamp_duty + gst + dp;
+        let total = [brokerage, stt, exchange_fee, sebi_fee, stamp_duty, gst, dp]
+            .into_iter()
+            .try_fold(Decimal::ZERO, |sum, part| sum.checked_add(part))?;
 
-        TradeCosts {
+        Some(TradeCosts {
             brokerage,
             stt,
             exchange_fee,
@@ -214,7 +224,7 @@ impl IndianTaxCalculator {
             gst,
             dp,
             total,
-        }
+        })
     }
 }
 
@@ -239,7 +249,8 @@ mod tests {
             price,
             qty,
             &plan,
-        );
+        )
+        .unwrap();
         assert_eq!(buy.brokerage, Decimal::ZERO);
         assert_eq!(buy.stt, d("100")); // 0.1%
         assert_eq!(buy.stamp_duty, d("15")); // 0.015%
@@ -254,7 +265,8 @@ mod tests {
             price,
             qty,
             &plan,
-        );
+        )
+        .unwrap();
         assert_eq!(sell.brokerage, d("20")); // min(20, 0.03% = 30)
         assert_eq!(sell.stt, d("25")); // 0.025% sell side
         assert_eq!(sell.stamp_duty, Decimal::ZERO);
@@ -266,9 +278,24 @@ mod tests {
             price,
             qty,
             &plan,
-        );
+        )
+        .unwrap();
         assert_eq!(mis_buy.stt, Decimal::ZERO);
         assert_eq!(mis_buy.stamp_duty, d("3")); // 0.003%
+    }
+
+    #[test]
+    fn overflow_is_none_not_panic() {
+        let huge = Decimal::MAX;
+        assert!(IndianTaxCalculator::calculate_for(
+            MarketSegment::EquityCash,
+            ProductType::MIS,
+            OrderSide::Buy,
+            huge,
+            d("1000"),
+            &BrokeragePlan::default(),
+        )
+        .is_none());
     }
 
     #[test]
@@ -284,7 +311,8 @@ mod tests {
             d("100"),
             d("75"),
             &plan,
-        );
+        )
+        .unwrap();
         assert_eq!(options.brokerage, d("20")); // flat per order
         assert_eq!(options.stt, d("7.5")); // 0.1% of premium turnover 7,500
         assert_eq!(options.dp, Decimal::ZERO);
@@ -296,7 +324,8 @@ mod tests {
             d("20000"),
             d("75"),
             &plan,
-        );
+        )
+        .unwrap();
         assert_eq!(futures.stt, d("300")); // 0.02% of 15,00,000
         assert_eq!(futures.brokerage, d("20"));
 
@@ -307,7 +336,8 @@ mod tests {
             d("100"),
             d("10"),
             &plan,
-        );
+        )
+        .unwrap();
         assert_eq!(delivery_sell.dp, d("15.93"));
         assert_eq!(
             delivery_sell.total,

@@ -1,7 +1,7 @@
 //! Backtest entry points built on [`barter::backtest::backtest`].
 
 use crate::{
-    book::{Book, BookConfig, CostModel},
+    book::{Book, BookConfig, CostModel, MAX_NOTIONAL},
     config::{self, BacktestConfig, FillModel, IntrabarPriority, INDIA_RATE_TABLE, MAX_LATENCY_MS},
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
@@ -153,7 +153,11 @@ fn prepare(
                 ![bar.open, bar.high, bar.low, bar.close, bar.volume]
                     .iter()
                     .all(|value| value.is_finite())
-                    || bar.close <= 0.0
+                    || [bar.open, bar.high, bar.low, bar.close]
+                        .iter()
+                        .any(|price| *price <= 0.0 || *price > MAX_NOTIONAL)
+                    || bar.high < bar.low
+                    || bar.volume < 0.0
                     || DateTime::<Utc>::from_timestamp_millis(bar.time_ms).is_none()
             }) {
                 return Err(BacktestError::Data(format!(
@@ -378,6 +382,19 @@ async fn execute(prepared: &Prepared, setup: RunSetup) -> Result<BacktestReport,
     }))
 }
 
+/// Turn a panic anywhere in the run into an error instead of unwinding into the caller
+/// (e.g. across the Python boundary).
+fn catch_panic<T>(run: impl FnOnce() -> Result<T, BacktestError>) -> Result<T, BacktestError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)).unwrap_or_else(|panic| {
+        let message = panic
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic".into());
+        Err(BacktestError::Engine(format!("panic: {message}")))
+    })
+}
+
 /// Build the runtime backtests execute on.
 ///
 /// Single threaded with a paused clock: the mock exchange's latency `sleep`s then advance
@@ -405,7 +422,7 @@ pub fn run_backtest(
 ) -> Result<BacktestReport, BacktestError> {
     let prepared = prepare(config, candles)?;
     let setup = setup_run(&prepared, "backtest".to_string(), decider)?;
-    runtime()?.block_on(execute(&prepared, setup))
+    catch_panic(|| runtime()?.block_on(execute(&prepared, setup)))
 }
 
 /// Run one backtest per `(id, decider)` over the same config and data (eg/ a parameter sweep),
@@ -426,7 +443,9 @@ pub fn run_sweep(
         .map(|(id, decider)| setup_run(&prepared, id, decider))
         .collect::<Result<Vec<_>, _>>()?;
 
-    runtime()?.block_on(try_join_all(
-        setups.into_iter().map(|setup| execute(&prepared, setup)),
-    ))
+    catch_panic(|| {
+        runtime()?.block_on(try_join_all(
+            setups.into_iter().map(|setup| execute(&prepared, setup)),
+        ))
+    })
 }

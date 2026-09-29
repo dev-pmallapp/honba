@@ -1,5 +1,7 @@
 use pyo3::prelude::*;
 
+mod backtest;
+
 #[pyfunction]
 fn calculate_dsr(
     observed_sharpe: f64,
@@ -31,5 +33,6 @@ fn calculate_pbo(is_performances: Vec<f64>, oos_performances: Vec<f64>) -> PyRes
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calculate_dsr, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_pbo, m)?)?;
+    m.add_function(wrap_pyfunction!(backtest::run_backtest, m)?)?;
     Ok(())
 }

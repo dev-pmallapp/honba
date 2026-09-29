@@ -16,3 +16,4 @@ honba-core = { workspace = true }
 honba-indicators = { workspace = true }
 honba-overfit = { workspace = true }
 honba-dhan = { workspace = true }
+honba-barter = { workspace = true }

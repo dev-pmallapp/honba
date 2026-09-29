@@ -60,11 +60,11 @@ _CAPABILITIES = EngineCapabilities(
 
 
 # ``_core.contract_version()`` (2: margin, liquidate_at_end, attached_exit_same_bar, engine
-# round trips) lets the
+# round trips; 3: slippage, price bands, freeze split, partial exits, T+1 settlement) lets the
 # SDK detect a stale or too-new build. Builds without the function are accepted (older engine,
 # contract 0) but lack the features listed in ``_FEATURE_MIN_CONTRACT``.
 CONTRACT_MIN = 0
-CONTRACT_MAX = 2
+CONTRACT_MAX = 3
 _FEATURE_MIN_CONTRACT = {"liquidate_at_end": 2, "margin": 2, "attached_exit_same_bar": 2}
 
 

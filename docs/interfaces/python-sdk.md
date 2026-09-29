@@ -249,5 +249,9 @@ contract in `crates/honba-barter/src/lib.rs` and `report.rs`); `_barter_adapter.
 ```bash
 maturin develop --release --skip-install      # builds python/honba/_core*.so
 pytest                                        # tests/test_sdk_barter.py runs on the real engine
-cd python && lint-imports --config ../pyproject.toml
+make lint-imports                             # = cd python && lint-imports --config ../pyproject.toml
 ```
+
+`lint-imports` must run from `python/`: from the repo root the tracked legacy top-level `honba/`
+package shadows `python/honba`, so import-linter reports `Module 'honba.strategy' does not exist`.
+`make build | test | lint` are the other entry points.

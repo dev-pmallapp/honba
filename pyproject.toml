@@ -114,7 +114,9 @@ features = ["pyo3/extension-module"]
 # the sources for ``_core`` instead, and the contracts below keep every neutral layer from
 # importing an engine module.
 #
-# Run (from ``python/``): lint-imports --config ../pyproject.toml
+# Run: ``make lint-imports`` (= ``cd python && lint-imports --config ../pyproject.toml``). It must
+# run from ``python/``: from the repo root the tracked legacy top-level ``honba/`` package
+# shadows ``python/honba`` and import-linter cannot see the SDK modules.
 # ---------------------------------------------------------------------------
 [tool.importlinter]
 root_package = "honba"

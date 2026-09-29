@@ -766,7 +766,7 @@ def test_sweep_accepts_numpy_grids_and_constraint_filters_combinations():
         hb.sweep(SmaCross, data, {"fast": [float("nan")]}, cfg, engine="simple")
 
 
-# ------------------------------------------------------------------------ warm-up rejects, alignment, square-off
+# ------------------------------- warm-up, alignment, square-off
 
 
 def test_warmup_orders_surface_as_reject_events_to_on_reject():

@@ -163,6 +163,7 @@ class Strategy(ABC):
         self._terminal: dict[str, str] = {}
         self._history: Any = None
         self._logs: list[tuple[int, str]] = []
+        self._pending_rejects: list[Reject] = []
         self._seq = 0
 
     # -- declared parameters -----------------------------------------------------------------
@@ -316,7 +317,8 @@ class Strategy(ABC):
     ) -> OrderHandle | None:
         """Place an order and return its handle.
 
-        ``None`` is returned when nothing was sent (warm-up, or ``qty`` below one lot).
+        ``None`` is returned when nothing was sent: ``qty`` below one lot, or warm-up (the order
+        is refused with a ``Reject`` (reason ``warmup``) delivered to ``on_reject`` next bar).
 
         The kind follows the prices: none is a market order, ``limit`` a limit, ``stop`` a
         stop-market (SL-M), both a stop-limit (SL); ``kind`` forces one. ``tif`` is ``day``
@@ -475,6 +477,13 @@ class Strategy(ABC):
         return kind
 
     def _submit(self, action: PlaceOrder, sym: str) -> OrderHandle | None:
+        if self._ctx is not None and self._ctx.warmup:
+            # Warm-up bars feed history only: surface the refusal like an engine reject.
+            self._pending_rejects.append(
+                Reject(self._ctx.time_ms, action.id, sym, action.side, action.qty, "warmup")
+            )
+            self._terminal[action.id] = "rejected"
+            return None
         if not self._emit(action):
             return None
         self._order_symbols[action.id] = sym
@@ -484,7 +493,7 @@ class Strategy(ABC):
 
     def _emit(self, action: Action) -> bool:
         if self._ctx is not None and self._ctx.warmup:
-            return False  # orders during warm-up are ignored
+            return False  # cancel / modify during warm-up have nothing to act on
         if self._caps is not None:
             self._caps.check(
                 required_features(action),

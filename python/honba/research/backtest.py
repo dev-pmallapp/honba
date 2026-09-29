@@ -85,7 +85,12 @@ def _prepare(
         sort=config.sort_candles,
     )
     tf = config.timeframe or strategy.timeframe
-    issues = validate_candles(candles, session=config.session, timeframe=tf)
+    issues = validate_candles(
+        candles,
+        session=config.session,
+        timeframe=tf,
+        uses_mis=strategy.product == "MIS",
+    )
     raise_or_warn(issues, config.validation)
     return candles
 

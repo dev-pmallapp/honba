@@ -130,7 +130,8 @@ class StrategyRunner:
         if not self._started:
             self._started = True
             s.on_start()
-        for event in ctx.events:
+        pending, s._pending_rejects = s._pending_rejects, []
+        for event in (*pending, *ctx.events):
             self._dispatch(event)
         s.on_bar(ctx)
         if self._liquidate_at_ms is not None and ctx.time_ms >= self._liquidate_at_ms:

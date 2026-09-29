@@ -42,13 +42,16 @@ def validate_candles(
     *,
     session: TradingSession | None = None,
     timeframe: str | None = None,
+    uses_mis: bool = False,
 ) -> list[Issue]:
     """Check candles and return every finding (nothing is raised).
 
     Errors: empty series, NaN / inf, prices <= 0, ``low <= open, close <= high`` broken,
     negative volume, timestamps unsorted or duplicated, and (with ``session``) bars on holidays
-    / weekends and intraday bars outside ``[open, close)``. Warnings: missing intraday bars
-    inside a session (overnight and holiday gaps are expected and never reported).
+    / weekends and intraday bars outside ``[open, close)``, and (several symbols) timestamps that
+    some symbols have and others lack: the engine would fill at a stale price. Warnings:
+    missing intraday bars inside a session (overnight and holiday gaps are expected and never
+    reported) and, with ``uses_mis``, bars that cannot cover the MIS square-off time.
     """
     issues: list[Issue] = []
     tf = Timeframe.parse(timeframe) if timeframe else None
@@ -92,7 +95,71 @@ def validate_candles(
                 )
         if session is not None:
             issues.extend(_session_issues(sym, t, session, tf))
+            if uses_mis:
+                issues.extend(_square_off_issues(sym, t, session, tf))
+    issues.extend(_alignment_issues(candles))
     return issues
+
+
+def _alignment_issues(candles: dict[str, Bars]) -> list[Issue]:
+    series = {s: b.time_ms for s, b in candles.items() if len(b)}
+    if len(series) < 2:
+        return []
+    union = np.unique(np.concatenate(list(series.values())))
+    out = []
+    for sym, t in series.items():
+        missing = len(union) - len(np.unique(t))
+        if missing:
+            out.append(
+                Issue(
+                    sym,
+                    "misaligned",
+                    f"no bar at {missing} timestamp(s) that other symbols have "
+                    "(fills would use a stale price)",
+                    count=missing,
+                )
+            )
+    return out
+
+
+def _square_off_issues(
+    sym: str, t: np.ndarray, session: TradingSession, tf: Timeframe | None
+) -> list[Issue]:
+    """MIS positions are squared off on the first bar at/after ``mis_square_off``."""
+    if not session.mis_square_off:
+        return []
+    square_off = _parse_minutes(session.mis_square_off)
+    if tf is not None and not tf.is_intraday:
+        return [
+            Issue(
+                sym,
+                "square_off",
+                f"MIS product with {tf} bars: no bar can square positions off at "
+                f"{session.mis_square_off}",
+                "warning",
+            )
+        ]
+    local = t + _IST_MS
+    day, minute = local // _DAY_MS, (local % _DAY_MS) // 60_000
+    last = np.array([minute[day == d].max() for d in np.unique(day)])
+    short = int((last < square_off).sum())
+    if short == 0:
+        return []
+    return [
+        Issue(
+            sym,
+            "square_off",
+            f"{short} session(s) have no bar at/after {session.mis_square_off}: open MIS "
+            "positions would not be squared off",
+            "warning",
+            short,
+        )
+    ]
+
+
+def _parse_minutes(value: str) -> int:
+    hour, _, minute = value.partition(":")
+    return int(hour) * 60 + int(minute or 0)
 
 
 def _session_issues(

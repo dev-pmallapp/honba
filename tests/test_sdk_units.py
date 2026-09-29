@@ -41,7 +41,7 @@ def ms(ts) -> int:
     return int(pd.Timestamp(ts).tz_convert("UTC").value // 1_000_000)
 
 
-# ---------------------------------------------------------------------------- params
+# ------------------------------------------------------------------------ params
 
 
 class P(hb.Strategy):
@@ -92,7 +92,7 @@ def test_params_are_inherited():
     assert set(Child.params()) == {"fast", "mult", "mode", "on", "extra"}
 
 
-# ---------------------------------------------------------------------------- instruments / sizing
+# ------------------------------------------------------------------------ instruments / sizing
 
 
 def test_instrument_rounding():
@@ -167,7 +167,7 @@ def test_sizer_uses_equity_lot_and_cash_cap():
     assert out == {"risk": 450, "frac": 75, "cap": 75, "atr": 450, "value": 0}
 
 
-# ---------------------------------------------------------------------------- order API mapping
+# ------------------------------------------------------------------------ order API mapping
 
 
 def test_kind_inference_and_prices_rounded_to_tick_and_lot():
@@ -308,7 +308,7 @@ def test_capabilities_are_enforced_when_orders_are_emitted():
     )
 
 
-# ---------------------------------------------------------------------------- history / runner
+# ------------------------------------------------------------------------ history / runner
 
 
 def test_runner_history_dispatches_events_and_tracks_round_trips():
@@ -409,7 +409,7 @@ def test_runner_requires_and_unknown_timeframe():
         StrategyRunner(Odd, ["X"])
 
 
-# ---------------------------------------------------------------------------- resampling
+# ------------------------------------------------------------------------ resampling
 
 
 def push_all(rs, df):
@@ -472,7 +472,7 @@ def test_resampler_daily_weekly_and_gaps():
     assert Resampler("15m", "15m").push(Bar(1, 1, 1, 1, 1)) == [Bar(1, 1, 1, 1, 1)]
 
 
-# ---------------------------------------------------------------------------- indicators
+# ------------------------------------------------------------------------ indicators
 
 
 def test_indicators_match_reference_values():
@@ -501,7 +501,7 @@ def test_crossovers_handle_nan_and_levels():
     assert not hb.ta.crossed_above(np.array([np.nan, 1.0]), np.array([0.0, 0.0]))
 
 
-# ---------------------------------------------------------------------------- round trips
+# ------------------------------------------------------------------------ round trips
 
 
 def mkfill(t, side, qty, price, pnl=0.0, cost=0.0, sym="X", reason="signal", tag=None):
@@ -551,7 +551,7 @@ def test_round_trips_scale_partial_and_flip():
     assert tracker.open_qty("X") == 5  # still open: not a round trip
 
 
-# ---------------------------------------------------------------------------- validation / data
+# ------------------------------------------------------------------------ validation / data
 
 
 def test_candle_validation_findings():
@@ -657,7 +657,7 @@ def test_config_start_conversions():
     assert hb.BacktestConfig().with_(capital=5).capital == 5
 
 
-# ---------------------------------------------------------------------------- metrics
+# ------------------------------------------------------------------------ metrics
 
 
 def test_metrics_from_synthetic_equity_and_trips():
@@ -686,7 +686,7 @@ def test_metrics_from_synthetic_equity_and_trips():
     assert rets.iloc[0] == 0.0 and len(rets) == 6
 
 
-# ---------------------------------------------------------------------------- cash-capped sizing
+# ------------------------------------------------------------------------ cash-capped sizing
 
 
 def test_cap_cash_accounts_for_costs():
@@ -723,7 +723,7 @@ def test_cap_cash_orders_are_not_rejected_by_the_engine_for_cash():
     assert res.rejected.empty and res.fills.qty.iloc[0] >= 90
 
 
-# ---------------------------------------------------------------------------- params / sweep hardening
+# ------------------------------------------------------------------------ params / sweep hardening
 
 
 def test_param_accepts_numpy_scalars_and_rejects_non_finite():
@@ -764,3 +764,84 @@ def test_sweep_accepts_numpy_grids_and_constraint_filters_combinations():
         hb.sweep(SmaCross, data, {"fast": [5]}, cfg, engine="simple", constraint=lambda p: False)
     with pytest.raises(ValueError, match="finite"):
         hb.sweep(SmaCross, data, {"fast": [float("nan")]}, cfg, engine="simple")
+
+
+# ------------------------------------------------------------------------ warm-up rejects, alignment, square-off
+
+
+def test_warmup_orders_surface_as_reject_events_to_on_reject():
+    got = []
+
+    class W(hb.Strategy):
+        def on_reject(self, reject):
+            got.append(reject)
+
+        def on_bar(self, ctx):
+            if ctx.warmup:
+                self.handle = self.buy(5, tag="early")
+
+    runner = StrategyRunner(W, ["X"])
+    assert runner(_ctx(1, warmup=True)) == []  # nothing reaches the engine
+    assert got == []  # delivered with the next bar's events
+    runner(_ctx(2, warmup=False))
+    assert [(r.reason, r.side, r.qty, r.time_ms) for r in got] == [("warmup", "buy", 5.0, 1)]
+    assert runner.strategy.handle is None
+    assert runner.strategy._status_of(got[0].id) == "rejected"
+
+
+def test_warmup_reject_reaches_on_reject_in_a_real_backtest():
+    got = []
+
+    class W(hb.Strategy):
+        def on_reject(self, reject):
+            got.append(reject.reason)
+
+        def on_bar(self, ctx):
+            if ctx.warmup:
+                self.buy(1)
+
+    hb.backtest(W, {"X": daily(flat(100, 5))}, hb.BacktestConfig(warmup_bars=2), engine="simple")
+    assert got == ["warmup", "warmup"]  # one per warm-up bar
+
+
+def test_cross_symbol_misalignment_is_flagged_and_policy_applies():
+    a, b = daily(flat(100, 6)), daily(flat(50, 6)).drop(index=[2])
+    found = validate_candles(to_candles({"A": a, "B": b}))
+    assert [(i.symbol, i.kind, i.count) for i in found] == [("B", "misaligned", 1)]
+    assert validate_candles(to_candles({"A": a, "B": daily(flat(50, 6))})) == []
+    assert validate_candles(to_candles({"A": a})) == []
+
+    class Noop(hb.Strategy):
+        def on_bar(self, ctx): ...
+
+    with pytest.raises(hb.CandleValidationError, match="misaligned"):
+        hb.backtest(Noop, {"A": a, "B": b}, engine="simple")
+    with pytest.warns(UserWarning, match="misaligned"):
+        hb.backtest(Noop, {"A": a, "B": b}, hb.BacktestConfig(validation="warn"), engine="simple")
+
+
+def test_square_off_coverage_warning_for_mis():
+    idf = intraday(days=2, minutes=5)
+    ok = validate_candles(to_candles({"X": idf}), session=NSE, timeframe="5m", uses_mis=True)
+    assert ok == []
+    short = idf[idf.time.dt.hour * 60 + idf.time.dt.minute < 15 * 60]  # no bars after 15:00
+    (issue,) = validate_candles(
+        to_candles({"X": short}), session=NSE, timeframe="5m", uses_mis=True
+    )
+    assert (issue.kind, issue.level, issue.count) == ("square_off", "warning", 2)
+    assert validate_candles(to_candles({"X": short}), session=NSE, timeframe="5m") == []
+    (daily_issue,) = validate_candles(
+        to_candles({"X": daily(flat(100, 3))}), session=NSE, timeframe="1d", uses_mis=True
+    )
+    assert daily_issue.kind == "square_off"
+
+    pytest.importorskip("honba._core")
+
+    class M(hb.Strategy):
+        timeframe = "5m"
+        product = hb.MIS
+
+        def on_bar(self, ctx): ...
+
+    with pytest.warns(UserWarning, match="square_off"):
+        hb.backtest(M, {"X": short}, hb.BacktestConfig(session=NSE))

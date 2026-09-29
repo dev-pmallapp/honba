@@ -21,6 +21,3 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 futures-util = { workspace = true }
 smol_str = "0.3"
-
-[dev-dependencies]
-rust_decimal = { workspace = true, features = ["macros"] }

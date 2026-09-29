@@ -25,8 +25,9 @@ use crate::{
     model::{
         Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
         OrderRequest, OrderRole, OrderStatus, OrderType, OrderView, PositionView, Product, Segment,
-        TimeInForce, TrailMode, TrailSpec,
+        SessionView, TimeInForce, TrailMode, TrailSpec,
     },
+    session::Session,
 };
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use honba_core::{
@@ -131,6 +132,8 @@ pub struct BookConfig {
     pub allow_short: bool,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
+    /// Trading hours; `None` means always open (no square-off).
+    pub session: Option<Session>,
     /// When a bracket's stop loss and take profit both trigger inside one bar (neither at the
     /// open), the stop loss wins if true.
     pub stop_first: bool,
@@ -423,6 +426,8 @@ pub struct Book {
     pub equity_curve: Vec<(i64, f64)>,
     /// Most recent bars per instrument (ATR for trailing stops).
     recent: Vec<VecDeque<Bar>>,
+    /// Date of the last MIS square-off per instrument.
+    squared_off: Vec<Option<NaiveDate>>,
     pending: HashMap<String, FillIntent>,
     /// Batch-local projection of cash / positions including not yet confirmed intents.
     proj_cash: f64,
@@ -450,6 +455,7 @@ impl Book {
             costs: CostBreakdown::default(),
             equity_curve: Vec::new(),
             recent: vec![VecDeque::new(); n],
+            squared_off: vec![None; n],
             pending: HashMap::new(),
             events: Vec::new(),
             order_seq: 0,
@@ -520,6 +526,125 @@ impl Book {
             .date_naive()
     }
 
+    fn market_open(&self, time_ms: i64) -> bool {
+        self.cfg
+            .session
+            .as_ref()
+            .is_none_or(|session| session.is_open(time_ms))
+    }
+
+    /// Session state for the bar context.
+    pub fn session_view(&self, time_ms: i64) -> SessionView {
+        SessionView {
+            is_open: self.market_open(time_ms),
+            date: self.trading_date(time_ms).to_string(),
+            minutes_to_close: self
+                .cfg
+                .session
+                .as_ref()
+                .and_then(|session| session.minutes_to_close(time_ms)),
+        }
+    }
+
+    /// Has a `day` order first eligible on `first` expired by `time_ms` (`date`).
+    fn day_expired(&self, first: NaiveDate, date: NaiveDate, time_ms: i64) -> bool {
+        date > first
+            || (date == first
+                && self
+                    .cfg
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.past_close(time_ms)))
+    }
+
+    /// Close MIS positions at the square-off time (at the bar close).
+    fn square_off(
+        &mut self,
+        instrument: usize,
+        bar: &Bar,
+        bar_index: usize,
+        date: NaiveDate,
+        time_ms: i64,
+    ) -> Option<FillIntent> {
+        let due = self
+            .cfg
+            .session
+            .as_ref()
+            .is_some_and(|session| session.past_square_off(time_ms));
+        if !due || self.squared_off[instrument] == Some(date) {
+            return None;
+        }
+        self.squared_off[instrument] = Some(date);
+
+        // Working MIS orders go first
+        let working = self
+            .orders
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| {
+                o.instrument == Some(instrument) && o.is_open() && o.product == Product::MIS
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        for index in working {
+            if self.orders[index].is_open() {
+                self.close_order(index, OrderStatus::Cancelled, "square_off", time_ms);
+            }
+        }
+
+        let qty = self.proj_qty[instrument];
+        if self.positions[instrument].product != Some(Product::MIS) || qty.abs() <= EPS {
+            return None;
+        }
+        let side = if qty > 0.0 {
+            ActionSide::Sell
+        } else {
+            ActionSide::Buy
+        };
+        let id = format!("sq-{}-{}", self.cfg.symbols[instrument], date);
+        self.orders.push(Order {
+            id,
+            instrument: Some(instrument),
+            symbol: self.cfg.symbols[instrument].clone(),
+            side,
+            kind: OrderType::Market,
+            qty: qty.abs(),
+            filled_qty: 0.0,
+            filled_value: 0.0,
+            price: None,
+            trigger: None,
+            tif: TimeInForce::Day,
+            product: Product::MIS,
+            tag: None,
+            role: OrderRole::SquareOff,
+            parent: None,
+            status: OrderStatus::Open,
+            reason: None,
+            reduce_only: true,
+            stop_loss: None,
+            take_profit: None,
+            trail: None,
+            trail_stop: None,
+            trail_extreme: None,
+            trail_active: false,
+            triggered: false,
+            active_from_bar: bar_index,
+            first_eval_date: Some(date),
+            created_ms: time_ms,
+            updated_ms: time_ms,
+        });
+        let index = self.orders.len() - 1;
+        // Mandatory exit: no cash / short checks
+        Some(self.intent(
+            index,
+            qty.abs(),
+            bar.close,
+            FillReason::SquareOff,
+            time_ms,
+            bar_index,
+        ))
+    }
+
     fn sync_projection(&mut self) {
         self.proj_cash = self.cash;
         for (proj, position) in self.proj_qty.iter_mut().zip(&self.positions) {
@@ -554,11 +679,38 @@ impl Book {
         self.sync_projection();
         let date = self.trading_date(time_ms);
 
+        let open = self.market_open(time_ms);
+
         let mut intents = Vec::new();
         for (instrument, bar) in bars.iter().enumerate() {
             let Some(bar) = bar else {
                 continue;
             };
+
+            // Expire day orders whose session has ended
+            let expired = self
+                .orders
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| {
+                    o.instrument == Some(instrument)
+                        && o.is_open()
+                        && o.tif == TimeInForce::Day
+                        && o.first_eval_date
+                            .is_some_and(|first| self.day_expired(first, date, time_ms))
+                })
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
+            for index in expired {
+                if self.orders[index].is_open() {
+                    self.close_order(index, OrderStatus::Expired, "day", time_ms);
+                }
+            }
+            if !open {
+                // No matching outside trading hours
+                continue;
+            }
+
             let mut candidates = self
                 .orders
                 .iter()
@@ -578,14 +730,7 @@ impl Book {
                 if !self.orders[index].is_open() {
                     continue;
                 }
-                // Expire day orders whose session has passed
-                let order = &mut self.orders[index];
-                if order.tif == TimeInForce::Day && order.first_eval_date.is_some_and(|d| d < date)
-                {
-                    self.close_order(index, OrderStatus::Expired, "day", time_ms);
-                    continue;
-                }
-                order.first_eval_date.get_or_insert(date);
+                self.orders[index].first_eval_date.get_or_insert(date);
 
                 let (index, result) = match self.orders[index].parent.clone() {
                     Some(parent) if brackets_done.contains(&parent) => continue,
@@ -615,6 +760,8 @@ impl Book {
             // Trailing stops move after the bar was matched against the stop as it stood at
             // the open of the bar: the new level only applies from the next bar.
             self.update_trails(instrument, bar, bar_index, time_ms);
+
+            intents.extend(self.square_off(instrument, bar, bar_index, date, time_ms));
         }
         intents
     }
@@ -1050,8 +1197,12 @@ impl Book {
                 }
             }
             ActionSide::Sell => {
+                // Cash equity can only be shorted intraday (MIS); F&O shorts are allowed
                 let long = self.proj_qty[instrument];
-                if !self.cfg.allow_short && !approx_le(qty, long) {
+                let short_ok = self.cfg.allow_short
+                    || product == Product::MIS
+                    || self.meta(instrument).segment != Segment::EquityCash;
+                if !short_ok && !approx_le(qty, long) {
                     return Err("insufficient_position");
                 }
             }
@@ -1406,6 +1557,10 @@ impl Book {
                 return None;
             }
         }
+        if !self.market_open(time_ms) {
+            self.reject_request(time_ms, &request, Some(id), "market_closed");
+            return None;
+        }
         let Some(close) = self.last_close[instrument] else {
             self.reject_request(time_ms, &request, Some(id), "no_price");
             return None;
@@ -1428,6 +1583,15 @@ impl Book {
             .product
             .or(position.product.filter(|_| reduces))
             .unwrap_or_else(|| self.default_product(instrument));
+        let past_square_off = self
+            .cfg
+            .session
+            .as_ref()
+            .is_some_and(|session| session.past_square_off(time_ms));
+        if past_square_off && product == Product::MIS && !reduces {
+            self.reject_request(time_ms, &request, Some(id), "after_square_off");
+            return None;
+        }
         let (own_trail, exit_trail) = match request.trail {
             Some(trail) if own_trail => (Some(trail), None),
             trail => (None, trail),
@@ -1462,7 +1626,12 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: bar_index + 1,
-            first_eval_date: None,
+            // With a session, a day order placed during it belongs to that session
+            first_eval_date: self
+                .cfg
+                .session
+                .as_ref()
+                .map(|_| self.trading_date(time_ms)),
             created_ms: time_ms,
             updated_ms: time_ms,
         };

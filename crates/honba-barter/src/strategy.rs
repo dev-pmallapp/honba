@@ -12,7 +12,7 @@ use crate::{
     book::{Book, FillIntent},
     data::{Bar, BarGate, CandleData},
     ledger::{ExecutionOutcome, Ledger},
-    model::{Action, BarContext, SessionView},
+    model::{Action, BarContext},
 };
 use barter::{
     engine::{
@@ -36,7 +36,6 @@ use barter_instrument::{
     exchange::{ExchangeId, ExchangeIndex},
     instrument::InstrumentIndex,
 };
-use chrono::{DateTime, FixedOffset};
 use rust_decimal::{prelude::FromPrimitive, Decimal};
 use std::{
     collections::BTreeMap,
@@ -74,8 +73,6 @@ where
 pub struct DeciderStrategyConfig {
     /// `(timestamp ms, number of bars)` for every replayed time step.
     pub schedule: Vec<(i64, usize)>,
-    /// Exchange-local UTC offset used for trading dates.
-    pub utc_offset: FixedOffset,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -188,21 +185,6 @@ impl DeciderStrategy {
             .collect()
     }
 
-    fn session_view(&self, time_ms: i64) -> SessionView {
-        let date = DateTime::from_timestamp_millis(time_ms)
-            .map(|time| {
-                time.with_timezone(&self.config.utc_offset)
-                    .date_naive()
-                    .to_string()
-            })
-            .unwrap_or_default();
-        SessionView {
-            is_open: true,
-            date,
-            minutes_to_close: None,
-        }
-    }
-
     fn context<'a>(
         &self,
         state: &'a HonbaEngineState,
@@ -233,7 +215,7 @@ impl DeciderStrategy {
             positions,
             open_orders: book.open_orders(),
             events: book.take_events(),
-            session: self.session_view(time_ms),
+            session: book.session_view(time_ms),
             warmup: false,
             cash: book.cash,
             equity: book.equity(),

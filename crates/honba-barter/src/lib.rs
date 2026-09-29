@@ -13,6 +13,7 @@ pub mod data;
 pub mod ledger;
 pub mod model;
 pub mod report;
+pub mod session;
 pub mod strategy;
 
 pub use backtest::{run_backtest, run_sweep, BacktestError};

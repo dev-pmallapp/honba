@@ -33,6 +33,9 @@ pub struct BacktestConfig {
     /// tick validation.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub instruments: BTreeMap<String, InstrumentMeta>,
+    /// Trading hours / holidays / MIS square-off; `null` = always open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionConfig>,
     /// Transaction cost model; `null` = flat `fees_percent`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub costs: Option<CostsConfig>,
@@ -57,8 +60,42 @@ impl Default for BacktestConfig {
             allow_short: false,
             intrabar_priority: IntrabarPriority::StopFirst,
             costs: None,
+            session: None,
             instruments: BTreeMap::new(),
             start_ms: None,
+        }
+    }
+}
+
+/// `session` config.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SessionConfig {
+    /// `Asia/Kolkata` (default), `UTC` or a fixed offset such as `+05:30`.
+    pub tz: String,
+    /// Local open time `HH:MM`.
+    pub open: String,
+    /// Local close time `HH:MM` (exclusive: a bar stamped at the close is outside the session).
+    pub close: String,
+    /// MIS positions are closed at the close of the first bar at/after this time; new MIS
+    /// exposure is rejected after it (`after_square_off`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mis_square_off: Option<String>,
+    /// Exchange holidays `YYYY-MM-DD`.
+    pub holidays: Vec<String>,
+    /// Saturdays / Sundays are trading days (special sessions).
+    pub trade_weekends: bool,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            tz: "Asia/Kolkata".into(),
+            open: "09:15".into(),
+            close: "15:30".into(),
+            mis_square_off: None,
+            holidays: Vec::new(),
+            trade_weekends: false,
         }
     }
 }

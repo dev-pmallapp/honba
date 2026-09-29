@@ -6,6 +6,7 @@ use crate::{
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
     report::{build_report, BacktestReport, ReportInputs},
+    session::{Session, IST},
     strategy::{lock, Decider, DeciderStrategy, DeciderStrategyConfig, HonbaEngineState, RunState},
 };
 use barter::{
@@ -26,7 +27,7 @@ use barter_instrument::{
     instrument::{kind::InstrumentKind, name::InstrumentNameExchange, quote::InstrumentQuoteAsset},
     Underlying,
 };
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, Utc};
 use futures_util::future::try_join_all;
 use honba_core::tax::BrokeragePlan;
 use rust_decimal::{prelude::FromPrimitive, Decimal};
@@ -58,12 +59,6 @@ const MOCK_QUOTE_BALANCE: i64 = 1_000_000_000_000_000;
 
 const EXCHANGE: ExchangeId = ExchangeId::Mock;
 
-/// India Standard Time (UTC+05:30): trading dates are IST calendar dates.
-const IST: FixedOffset = match FixedOffset::east_opt(5 * 3600 + 30 * 60) {
-    Some(offset) => offset,
-    None => panic!("valid offset"),
-};
-
 /// Validated, instrument-indexed inputs shared by every run over the same data.
 struct Prepared {
     config: BacktestConfig,
@@ -74,6 +69,7 @@ struct Prepared {
     bars: Vec<Vec<Bar>>,
     execution: ExecutionConfig,
     cost_model: CostModel,
+    session: Option<Session>,
     risk_free_return: Decimal,
 }
 
@@ -187,6 +183,12 @@ fn prepare(
         .unwrap_or_default();
 
     let cost_model = cost_model(&config)?;
+    let session = config
+        .session
+        .as_ref()
+        .map(Session::from_config)
+        .transpose()
+        .map_err(BacktestError::Config)?;
     let execution = ExecutionConfig::Mock(MockExecutionConfig {
         mocked_exchange: EXCHANGE,
         initial_state: UnindexedAccountSnapshot {
@@ -229,6 +231,7 @@ fn prepare(
 
     Ok(Prepared {
         cost_model,
+        session,
         config,
         instruments,
         symbols,
@@ -310,14 +313,14 @@ fn setup_run(
             })
             .collect(),
         allow_short: prepared.config.allow_short,
-        utc_offset: IST,
+        utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),
+        session: prepared.session.clone(),
         stop_first: prepared.config.intrabar_priority == IntrabarPriority::StopFirst,
     });
     let strategy = DeciderStrategy::new(
         decider,
         Arc::new(DeciderStrategyConfig {
             schedule: schedule.clone(),
-            utc_offset: IST,
         }),
         gate,
         book,

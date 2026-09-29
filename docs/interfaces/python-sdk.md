@@ -537,8 +537,8 @@ Python in `honba.mcp.tools.HonbaTools`, usable (and tested) without the SDK.
 | `list_instruments(query, segment, limit)` | search `instruments.csv` (Dhan scrip master) and list stored datasets |
 | `write_strategy(name, code)` / `list_strategies()` | validate and save a `honba.Strategy` file in `strategies/` |
 | `run_backtest(strategy, symbols, timeframe, ...)` | backtest on stored candles; returns `run_id` and the summary |
-| `get_report(run_id)` | metrics, summary and trades as JSON (persisted in `reports/`) |
-| `run_sweep(strategy, symbols, timeframe, grid, ...)` | parameter grid; returns the best rows and `n_trials` |
+| `get_report(run_id, include_trades, max_trades)` | metrics, summary and up to `max_trades` (≤ 10000) trades as JSON (persisted in `reports/`) |
+| `run_sweep(strategy, symbols, timeframe, grid, ...)` | parameter grid (at most `HonbaTools(max_sweep=500)` combinations); returns the best rows and `n_trials` |
 | `overfit_audit(run_id)` | DSR / PBO of a sweep through a backend hook (below) |
 
 The workspace is the sandbox: agents import files only from `imports/` (absolute paths and `..`

@@ -170,6 +170,31 @@ def test_sweep_and_overfit_hook(tools):
         tools.overfit_audit("bt-20240101T000000-deadbeef")
 
 
+def test_sweep_grid_is_capped(tools):
+    tools.write_strategy("momo", GOOD)
+    capped = HonbaTools(tools.ws, max_sweep=4)
+    with pytest.raises(ValueError, match=r"5 combinations.*limit is 4"):
+        capped.run_sweep("momo", ["SBIN"], "1d", {"slow": [3, 5, 7, 9, 11]})
+    with pytest.raises(ValueError, match="list of values"):
+        capped.run_sweep("momo", ["SBIN"], "1d", {"slow": "35"})
+    assert capped.run_sweep("momo", ["SBIN"], "1d", {"slow": [5, 10]})["n_trials"] == 2
+    with pytest.raises(ValueError, match="combinations"):  # default grid of the Param (5)
+        capped.run_sweep("momo", ["SBIN"], "1d")
+    with pytest.raises(ValueError, match="limit is 500"):
+        tools.run_sweep("momo", ["SBIN"], "1d", {"slow": list(range(3, 31)) * 20})
+    with pytest.raises(ValueError):
+        HonbaTools(tools.ws, max_sweep=0)
+
+
+def test_get_report_bounds_max_trades(tools):
+    tools.write_strategy("momo", GOOD)
+    run = tools.run_backtest("momo", ["SBIN"], "1d")
+    for bad in (-1, 10**9, 1.5):
+        with pytest.raises(ValueError, match="max_trades"):
+            tools.get_report(run["run_id"], max_trades=bad)
+    assert tools.get_report(run["run_id"], max_trades=0)["trades"] == []
+
+
 @pytest.mark.parametrize(
     "snippet",
     [

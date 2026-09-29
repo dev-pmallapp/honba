@@ -1,10 +1,11 @@
 //! Backtest entry points built on [`barter::backtest::backtest`].
 
 use crate::{
-    book::{Book, BookConfig},
-    config::{BacktestConfig, IntrabarPriority, MAX_LATENCY_MS},
+    book::{Book, BookConfig, CostModel},
+    config::{self, BacktestConfig, IntrabarPriority, INDIA_RATE_TABLE, MAX_LATENCY_MS},
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
+    model::Segment,
     report::{build_report, BacktestReport, ReportInputs},
     strategy::{lock, Decider, DeciderStrategy, DeciderStrategyConfig, HonbaEngineState, RunState},
 };
@@ -28,6 +29,7 @@ use barter_instrument::{
 };
 use chrono::{DateTime, FixedOffset, Utc};
 use futures_util::future::try_join_all;
+use honba_core::tax::BrokeragePlan;
 use rust_decimal::{prelude::FromPrimitive, Decimal};
 use smol_str::SmolStr;
 use std::{
@@ -72,7 +74,7 @@ struct Prepared {
     names_internal: Vec<String>,
     bars: Vec<Vec<Bar>>,
     execution: ExecutionConfig,
-    fee_rate: f64,
+    cost_model: CostModel,
     risk_free_return: Decimal,
 }
 
@@ -177,6 +179,7 @@ fn prepare(
         .and_then(DateTime::<Utc>::from_timestamp_millis)
         .unwrap_or_default();
 
+    let cost_model = cost_model(&config)?;
     let execution = ExecutionConfig::Mock(MockExecutionConfig {
         mocked_exchange: EXCHANGE,
         initial_state: UnindexedAccountSnapshot {
@@ -205,15 +208,20 @@ fn prepare(
                 .collect(),
         },
         latency_ms: config.latency_ms,
-        fees_percent: Decimal::from_f64(config.fee_rate())
-            .ok_or_else(|| BacktestError::Config("invalid fees_percent".into()))?,
+        // honba books india-model costs itself; flat fees also go through barter's mock so its
+        // instrument tear sheets are net of fees
+        fees_percent: Decimal::from_f64(match &cost_model {
+            CostModel::Flat(rate) => *rate,
+            CostModel::India(_) => 0.0,
+        })
+        .ok_or_else(|| BacktestError::Config("invalid fees_percent".into()))?,
     });
 
     let risk_free_return = Decimal::from_f64(config.risk_free_return)
         .ok_or_else(|| BacktestError::Config("invalid risk_free_return".into()))?;
 
     Ok(Prepared {
-        fee_rate: config.fee_rate(),
+        cost_model,
         config,
         instruments,
         symbols,
@@ -222,6 +230,33 @@ fn prepare(
         execution,
         risk_free_return,
     })
+}
+
+fn cost_model(config: &BacktestConfig) -> Result<CostModel, BacktestError> {
+    let Some(costs) = config
+        .costs
+        .as_ref()
+        .filter(|c| c.model == config::CostModel::India)
+    else {
+        return Ok(CostModel::Flat(config.fee_rate()));
+    };
+    if let Some(table) = costs.table.as_deref().filter(|t| *t != INDIA_RATE_TABLE) {
+        return Err(BacktestError::Config(format!(
+            "unsupported costs.table {table:?} (available: {INDIA_RATE_TABLE:?})"
+        )));
+    }
+    let decimal = |name: &str, value: f64| {
+        Decimal::from_f64(value)
+            .filter(|d| !d.is_sign_negative())
+            .ok_or_else(|| BacktestError::Config(format!("invalid costs.brokerage.{name}")))
+    };
+    let brokerage = &costs.brokerage;
+    Ok(CostModel::India(BrokeragePlan {
+        per_order: decimal("per_order", brokerage.per_order)?,
+        pct: decimal("pct", brokerage.pct)?,
+        cnc_free: brokerage.cnc_free,
+        dp_per_sell: decimal("dp_per_sell", brokerage.dp_per_sell)?,
+    }))
 }
 
 /// Everything one run needs; the gate makes market data and strategy per-run.
@@ -254,7 +289,8 @@ fn setup_run(
     let book = Book::new(BookConfig {
         symbols: prepared.symbols.clone(),
         initial_cash: prepared.config.initial_cash,
-        fee_rate: prepared.fee_rate,
+        costs: prepared.cost_model.clone(),
+        segments: vec![Segment::EquityCash; prepared.symbols.len()],
         allow_short: prepared.config.allow_short,
         utc_offset: IST,
         stop_first: prepared.config.intrabar_priority == IntrabarPriority::StopFirst,

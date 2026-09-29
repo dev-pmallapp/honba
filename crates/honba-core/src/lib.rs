@@ -12,5 +12,5 @@ pub use event::{FillEvent, MarketEvent, OrderEvent, Signal};
 pub use execution::ExecutionEngine;
 pub use position::{PortfolioState, Position};
 pub use risk::RiskGuard;
-pub use tax::{IndianTaxCalculator, TradeCosts};
+pub use tax::{BrokeragePlan, IndianTaxCalculator, TradeCosts};
 pub use types::{Instrument, OrderSide, OrderType, ProductType, TimeFrame};

@@ -23,11 +23,20 @@ use crate::{
     data::Bar,
     model::{
         Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
-        OrderRequest, OrderRole, OrderStatus, OrderType, OrderView, PositionView, Product,
+        OrderRequest, OrderRole, OrderStatus, OrderType, OrderView, PositionView, Product, Segment,
         TimeInForce, TrailMode, TrailSpec,
     },
 };
 use chrono::{DateTime, FixedOffset, NaiveDate};
+use honba_core::{
+    tax::BrokeragePlan,
+    types::{MarketSegment, OrderSide, ProductType},
+    IndianTaxCalculator,
+};
+use rust_decimal::{
+    prelude::{FromPrimitive, ToPrimitive},
+    Decimal,
+};
 use std::collections::{HashMap, VecDeque};
 
 /// Longest supported ATR lookback for trailing stops.
@@ -41,14 +50,74 @@ fn approx_le(a: f64, b: f64) -> bool {
     a <= b + EPS * b.abs().max(1.0)
 }
 
+/// Per-fill transaction cost model.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CostModel {
+    /// Fraction of traded value.
+    Flat(f64),
+    India(BrokeragePlan),
+}
+
+impl CostModel {
+    pub fn costs(
+        &self,
+        segment: Segment,
+        product: Product,
+        side: ActionSide,
+        price: f64,
+        qty: f64,
+    ) -> CostBreakdown {
+        match self {
+            Self::Flat(rate) => CostBreakdown::flat(price * qty * rate),
+            Self::India(plan) => {
+                let (Some(price), Some(qty)) = (Decimal::from_f64(price), Decimal::from_f64(qty))
+                else {
+                    return CostBreakdown::default();
+                };
+                let segment = match segment {
+                    Segment::EquityCash => MarketSegment::EquityCash,
+                    Segment::EquityFutures => MarketSegment::EquityFutures,
+                    Segment::EquityOptions => MarketSegment::EquityOptions,
+                    Segment::Commodity => MarketSegment::Commodity,
+                    Segment::Currency => MarketSegment::Currency,
+                };
+                let product = match product {
+                    Product::CNC => ProductType::CNC,
+                    Product::MIS => ProductType::MIS,
+                    Product::NRML => ProductType::NRML,
+                    Product::MTF => ProductType::MTF,
+                };
+                let side = match side {
+                    ActionSide::Buy => OrderSide::Buy,
+                    ActionSide::Sell => OrderSide::Sell,
+                };
+                let costs =
+                    IndianTaxCalculator::calculate_for(segment, product, side, price, qty, plan);
+                let f = |d: Decimal| d.to_f64().unwrap_or_default();
+                CostBreakdown {
+                    brokerage: f(costs.brokerage),
+                    stt: f(costs.stt),
+                    exchange_fee: f(costs.exchange_fee),
+                    sebi_fee: f(costs.sebi_fee),
+                    stamp_duty: f(costs.stamp_duty),
+                    gst: f(costs.gst),
+                    dp: f(costs.dp),
+                    total: f(costs.total),
+                }
+            }
+        }
+    }
+}
+
 /// Static configuration of a [`Book`].
 #[derive(Debug, Clone)]
 pub struct BookConfig {
     /// Symbol per instrument index.
     pub symbols: Vec<String>,
     pub initial_cash: f64,
-    /// Flat fee as a fraction of traded value.
-    pub fee_rate: f64,
+    pub costs: CostModel,
+    /// Market segment per instrument (cost model, short rules).
+    pub segments: Vec<Segment>,
     pub allow_short: bool,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
@@ -902,21 +971,45 @@ impl Book {
             .position(|order| order.id == id && order.is_open())
     }
 
+    fn default_product(&self, instrument: usize) -> Product {
+        self.cfg
+            .segments
+            .get(instrument)
+            .copied()
+            .unwrap_or_default()
+            .default_product()
+    }
+
     fn costs_for(
         &self,
-        _instrument: usize,
-        _side: ActionSide,
+        instrument: usize,
+        side: ActionSide,
+        product: Product,
         price: f64,
         qty: f64,
     ) -> CostBreakdown {
-        CostBreakdown::flat(price * qty * self.cfg.fee_rate)
+        let segment = self
+            .cfg
+            .segments
+            .get(instrument)
+            .copied()
+            .unwrap_or_default();
+        self.cfg.costs.costs(segment, product, side, price, qty)
     }
 
     /// Can `instrument` be traded `side` x `qty` at `price` given the projected portfolio.
-    fn check_fill(&self, instrument: usize, side: ActionSide, qty: f64, price: f64) -> Check {
+    fn check_fill(
+        &self,
+        instrument: usize,
+        side: ActionSide,
+        product: Product,
+        qty: f64,
+        price: f64,
+    ) -> Check {
         match side {
             ActionSide::Buy => {
-                let required = price * qty + self.costs_for(instrument, side, price, qty).total;
+                let required =
+                    price * qty + self.costs_for(instrument, side, product, price, qty).total;
                 if !approx_le(required, self.proj_cash) {
                     return Err("insufficient_cash");
                 }
@@ -955,7 +1048,7 @@ impl Book {
                 return None;
             }
         }
-        if let Err(reason) = self.check_fill(instrument, order.side, qty, price) {
+        if let Err(reason) = self.check_fill(instrument, order.side, order.product, qty, price) {
             self.close_order(index, OrderStatus::Rejected, reason, time_ms);
             return None;
         }
@@ -971,16 +1064,17 @@ impl Book {
         time_ms: i64,
         bar_index: usize,
     ) -> FillIntent {
-        let (instrument, side) = {
+        let (instrument, side, product) = {
             let order = &self.orders[order];
             (
                 order
                     .instrument
                     .expect("fillable orders have an instrument"),
                 order.side,
+                order.product,
             )
         };
-        let costs = self.costs_for(instrument, side, price, qty);
+        let costs = self.costs_for(instrument, side, product, price, qty);
         self.proj_cash -= side.sign() * qty * price + costs.total;
         self.proj_qty[instrument] += side.sign() * qty;
 
@@ -1282,6 +1376,13 @@ impl Book {
             return None;
         }
         let (stop_loss, take_profit) = (request.stop_loss, request.take_profit);
+        // Orders reducing a position default to its product, others to the instrument's
+        let position = &self.positions[instrument];
+        let reduces = position.qty * request.side.sign() < 0.0;
+        let product = request
+            .product
+            .or(position.product.filter(|_| reduces))
+            .unwrap_or_else(|| self.default_product(instrument));
         let (own_trail, exit_trail) = match request.trail {
             Some(trail) if own_trail => (Some(trail), None),
             trail => (None, trail),
@@ -1301,7 +1402,7 @@ impl Book {
                 .trigger
                 .filter(|_| matches!(request.kind, OrderType::Stop | OrderType::StopLimit)),
             tif: request.tif.unwrap_or(TimeInForce::Day),
-            product: request.product.unwrap_or(Product::CNC),
+            product,
             tag: request.tag,
             role: OrderRole::Entry,
             parent: None,

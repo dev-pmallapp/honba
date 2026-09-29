@@ -10,6 +10,7 @@ barter = { workspace = true }
 barter-data = { workspace = true }
 barter-execution = { workspace = true }
 barter-instrument = { workspace = true }
+honba-core = { workspace = true }
 chrono = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }

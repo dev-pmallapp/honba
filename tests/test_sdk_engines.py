@@ -272,3 +272,92 @@ def test_annualisation_is_configurable_and_passed_to_the_engine():
     )
     with pytest.raises(ValueError):
         hb.BacktestConfig(trading_days_per_year=0)
+
+
+# ------------------------------------------------------------------------------- contract / liquidation
+
+
+def _core_module():
+    pytest.importorskip("honba._core")
+    from honba import _core
+
+    return _core
+
+
+def test_missing_contract_version_is_tolerated_and_mismatch_is_a_clear_error(monkeypatch):
+    from honba.research import _barter_adapter as adapter
+
+    core = _core_module()
+    monkeypatch.delattr(core, "contract_version", raising=False)
+    caps = adapter.BarterEngine().capabilities()  # older build: accepted
+    assert not caps.supports("liquidate_at_end") and caps.supports("order:stop")
+    assert adapter.core_contract(core) == 0
+    res = hb.backtest(SmaCross, {"X": trending(60)}, CFG, engine="barter")
+    assert res.engine == "barter"
+
+    monkeypatch.setattr(core, "contract_version", lambda: adapter.CONTRACT_MAX + 1, raising=False)
+    with pytest.raises(RuntimeError, match=r"engine contract \d+.*rebuild"):
+        adapter.BarterEngine().capabilities()
+    with pytest.raises(RuntimeError, match="rebuild"):
+        hb.backtest(SmaCross, {"X": trending(60)}, CFG, engine="barter")
+
+
+class BuyOnce(hb.Strategy):
+    def on_bar(self, ctx):
+        if len(self.history()) == 3 and self.position.is_flat:
+            self.buy(10)
+
+
+def test_liquidate_at_end_sdk_fallback_realises_the_round_trip_with_close_fills():
+    data = {"X": daily([(100, 101, 99, 100)] * 4 + [(100, 111, 99, 110)])}
+    for engine in ("simple", "barter"):
+        if engine == "barter":
+            _core_module()
+        cfg = hb.BacktestConfig(capital=100_000.0, liquidate_at_end=True)
+        res = hb.backtest(BuyOnce, data, cfg, engine=engine)
+        assert res.positions["X"].is_flat, engine
+        assert len(res.round_trips) == 1 and res.round_trips[0].exit_tag == "liquidate_end"
+        assert res.summary["net_pnl"] == pytest.approx(res.round_trips[0].pnl)
+
+
+def test_liquidate_at_end_with_next_open_needs_an_engine_that_supports_it(monkeypatch):
+    data = {"X": daily(flat(100, 6))}
+    cfg = hb.BacktestConfig(fill="next_open", liquidate_at_end=True)
+    with pytest.raises(hb.UnsupportedFeature, match="liquidate_at_end"):
+        hb.backtest(BuyOnce, data, cfg, engine=_NextOpenSimple())
+    core = _core_module()
+    monkeypatch.delattr(core, "contract_version", raising=False)
+    with pytest.raises(hb.UnsupportedFeature, match="liquidate_at_end"):
+        hb.backtest(BuyOnce, data, cfg, engine="barter")  # engine build without native support
+
+
+class _NextOpenSimple(SimpleEngine):
+    """Pretends to support next_open (it fills at the close) to hit the SDK refusal."""
+
+    def capabilities(self):
+        from dataclasses import replace
+
+        return replace(super().capabilities(), fill_models=frozenset({"close", "next_open"}))
+
+
+def test_liquidate_at_end_is_passed_to_engines_that_declare_it_and_sdk_stays_out():
+    seen = {}
+
+    class Native(ZeroEngine):
+        def capabilities(self):
+            return hb.EngineCapabilities(name="native", liquidate_at_end=True)
+
+        def run(self, request, on_bar):
+            seen["actions"] = []
+            rep = super().run(request, lambda ctx: seen["actions"].extend(on_bar(ctx)) or [])
+            seen["cfg"] = request.config.liquidate_at_end
+            return rep
+
+    hb.backtest(
+        BuyOnce,
+        {"X": daily(flat(100, 6))},
+        hb.BacktestConfig(liquidate_at_end=True),
+        engine=Native(),
+    )
+    assert seen["cfg"] is True
+    assert [type(a).__name__ for a in seen["actions"]] == ["PlaceOrder"]  # no SDK-side close_all

@@ -18,7 +18,13 @@ from honba.strategy.series import Bars
 
 from ._data import to_candles
 from .config import BacktestConfig
-from .engine import BacktestEngine, BacktestRequest, config_features, get_engine
+from .engine import (
+    BacktestEngine,
+    BacktestRequest,
+    UnsupportedFeature,
+    config_features,
+    get_engine,
+)
 from .result import BacktestResult
 from .validation import raise_or_warn, validate_candles
 
@@ -49,7 +55,14 @@ def _run(
     caps = eng.capabilities()
     request = BacktestRequest(config, candles, _resolve_start(config, candles))
     caps.check(config_features(request), "config")
-    liquidate = request.last_ms if config.liquidate_at_end else None
+    liquidate = None
+    if config.liquidate_at_end and not caps.supports("liquidate_at_end"):
+        if config.fill == "next_open":
+            # a market order placed on the last bar could never fill: refuse instead of lying
+            raise UnsupportedFeature(
+                eng.name, ["liquidate_at_end"], "fill='next_open' needs engine-side liquidation"
+            )
+        liquidate = request.last_ms  # SDK fallback: close_all on the last bar (close fills)
     runner = StrategyRunner(
         strategy,
         request.symbols,

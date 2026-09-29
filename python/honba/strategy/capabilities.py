@@ -25,7 +25,8 @@ class EngineCapabilities:
     Features are named strings: ``order:<kind>``, ``tif:<tif>``, ``product:<product>``,
     ``trail:<mode>``, ``bracket`` (attached stop_loss / take_profit), ``modify``, ``cancel``,
     ``multi_symbol``, ``session`` (hours, holidays, MIS square-off), ``instruments`` (lot / tick /
-    freeze validation), ``cost:<model>``, ``fill:<model>``, ``warmup``. ``check`` and
+    freeze validation), ``cost:<model>``, ``fill:<model>``, ``warmup``, ``liquidate_at_end`` (the engine flattens
+    open positions itself at the end of the data). ``check`` and
     ``supports`` are the only consumers of the concrete fields.
     """
 
@@ -43,6 +44,7 @@ class EngineCapabilities:
     cost_models: frozenset[str] = frozenset({"flat"})
     fill_models: frozenset[str] = frozenset({"close"})
     warmup: bool = False
+    liquidate_at_end: bool = False
     extra: frozenset[str] = field(default_factory=frozenset)
 
     def supports(self, feature: str) -> bool:
@@ -66,6 +68,7 @@ class EngineCapabilities:
             "session": self.sessions,
             "instruments": self.instruments,
             "warmup": self.warmup,
+            "liquidate_at_end": self.liquidate_at_end,
         }
         return flags.get(feature, feature in self.extra)
 

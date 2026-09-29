@@ -9,6 +9,7 @@ imported as ``from honba import _core``; enforced by import-linter and
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 from honba.strategy.actions import (
@@ -55,6 +56,40 @@ _CAPABILITIES = EngineCapabilities(
     fill_models=frozenset({"close", "next_open"}),
     warmup=True,
 )
+
+
+# ``_core.contract_version()`` (added with the engine's liquidate_at_end / margin keys) lets the
+# SDK detect a stale or too-new build. Builds without the function are accepted (older engine,
+# contract 0) but lack the features listed in ``_FEATURE_MIN_CONTRACT``.
+CONTRACT_MIN = 0
+CONTRACT_MAX = 1
+_FEATURE_MIN_CONTRACT = {"liquidate_at_end": 1}
+
+
+def core_contract(core: Any) -> int:
+    """The engine's contract version; 0 for builds that predate ``contract_version()``.
+
+    Raises ``RuntimeError`` when the build is outside the range this SDK speaks.
+    """
+    fn = getattr(core, "contract_version", None)
+    version = 0 if fn is None else int(fn())
+    if not CONTRACT_MIN <= version <= CONTRACT_MAX:
+        raise RuntimeError(
+            f"honba._core speaks engine contract {version}, this SDK supports "
+            f"{CONTRACT_MIN}..{CONTRACT_MAX}: rebuild with `maturin develop` "
+            "(or upgrade honba)"
+        )
+    return version
+
+
+def _load_core() -> Any:
+    try:
+        from honba import _core
+    except ImportError as exc:  # pragma: no cover - depends on the build
+        raise RuntimeError(
+            "honba._core is not built; run `maturin develop` to compile the barter engine"
+        ) from exc
+    return _core
 
 
 # -- SDK -> wire -----------------------------------------------------------------------------
@@ -124,6 +159,8 @@ def config_to_wire(config: BacktestConfig, symbols: list[str], start_ms: int | N
         wire["instruments"] = {s: _instrument_wire(i) for s, i in config.instruments.items()}
     if config.session is not None:
         wire["session"] = _session_wire(config.session)
+    if config.liquidate_at_end:
+        wire["liquidate_at_end"] = True
     if start_ms is not None:
         wire["start_ms"] = int(start_ms)
     return wire
@@ -347,17 +384,17 @@ class BarterEngine:
     name = "barter"
 
     def capabilities(self) -> EngineCapabilities:
-        """Everything the neutral layer can express."""
-        return _CAPABILITIES
+        """Everything the neutral layer can express; newer-contract features when built in."""
+        version = core_contract(_load_core())
+        return replace(
+            _CAPABILITIES,
+            liquidate_at_end=version >= _FEATURE_MIN_CONTRACT["liquidate_at_end"],
+        )
 
     def run(self, request: BacktestRequest, on_bar: BarHandler) -> BacktestReport:
         """Run the backtest on the compiled engine."""
-        try:
-            from honba import _core
-        except ImportError as exc:  # pragma: no cover - depends on the build
-            raise RuntimeError(
-                "honba._core is not built; run `maturin develop` to compile the barter engine"
-            ) from exc
+        _core = _load_core()
+        core_contract(_core)
         symbols = list(request.candles)
         config = config_to_wire(request.config, symbols, request.start_ms)
         candles = {

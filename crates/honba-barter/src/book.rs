@@ -429,6 +429,8 @@ pub struct Book {
     pub cash: f64,
     pub positions: Vec<Position>,
     pub last_close: Vec<Option<f64>>,
+    /// Instruments with a bar at the current timestamp.
+    has_bar: Vec<bool>,
     pub orders: Vec<Order>,
     pub fills: Vec<FillEvent>,
     pub rejections: Vec<Rejection>,
@@ -462,6 +464,7 @@ impl Book {
             proj_cash: cfg.initial_cash,
             positions: vec![Position::default(); n],
             last_close: vec![None; n],
+            has_bar: vec![false; n],
             proj_qty: vec![0.0; n],
             orders: Vec::new(),
             fills: Vec::new(),
@@ -684,6 +687,9 @@ impl Book {
         time_ms: i64,
         bars: &[Option<Bar>],
     ) -> Vec<FillIntent> {
+        for (has_bar, bar) in self.has_bar.iter_mut().zip(bars) {
+            *has_bar = bar.is_some();
+        }
         for ((close, recent), bar) in self.last_close.iter_mut().zip(&mut self.recent).zip(bars) {
             if let Some(bar) = bar {
                 *close = Some(bar.close);
@@ -1658,6 +1664,12 @@ impl Book {
             self.reject_request(time_ms, &request, Some(id), "no_price");
             return None;
         };
+        // The close of an older bar is stale: nothing can execute "now" without a bar
+        let has_bar = self.has_bar[instrument];
+        if request.kind == OrderType::Market && !has_bar && !self.cfg.next_open {
+            self.reject_request(time_ms, &request, Some(id), "no_bar");
+            return None;
+        }
         let reference = request.price.or(request.trigger).unwrap_or(close);
         if let Err(reason) = Self::check_bracket(
             request.side,
@@ -1754,8 +1766,9 @@ impl Book {
             );
         }
 
-        if self.cfg.next_open {
-            // Everything is matched from the next bar on (market orders at its open)
+        if self.cfg.next_open || !has_bar {
+            // Everything is matched from the next bar on (market orders at its open); without
+            // a bar at this timestamp there is no current price to execute against
             return None;
         }
 

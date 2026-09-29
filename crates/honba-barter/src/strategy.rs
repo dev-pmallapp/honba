@@ -216,7 +216,7 @@ impl DeciderStrategy {
             open_orders: book.open_orders(),
             events: book.take_events(),
             session: book.session_view(time_ms),
-            warmup: false,
+            warmup: book.is_warmup(time_ms),
             cash: book.cash,
             equity: book.equity(),
         }

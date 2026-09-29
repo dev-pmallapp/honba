@@ -17,7 +17,10 @@ pub mod session;
 pub mod strategy;
 
 pub use backtest::{run_backtest, run_sweep, BacktestError};
-pub use config::BacktestConfig;
+pub use config::{
+    BacktestConfig, BrokerageConfig, CostModel, CostsConfig, FillModel, InstrumentMeta,
+    IntrabarPriority, SessionConfig,
+};
 pub use data::{Bar, BarGate, CandleData, CandleMarketData};
 pub use ledger::Ledger;
 pub use model::{

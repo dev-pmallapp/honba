@@ -2,7 +2,7 @@
 
 use crate::{
     book::{Book, BookConfig, CostModel},
-    config::{self, BacktestConfig, IntrabarPriority, INDIA_RATE_TABLE, MAX_LATENCY_MS},
+    config::{self, BacktestConfig, FillModel, IntrabarPriority, INDIA_RATE_TABLE, MAX_LATENCY_MS},
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
     report::{build_report, BacktestReport, ReportInputs},
@@ -315,6 +315,8 @@ fn setup_run(
         allow_short: prepared.config.allow_short,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),
         session: prepared.session.clone(),
+        next_open: prepared.config.fill_model == FillModel::NextOpen,
+        start_ms: prepared.config.start_ms,
         stop_first: prepared.config.intrabar_priority == IntrabarPriority::StopFirst,
     });
     let strategy = DeciderStrategy::new(

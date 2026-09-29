@@ -134,6 +134,11 @@ pub struct BookConfig {
     pub utc_offset: FixedOffset,
     /// Trading hours; `None` means always open (no square-off).
     pub session: Option<Session>,
+    /// `next_open` fill model: market orders fill at the next bar's open and nothing executes
+    /// at the decision bar's close.
+    pub next_open: bool,
+    /// Bars before this timestamp are warm-up (no orders, no equity points).
+    pub start_ms: Option<i64>,
     /// When a bracket's stop loss and take profit both trigger inside one bar (neither at the
     /// open), the stop loss wins if true.
     pub stop_first: bool,
@@ -696,6 +701,8 @@ impl Book {
                     o.instrument == Some(instrument)
                         && o.is_open()
                         && o.tif == TimeInForce::Day
+                        // market orders (next_open) execute at the next available open
+                        && o.kind != OrderType::Market
                         && o.first_eval_date
                             .is_some_and(|first| self.day_expired(first, date, time_ms))
                 })
@@ -1007,8 +1014,16 @@ impl Book {
         }
     }
 
-    /// Record the equity point of a completed bar.
+    /// Is `time_ms` a warm-up bar (before `start_ms`).
+    pub fn is_warmup(&self, time_ms: i64) -> bool {
+        self.cfg.start_ms.is_some_and(|start| time_ms < start)
+    }
+
+    /// Record the equity point of a completed bar (not for warm-up bars).
     pub fn end_bar(&mut self, time_ms: i64) {
+        if self.is_warmup(time_ms) {
+            return;
+        }
         let point = (time_ms, self.equity());
         match self.equity_curve.last_mut() {
             Some(last) if last.0 == time_ms => *last = point,
@@ -1557,6 +1572,10 @@ impl Book {
                 return None;
             }
         }
+        if self.is_warmup(time_ms) {
+            self.reject_request(time_ms, &request, Some(id), "warmup");
+            return None;
+        }
         if !self.market_open(time_ms) {
             self.reject_request(time_ms, &request, Some(id), "market_closed");
             return None;
@@ -1660,6 +1679,11 @@ impl Book {
                 time_ms,
                 bar_index,
             );
+        }
+
+        if self.cfg.next_open {
+            // Everything is matched from the next bar on (market orders at its open)
+            return None;
         }
 
         // Close fill model: execute now at the decision bar's close when possible

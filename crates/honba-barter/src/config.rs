@@ -42,7 +42,12 @@ pub struct BacktestConfig {
     /// Which bracket exit wins when stop loss and take profit both trigger inside one bar.
     #[serde(alias = "same_bar_priority")]
     pub intrabar_priority: IntrabarPriority,
-    /// Bars before this timestamp (epoch ms) are warm-up.
+    /// `close` (default): market orders and orders marketable at the decision bar fill at its
+    /// close. `next_open`: they fill at the next bar's open (resting orders match from the next
+    /// bar either way).
+    pub fill_model: FillModel,
+    /// Bars before this timestamp (epoch ms) are warm-up: `on_bar` runs with `warmup: true`,
+    /// orders are rejected (`warmup`) and the equity curve / metrics start here.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_ms: Option<i64>,
 }
@@ -63,6 +68,7 @@ impl Default for BacktestConfig {
             session: None,
             instruments: BTreeMap::new(),
             start_ms: None,
+            fill_model: FillModel::Close,
         }
     }
 }
@@ -176,6 +182,15 @@ pub struct CostsConfig {
     /// Statutory rate table date; only `2024-10-01` (current NSE rates) is available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub table: Option<String>,
+}
+
+/// When market orders execute.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FillModel {
+    #[default]
+    Close,
+    NextOpen,
 }
 
 /// Tie-break for a bracket whose stop loss and take profit both trigger within one bar.

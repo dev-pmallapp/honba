@@ -20,6 +20,7 @@
 //! decision bar's close fill immediately at that close.
 
 use crate::{
+    config::InstrumentMeta,
     data::Bar,
     model::{
         Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
@@ -48,6 +49,15 @@ const EPS: f64 = 1e-9;
 
 fn approx_le(a: f64, b: f64) -> bool {
     a <= b + EPS * b.abs().max(1.0)
+}
+
+/// Is `value` an integer multiple of `step` (within float noise).
+fn is_multiple(value: f64, step: f64) -> bool {
+    if step.is_nan() || step <= 0.0 {
+        return true;
+    }
+    let ratio = value / step;
+    (ratio - ratio.round()).abs() <= 1e-6
 }
 
 /// Per-fill transaction cost model.
@@ -116,16 +126,14 @@ pub struct BookConfig {
     pub symbols: Vec<String>,
     pub initial_cash: f64,
     pub costs: CostModel,
-    /// Market segment per instrument (cost model, short rules).
-    pub segments: Vec<Segment>,
+    /// Exchange rules per instrument index.
+    pub instruments: Vec<InstrumentMeta>,
     pub allow_short: bool,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
     /// When a bracket's stop loss and take profit both trigger inside one bar (neither at the
     /// open), the stop loss wins if true.
     pub stop_first: bool,
-    /// Tick size per instrument (prices are rounded / validated against it when set).
-    pub tick_sizes: Vec<Option<f64>>,
 }
 
 /// Net position in one instrument with average-cost accounting.
@@ -646,7 +654,7 @@ impl Book {
 
     /// Round a stop to the instrument tick, away from the market (down for sell stops).
     fn round_stop(&self, instrument: usize, side: ActionSide, value: f64) -> f64 {
-        match self.cfg.tick_sizes.get(instrument).copied().flatten() {
+        match self.meta(instrument).tick_size {
             Some(tick) if tick > 0.0 => {
                 let ticks = value / tick;
                 let ticks = match side {
@@ -971,13 +979,44 @@ impl Book {
             .position(|order| order.id == id && order.is_open())
     }
 
-    fn default_product(&self, instrument: usize) -> Product {
+    fn meta(&self, instrument: usize) -> InstrumentMeta {
         self.cfg
-            .segments
+            .instruments
             .get(instrument)
             .copied()
             .unwrap_or_default()
-            .default_product()
+    }
+
+    fn default_product(&self, instrument: usize) -> Product {
+        self.meta(instrument).default_product()
+    }
+
+    /// Lot size and freeze quantity rules.
+    fn check_qty(&self, instrument: usize, qty: f64) -> Check {
+        if !qty.is_finite() || qty <= 0.0 {
+            return Err("invalid_qty");
+        }
+        let meta = self.meta(instrument);
+        if meta.lot_size.is_some_and(|lot| !is_multiple(qty, lot)) {
+            return Err("invalid_lot");
+        }
+        if meta
+            .freeze_qty
+            .is_some_and(|freeze| !approx_le(qty, freeze))
+        {
+            return Err("above_freeze_qty");
+        }
+        Ok(())
+    }
+
+    /// Prices must sit on the instrument tick.
+    fn check_ticks(&self, instrument: usize, prices: &[Option<f64>]) -> Check {
+        match self.meta(instrument).tick_size {
+            Some(tick) if prices.iter().flatten().any(|p| !is_multiple(*p, tick)) => {
+                Err("invalid_tick")
+            }
+            _ => Ok(()),
+        }
     }
 
     fn costs_for(
@@ -988,13 +1027,9 @@ impl Book {
         price: f64,
         qty: f64,
     ) -> CostBreakdown {
-        let segment = self
-            .cfg
-            .segments
-            .get(instrument)
-            .copied()
-            .unwrap_or_default();
-        self.cfg.costs.costs(segment, product, side, price, qty)
+        self.cfg
+            .costs
+            .costs(self.meta(instrument).segment, product, side, price, qty)
     }
 
     /// Can `instrument` be traded `side` x `qty` at `price` given the projected portfolio.
@@ -1333,8 +1368,18 @@ impl Book {
             self.reject_request(time_ms, &request, Some(id), "unknown_symbol");
             return None;
         };
-        if !request.qty.is_finite() || request.qty <= 0.0 {
-            self.reject_request(time_ms, &request, Some(id), "invalid_qty");
+        if let Err(reason) = self.check_qty(instrument, request.qty).and_then(|()| {
+            self.check_ticks(
+                instrument,
+                &[
+                    request.price,
+                    request.trigger,
+                    request.stop_loss,
+                    request.take_profit,
+                ],
+            )
+        }) {
+            self.reject_request(time_ms, &request, Some(id), reason);
             return None;
         }
         // A trail on a stop order without an attached stop loss trails the order itself;
@@ -1502,9 +1547,26 @@ impl Book {
         let qty = modify.qty.unwrap_or(order.qty);
         let price = modify.price.or(order.price);
         let trigger = modify.trigger.or(order.trigger);
-        if !qty.is_finite() || qty <= 0.0 || qty < order.filled_qty - EPS {
+        if qty < order.filled_qty - EPS {
             self.reject_op(time_ms, Some(modify.id), "invalid_qty");
             return;
+        }
+        if let Some(instrument) = order.instrument {
+            let checks = self.check_qty(instrument, qty).and_then(|()| {
+                self.check_ticks(
+                    instrument,
+                    &[
+                        modify.price,
+                        modify.trigger,
+                        modify.stop_loss,
+                        modify.take_profit,
+                    ],
+                )
+            });
+            if let Err(reason) = checks {
+                self.reject_op(time_ms, Some(modify.id), reason);
+                return;
+            }
         }
         let trailing = order.trail.is_some() || modify.trail.is_some();
         let trigger_check = if trailing && order.kind == OrderType::Stop {

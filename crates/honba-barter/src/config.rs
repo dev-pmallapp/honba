@@ -1,6 +1,8 @@
 //! Backtest configuration.
 
+use crate::model::{Product, Segment};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Backtest configuration (JSON keys match field names, every key is optional).
 ///
@@ -27,6 +29,10 @@ pub struct BacktestConfig {
     pub latency_ms: u64,
     pub risk_free_return: f64,
     pub allow_short: bool,
+    /// Per-symbol instrument metadata; symbols without an entry are equity cash, lot 1, no
+    /// tick validation.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub instruments: BTreeMap<String, InstrumentMeta>,
     /// Transaction cost model; `null` = flat `fees_percent`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub costs: Option<CostsConfig>,
@@ -51,8 +57,36 @@ impl Default for BacktestConfig {
             allow_short: false,
             intrabar_priority: IntrabarPriority::StopFirst,
             costs: None,
+            instruments: BTreeMap::new(),
             start_ms: None,
         }
+    }
+}
+
+/// `instruments.<symbol>` config: exchange rules for one symbol. Unknown keys are ignored.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InstrumentMeta {
+    pub segment: Segment,
+    /// Order quantities must be multiples of this (`invalid_lot`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lot_size: Option<f64>,
+    /// Limit / trigger / stop-loss / take-profit prices must be multiples of this
+    /// (`invalid_tick`); trailing stops are rounded to it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tick_size: Option<f64>,
+    /// Maximum quantity per order (`above_freeze_qty`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freeze_qty: Option<f64>,
+    /// Product for orders that don't name one (default: CNC for equity cash, NRML otherwise).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_product: Option<Product>,
+}
+
+impl InstrumentMeta {
+    pub fn default_product(&self) -> Product {
+        self.default_product
+            .unwrap_or_else(|| self.segment.default_product())
     }
 }
 

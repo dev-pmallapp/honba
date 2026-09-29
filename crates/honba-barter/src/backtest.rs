@@ -5,7 +5,6 @@ use crate::{
     config::{self, BacktestConfig, IntrabarPriority, INDIA_RATE_TABLE, MAX_LATENCY_MS},
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
-    model::Segment,
     report::{build_report, BacktestReport, ReportInputs},
     strategy::{lock, Decider, DeciderStrategy, DeciderStrategyConfig, HonbaEngineState, RunState},
 };
@@ -100,6 +99,14 @@ fn prepare(
         return Err(BacktestError::Config(format!(
             "latency_ms must be <= {MAX_LATENCY_MS} (barter times out requests after 1s)"
         )));
+    }
+    for (symbol, meta) in &config.instruments {
+        let positive = |value: Option<f64>| value.is_none_or(|v| v.is_finite() && v > 0.0);
+        if !(positive(meta.lot_size) && positive(meta.tick_size) && positive(meta.freeze_qty)) {
+            return Err(BacktestError::Config(format!(
+                "instruments.{symbol}: lot_size, tick_size and freeze_qty must be > 0"
+            )));
+        }
     }
     let quote = config.quote.to_lowercase();
     if quote.is_empty() {
@@ -290,11 +297,21 @@ fn setup_run(
         symbols: prepared.symbols.clone(),
         initial_cash: prepared.config.initial_cash,
         costs: prepared.cost_model.clone(),
-        segments: vec![Segment::EquityCash; prepared.symbols.len()],
+        instruments: prepared
+            .symbols
+            .iter()
+            .map(|symbol| {
+                prepared
+                    .config
+                    .instruments
+                    .get(symbol)
+                    .copied()
+                    .unwrap_or_default()
+            })
+            .collect(),
         allow_short: prepared.config.allow_short,
         utc_offset: IST,
         stop_first: prepared.config.intrabar_priority == IntrabarPriority::StopFirst,
-        tick_sizes: vec![None; prepared.symbols.len()],
     });
     let strategy = DeciderStrategy::new(
         decider,

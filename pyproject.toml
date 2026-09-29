@@ -34,7 +34,7 @@ dependencies = [
     "scikit-learn>=1.6",
     "xgboost>=2",
     "lightgbm>=4",
-    "pypfopt>=1.5",
+    "PyPortfolioOpt>=1.5",
     "hmmlearn>=0.3",
     "statsmodels>=0.14",
 ]
@@ -74,10 +74,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "D", "UP", "B", "C4", "SIM", "RUF"]
+# Property-style docstrings ("True when ...") and dunder methods read better without D401/D105/D107.
+ignore = ["D105", "D107", "D401"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["python"]
 python_files = "test_*.py"
 addopts = "-v --tb=short --strict-markers"
 
@@ -90,6 +93,14 @@ disallow_incomplete_defs = true
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# The compiled barter engine (``honba._core``) is built with ``maturin develop`` (see the
+# README); ``python-source`` makes it land next to the pure-Python package in ``python/honba``.
+[tool.maturin]
+manifest-path = "crates/honba-pyo3/Cargo.toml"
+python-source = "python"
+module-name = "honba._core"
+features = ["pyo3/extension-module"]
 
 # ---------------------------------------------------------------------------
 # Architectural boundaries - enforced in CI, not by good intentions.

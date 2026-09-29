@@ -12,6 +12,11 @@ from honba.strategy.types import IST
 __all__ = ["BacktestConfig", "CostModel"]
 
 
+# Conservative all-in rate for the value-proportional Indian buy-side charges (STT 0.1%,
+# stamp duty 0.015%, exchange / SEBI fees, GST on fees) with headroom.
+_INDIA_BUY_RATE = 0.0025
+
+
 @dataclass(frozen=True, slots=True)
 class CostModel:
     """Transaction costs.
@@ -27,6 +32,13 @@ class CostModel:
     cnc_free: bool = True
     dp_per_sell: float = 0.0
     table: str | None = None
+
+    def estimate_buy(self, value: float) -> float:
+        """Upper-bound estimate of the costs of buying ``value`` (for cash-capped sizing)."""
+        if self.model == "flat":
+            return value * self.pct / 100.0
+        brokerage = min(self.per_order, value * self.brokerage_pct / 100.0)
+        return value * _INDIA_BUY_RATE + brokerage * 1.18
 
     @classmethod
     def flat(cls, pct: float = 0.0) -> CostModel:

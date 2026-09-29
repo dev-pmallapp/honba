@@ -8,7 +8,7 @@ capabilities.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from .actions import Action, required_features
@@ -36,6 +36,7 @@ class StrategyRunner:
         capabilities: engine capabilities; orders using anything else raise
             :class:`UnsupportedFeature`.
         liquidate_at_ms: flatten every position on this bar (end-of-test flatten).
+        buy_cost: estimates the costs of buying ``value`` (used by ``Sizer(cap_cash=True)``).
 
     """
 
@@ -50,6 +51,7 @@ class StrategyRunner:
         timeframe: str | None = None,
         capabilities: EngineCapabilities | None = None,
         liquidate_at_ms: int | None = None,
+        buy_cost: Callable[[float], float] | None = None,
     ) -> None:
         self.symbols = tuple(symbols)
         self.strategy = strategy(**dict(params or {}))
@@ -74,6 +76,7 @@ class StrategyRunner:
         s.symbols = self.symbols
         s._instruments = dict(instruments or {})
         s._caps = capabilities
+        s._buy_cost = buy_cost
         s._history = self._history
         if capabilities is not None and s.requires:
             capabilities.check(s.requires, f"{strategy.__name__}.requires")

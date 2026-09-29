@@ -59,6 +59,7 @@ def _run(
         timeframe=config.timeframe,
         capabilities=caps,
         liquidate_at_ms=liquidate,
+        buy_cost=config.costs.estimate_buy,
     )
     report = eng.run(request, runner)
     return BacktestResult(

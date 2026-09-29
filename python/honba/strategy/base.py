@@ -51,6 +51,7 @@ from .types import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
 __all__ = ["OrderHandle", "Strategy"]
@@ -153,6 +154,7 @@ class Strategy(ABC):
         self.size = Sizer(self)
         self._instruments: dict[str, Instrument] = {}
         self._caps: EngineCapabilities | None = None
+        self._buy_cost: Callable[[float], float] | None = None
         self._ctx: BarContext | None = None
         self._positions: _Positions = _Positions()
         self._queue: list[Action] = []

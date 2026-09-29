@@ -684,3 +684,40 @@ def test_metrics_from_synthetic_equity_and_trips():
     assert flat_m.total_trades == 0 and flat_m.win_rate is None and flat_m.sharpe is None
     rets = daily_returns(equity, 100.0)
     assert rets.iloc[0] == 0.0 and len(rets) == 6
+
+
+# ------------------------------------------------------------------------------- cash-capped sizing
+
+
+def test_cap_cash_accounts_for_costs():
+    def size(costs, cash=10_000.0):
+        out = {}
+
+        def fn(s, ctx):
+            out["q"] = s.size.by_value(1e9, cap_cash=True)
+
+        act(fn, _ctx(cash=cash), buy_cost=costs.estimate_buy if costs else None)
+        return out["q"]
+
+    assert size(None) == 100  # no cost model: all cash at price 100
+    q = size(hb.CostModel.flat(1.0))  # 1% fee: 99 shares cost 9999 > ... 99*100*1.01 = 9999
+    assert q == 99
+    india = hb.CostModel.india()
+    q = size(india)
+    assert q < 100 and q * 100 + india.estimate_buy(q * 100) <= 10_000.0
+    assert (q + 1) * 100 + india.estimate_buy((q + 1) * 100) > 10_000.0
+    assert size(india, cash=50.0) == 0  # cannot afford even one share plus fees
+
+
+def test_cap_cash_orders_are_not_rejected_by_the_engine_for_cash():
+    pytest.importorskip("honba._core")
+    from sdk_helpers import daily as _daily
+
+    class All(hb.Strategy):
+        def on_bar(self, ctx):
+            if len(self.history()) == 2:
+                self.buy(self.size.by_fraction(1.0, cap_cash=True))
+
+    cfg = hb.BacktestConfig(capital=10_000.0, costs=hb.CostModel.india())
+    res = hb.backtest(All, {"X": _daily(flat(100, 4))}, cfg)
+    assert res.rejected.empty and res.fills.qty.iloc[0] >= 90

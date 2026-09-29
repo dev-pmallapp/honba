@@ -94,7 +94,8 @@ class Sizer:
 
     Defaults: equity from the current bar, price from the symbol's latest close, lot size from
     the instrument metadata. ``max_value`` caps the order's notional; ``cap_cash=True`` caps it
-    at available cash (long, unleveraged).
+    at available cash *including the estimated buy-side costs* of the configured cost model
+    (long, unleveraged), so the order is not rejected for ``insufficient_cash``.
     """
 
     def __init__(self, strategy: Strategy) -> None:
@@ -112,13 +113,24 @@ class Sizer:
         max_value: float | None,
         cap_cash: bool,
     ) -> float:
-        limit = max_value
-        if cap_cash:
-            cash = self._s.cash
-            limit = cash if limit is None else min(limit, cash)
-        if limit is not None and price > 0:
-            qty = min(qty, floor_to_lot(limit / price, inst.lot_size))
+        if max_value is not None and price > 0:
+            qty = min(qty, floor_to_lot(max_value / price, inst.lot_size))
+        if cap_cash and price > 0:
+            qty = min(qty, self._affordable(price, inst))
         return qty
+
+    def _affordable(self, price: float, inst: Instrument) -> float:
+        """Largest lot multiple whose value plus estimated buy costs fits in cash."""
+        cash = self._s.cash
+        fee = self._s._buy_cost
+        qty = floor_to_lot(cash / price, inst.lot_size)
+        while qty > 0:
+            value = qty * price
+            excess = value + (fee(value) if fee else 0.0) - cash
+            if excess <= 0:
+                break
+            qty -= max(math.ceil(excess / (price * inst.lot_size)), 1) * inst.lot_size
+        return max(qty, 0.0)
 
     def by_value(
         self,

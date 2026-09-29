@@ -20,7 +20,8 @@
 //! `outside_price_band`, circuit-locked bars); `freeze_policy` (`split`: freeze-sized slices,
 //! fill / trade `slice`); `stop_loss` / `take_profit` leg lists (partial exits),
 //! `move_sl_to_entry_after_first_tp`, leg ids `<id>:sl<n>` / `<id>:tp<n>`, cancel reason
-//! `replaced`, event `stop_update`.
+//! `replaced`, event `stop_update`; `settlement` (T+1: ctx `unsettled_cash` /
+//! `available_cash`, position `qty_settled`, report `summary.unsettled_cash`).
 //!
 //! `candles`: `{symbol: [(time_ms, open, high, low, close, volume), ...]}`. `on_bar(ctx)` is
 //! called once per distinct bar timestamp and returns a list of actions (or `None`). Every key
@@ -46,6 +47,8 @@
 //!   "margin": {"mis_leverage": 1.0, "nrml_margin_pct": 100.0, "short_margin_pct": 100.0},
 //!   "slippage": {"model": "bps" | "volume_share", "bps": 0.0, "impact_bps": 0.0,
 //!                "max_volume_share": null},   // see config::SlippageConfig
+//!   "settlement": {"cnc": "T+0" | "T+1", "same_day_sell_credit": 1.0},  // see
+//!                                    // config::SettlementConfig; default (null) = T+0
 //!   "freeze_policy": "reject" | "split",   // orders above freeze_qty: reject, or execute
 //!                                          // each fill as freeze-sized lot-multiple slices
 //!   "costs": {"model": "flat" | "india",
@@ -118,9 +121,13 @@
 //!
 //! ```jsonc
 //! {"time_ms": int, "warmup": bool, "cash": float, "equity": float,
+//!  "unsettled_cash": float,          // CNC sale proceeds awaiting T+1 settlement (in cash)
+//!  "available_cash": float,          // cash - unsettled proceeds beyond same_day_sell_credit
 //!  "candles": {"SBIN": {"time_ms", "open", "high", "low", "close", "volume"}}, // latest bar
 //!  "positions": {"SBIN": {"qty", "avg_price", "product": "CNC"|null, "realised_pnl",
-//!                         "unrealised_pnl", "pnl"}},
+//!                         "unrealised_pnl", "pnl",
+//!                         "qty_settled"}},   // holdings: delivered CNC long qty (T+1: bought
+//!                                            // before today; T+0: the whole CNC long)
 //!  "open_orders": [Order],           // open + pending (attached exits awaiting their entry)
 //!  "events": [                       // since the previous on_bar, in order
 //!    {"type": "fill", "time_ms", "id", "fill_id", "symbol", "side", "qty", "price", "value",
@@ -181,7 +188,8 @@ pub mod strategy;
 pub use backtest::{run_backtest, run_sweep, BacktestError};
 pub use config::{
     BacktestConfig, BrokerageConfig, CostModel, CostsConfig, FillModel, FreezePolicy,
-    InstrumentMeta, IntrabarPriority, MarginConfig, SessionConfig, SlippageConfig, SlippageModel,
+    InstrumentMeta, IntrabarPriority, MarginConfig, SessionConfig, SettlementConfig,
+    SettlementCycle, SlippageConfig, SlippageModel,
 };
 pub use data::{Bar, BarGate, CandleData, CandleMarketData};
 pub use ledger::Ledger;

@@ -221,6 +221,8 @@ impl DeciderStrategy {
             warmup: book.is_warmup(time_ms),
             cash: book.cash,
             equity: book.equity(),
+            unsettled_cash: book.unsettled_cash(),
+            available_cash: book.available_cash(),
         }
     }
 

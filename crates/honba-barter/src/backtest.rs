@@ -127,6 +127,14 @@ fn prepare(
             ));
         }
     }
+    if config
+        .settlement
+        .is_some_and(|settlement| !(0.0..=1.0).contains(&settlement.same_day_sell_credit))
+    {
+        return Err(BacktestError::Config(
+            "settlement.same_day_sell_credit must be in [0, 1]".into(),
+        ));
+    }
     for (symbol, meta) in &config.instruments {
         let positive = |value: Option<f64>| value.is_none_or(|v| v.is_finite() && v > 0.0);
         if !(positive(meta.lot_size) && positive(meta.tick_size) && positive(meta.freeze_qty)) {
@@ -359,6 +367,7 @@ fn setup_run(
         margin: prepared.config.margin,
         slippage: prepared.config.slippage,
         freeze_policy: prepared.config.freeze_policy,
+        settlement: prepared.config.settlement,
         liquidate_at_end: prepared.config.liquidate_at_end,
         attached_exit_same_bar: prepared.config.attached_exit_same_bar,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),

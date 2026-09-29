@@ -20,7 +20,10 @@
 //! decision bar's close fill immediately at that close.
 
 use crate::{
-    config::{FreezePolicy, InstrumentMeta, MarginConfig, SlippageConfig},
+    config::{
+        FreezePolicy, InstrumentMeta, MarginConfig, SettlementConfig, SettlementCycle,
+        SlippageConfig,
+    },
     data::Bar,
     model::{
         Action, ActionSide, CostBreakdown, Event, ExitSpec, FillEvent, FillReason, ModifyRequest,
@@ -184,6 +187,8 @@ pub struct BookConfig {
     pub slippage: Option<SlippageConfig>,
     /// Orders above `freeze_qty`: rejected, or executed in freeze-sized slices.
     pub freeze_policy: FreezePolicy,
+    /// CNC settlement cycle; `None` = T+0.
+    pub settlement: Option<SettlementConfig>,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
     /// Per instrument: timestamps of its MIS square-off bars (see
@@ -212,6 +217,8 @@ pub struct Position {
     pub product: Option<Product>,
     /// Realised PnL (gross of costs).
     pub realised_pnl: f64,
+    /// T+1: CNC long quantity bought on earlier trading dates (holdings).
+    pub settled: f64,
 }
 
 impl Position {
@@ -400,6 +407,8 @@ pub struct FillIntent {
     pub capped: bool,
     /// Freeze-quantity slice id (`<order id>#<n>`) when the fill was split.
     pub slice: Option<String>,
+    /// T+1: sale proceeds of this fill not usable before settlement.
+    pub locked: f64,
     /// Last intent of one fill decision (the final slice).
     pub last: bool,
 }
@@ -575,8 +584,14 @@ pub struct Book {
     pending: HashMap<String, FillIntent>,
     /// Execution outcomes waiting for earlier fills (by fill sequence).
     reported: std::collections::BTreeMap<u64, (String, Result<(), String>)>,
+    /// T+1: unsettled CNC sale proceeds `(trade date, proceeds, not yet usable part)`.
+    unsettled: Vec<(NaiveDate, f64, f64)>,
+    /// Trading date the settlement state was rolled to.
+    settle_date: Option<NaiveDate>,
     /// Batch-local projection of cash / positions including not yet confirmed intents.
     proj_cash: f64,
+    /// Projected sale proceeds not usable yet (T+1).
+    proj_locked: f64,
     proj_qty: Vec<f64>,
     events: Vec<Event>,
     order_seq: u64,
@@ -592,6 +607,9 @@ impl Book {
         Self {
             cash: cfg.initial_cash,
             proj_cash: cfg.initial_cash,
+            proj_locked: 0.0,
+            unsettled: Vec::new(),
+            settle_date: None,
             positions: vec![Position::default(); n],
             last_close: vec![None; n],
             has_bar: vec![false; n],
@@ -650,6 +668,11 @@ impl Book {
         let unrealised = self.last_close[instrument]
             .map(|close| position.qty * (close - position.avg_price))
             .unwrap_or_default();
+        let cnc_long = if position.product == Some(Product::CNC) {
+            position.qty.max(0.0)
+        } else {
+            0.0
+        };
         PositionView {
             qty: position.qty,
             avg_price: position.avg_price,
@@ -657,6 +680,11 @@ impl Book {
             realised_pnl: position.realised_pnl,
             unrealised_pnl: unrealised,
             pnl: position.realised_pnl + unrealised,
+            qty_settled: if self.t_plus_one() {
+                position.settled.min(cnc_long)
+            } else {
+                cnc_long
+            },
         }
     }
 
@@ -874,11 +902,51 @@ impl Book {
         for (proj, position) in self.proj_qty.iter_mut().zip(&self.positions) {
             *proj = position.qty;
         }
+        self.proj_locked = self.unsettled.iter().map(|(_, _, locked)| locked).sum();
         for pending in self.pending.values() {
             self.proj_cash -=
                 pending.side.sign() * pending.qty * pending.price + pending.costs.total;
             self.proj_qty[pending.instrument] += pending.side.sign() * pending.qty;
+            self.proj_locked += pending.locked;
         }
+    }
+
+    fn t_plus_one(&self) -> bool {
+        self.cfg
+            .settlement
+            .is_some_and(|s| s.cnc == SettlementCycle::T1)
+    }
+
+    /// New trading date: earlier sale proceeds settle and CNC buys become holdings.
+    fn roll_settlement(&mut self, date: NaiveDate) {
+        if self.settle_date == Some(date) {
+            return;
+        }
+        self.settle_date = Some(date);
+        self.unsettled
+            .retain(|(trade_date, _, _)| *trade_date >= date);
+        for position in &mut self.positions {
+            position.settled = if position.product == Some(Product::CNC) {
+                position.qty.max(0.0)
+            } else {
+                0.0
+            };
+        }
+    }
+
+    /// CNC sale proceeds not settled yet (T+1).
+    pub fn unsettled_cash(&self) -> f64 {
+        self.unsettled.iter().map(|(_, proceeds, _)| proceeds).sum()
+    }
+
+    /// Cash usable for new exposure: cash minus unsettled proceeds beyond the same-day credit.
+    pub fn available_cash(&self) -> f64 {
+        self.cash
+            - self
+                .unsettled
+                .iter()
+                .map(|(_, _, locked)| locked)
+                .sum::<f64>()
     }
 
     /// Start processing the bars at `time_ms` (`bars[i]` is instrument `i`'s bar, if any):
@@ -915,9 +983,10 @@ impl Book {
                 recent.push_back(*bar);
             }
         }
+        let date = self.trading_date(time_ms);
+        self.roll_settlement(date);
         self.sync_projection();
         self.advance_open_floor();
-        let date = self.trading_date(time_ms);
 
         let open = self.market_open(time_ms);
 
@@ -1825,7 +1894,8 @@ impl Book {
     /// marked at the latest close. Short-sale proceeds sit in cash but are offset by the
     /// short liability, so they never fund purchases.
     fn buying_power(&self) -> f64 {
-        (0..self.proj_qty.len()).fold(self.proj_cash, |power, instrument| {
+        let usable = self.proj_cash - self.proj_locked;
+        (0..self.proj_qty.len()).fold(usable, |power, instrument| {
             power + self.proj_qty[instrument] * self.mark(instrument) - self.blocked(instrument)
         })
     }
@@ -1918,6 +1988,28 @@ impl Book {
             self.volume_used[instrument] += qty;
         }
         self.intent(index, qty, price, reason, time_ms, bar_index, capped)
+    }
+
+    /// T+1: part of a CNC sale's net proceeds (for the quantity closing a long, given the
+    /// projected position) that cannot fund new exposure before settlement.
+    fn locked_proceeds(
+        &self,
+        instrument: usize,
+        side: ActionSide,
+        product: Product,
+        price: f64,
+        qty: f64,
+        costs: &CostBreakdown,
+    ) -> f64 {
+        let Some(settlement) = self.cfg.settlement.filter(|_| self.t_plus_one()) else {
+            return 0.0;
+        };
+        if side != ActionSide::Sell || product != Product::CNC || qty <= 0.0 {
+            return 0.0;
+        }
+        let closing = qty.min(self.proj_qty[instrument].max(0.0));
+        let proceeds = closing * price - costs.total * closing / qty;
+        (proceeds * (1.0 - settlement.same_day_sell_credit)).max(0.0)
     }
 
     /// Largest quantity one exchange order may carry under the `split` freeze policy (a lot
@@ -2018,8 +2110,10 @@ impl Book {
             .enumerate()
             .map(|(n, qty)| {
                 let costs = self.costs_for(instrument, side, product, price, qty);
+                let locked = self.locked_proceeds(instrument, side, product, price, qty, &costs);
                 self.proj_cash -= side.sign() * qty * price + costs.total;
                 self.proj_qty[instrument] += side.sign() * qty;
+                self.proj_locked += locked;
                 let slice = split.then(|| {
                     let parent = &mut self.orders[order];
                     parent.slices += 1;
@@ -2041,6 +2135,7 @@ impl Book {
                     capped,
                     slice,
                     last: n + 1 == count,
+                    locked,
                 };
                 self.pending.insert(intent.fill_id.clone(), intent.clone());
                 intent
@@ -2978,7 +3073,11 @@ impl Book {
         }
         let delta = intent.side.sign() * intent.qty;
         self.cash -= delta * intent.price + intent.costs.total;
+        let before = self.positions[intent.instrument];
         let realised = self.positions[intent.instrument].apply(delta, intent.price, product);
+        if self.t_plus_one() {
+            self.settle_fill(&intent, before, product);
+        }
         self.costs.add(&intent.costs);
 
         let fill = FillEvent {
@@ -3004,6 +3103,28 @@ impl Book {
         // An IOC order's unfilled rest (volume cap) is cancelled once its fills are applied
         self.expire_ioc(intent.order, intent.time_ms);
         true
+    }
+
+    /// T+1 bookkeeping of a confirmed fill: CNC sale proceeds wait for settlement, and sales
+    /// net against the same day's buys before they reduce holdings.
+    fn settle_fill(&mut self, intent: &FillIntent, before: Position, product: Product) {
+        let date = self.trading_date(intent.time_ms);
+        if intent.side == ActionSide::Sell && product == Product::CNC && before.qty > 0.0 {
+            let closing = intent.qty.min(before.qty);
+            let proceeds = closing * intent.price - intent.costs.total * closing / intent.qty;
+            self.unsettled.push((date, proceeds, intent.locked));
+        }
+        let position = &mut self.positions[intent.instrument];
+        if intent.side == ActionSide::Sell && before.qty > 0.0 {
+            let bought_today = (before.qty - before.settled).max(0.0);
+            let from_holdings = (intent.qty.min(before.qty) - bought_today).max(0.0);
+            position.settled = (before.settled - from_holdings).max(0.0);
+        }
+        position.settled = if position.product == Some(Product::CNC) {
+            position.settled.min(position.qty.max(0.0))
+        } else {
+            0.0
+        };
     }
 
     /// barter refused `fill_id`.

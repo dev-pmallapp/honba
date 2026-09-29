@@ -29,6 +29,7 @@ use std::collections::BTreeMap;
 /// | `margin`           | object    | 1x / 100%   | [`MarginConfig`]: `mis_leverage`, `nrml_margin_pct`, `short_margin_pct`. |
 /// | `slippage`         | object    | `null`      | [`SlippageConfig`]; `null` = fills at the matched price, no volume cap. |
 /// | `freeze_policy`    | str       | `"reject"`  | [`FreezePolicy`]: orders above `freeze_qty` are rejected or split. |
+/// | `settlement`       | object    | `null`      | [`SettlementConfig`]; `null` = T+0 (sale proceeds usable at once). |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BacktestConfig {
@@ -61,6 +62,9 @@ pub struct BacktestConfig {
     pub slippage: Option<SlippageConfig>,
     /// What happens to orders above an instrument's `freeze_qty`.
     pub freeze_policy: FreezePolicy,
+    /// Delivery (CNC) settlement: when sale proceeds become usable; `null` = T+0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settlement: Option<SettlementConfig>,
     /// Trading hours / holidays / MIS square-off; `null` = always open.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<SessionConfig>,
@@ -97,6 +101,7 @@ impl Default for BacktestConfig {
             margin: MarginConfig::default(),
             slippage: None,
             freeze_policy: FreezePolicy::Reject,
+            settlement: None,
             liquidate_at_end: false,
             trading_days_per_year: 250,
             attached_exit_same_bar: false,
@@ -143,6 +148,43 @@ impl MarginConfig {
             Product::NRML | Product::MTF => self.nrml_margin_pct / 100.0,
             Product::CNC if short => self.short_margin_pct / 100.0,
             Product::CNC => 1.0,
+        }
+    }
+}
+
+/// Settlement cycle of delivery (CNC) trades.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SettlementCycle {
+    /// Settles immediately (no holdings / positions distinction in cash).
+    #[default]
+    #[serde(rename = "T+0", alias = "t+0", alias = "T0")]
+    T0,
+    /// Settles on the next trading date.
+    #[serde(rename = "T+1", alias = "t+1", alias = "T1")]
+    T1,
+}
+
+/// `settlement` config (I2).
+///
+/// With `cnc: "T+1"`, proceeds of CNC sales (net of costs, for the quantity that closed a
+/// long) settle at the first bar of a later trading date; until then only
+/// `same_day_sell_credit` of them funds new exposure (the rest is `unsettled`). CNC buys become
+/// holdings (`qty_settled`) on the next trading date; selling them before that (BTST) is
+/// allowed and nets against the same day's buys first.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SettlementConfig {
+    pub cnc: SettlementCycle,
+    /// Fraction in [0, 1] of unsettled sale proceeds usable for new buys the same day
+    /// (broker dependent, default 1: full credit).
+    pub same_day_sell_credit: f64,
+}
+
+impl Default for SettlementConfig {
+    fn default() -> Self {
+        Self {
+            cnc: SettlementCycle::T0,
+            same_day_sell_credit: 1.0,
         }
     }
 }

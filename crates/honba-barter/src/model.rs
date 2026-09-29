@@ -512,6 +512,10 @@ pub struct PositionView {
     pub unrealised_pnl: f64,
     /// `realised_pnl + unrealised_pnl`.
     pub pnl: f64,
+    /// Delivered CNC long quantity (holdings): with `settlement.cnc = "T+1"` what was bought on
+    /// earlier trading dates, with T+0 the whole CNC long; 0 for other products and shorts.
+    #[serde(default)]
+    pub qty_settled: f64,
 }
 
 /// Why a fill happened.
@@ -689,10 +693,14 @@ pub struct BarContext<'a> {
     pub session: SessionView,
     /// True while `time_ms < start_ms` (orders are rejected with `warmup`).
     pub warmup: bool,
-    /// Available cash in the quote currency.
+    /// Cash in the quote currency (including unsettled sale proceeds).
     pub cash: f64,
     /// Cash plus positions marked at their latest close.
     pub equity: f64,
+    /// CNC sale proceeds awaiting settlement (T+1; 0 with T+0).
+    pub unsettled_cash: f64,
+    /// `cash` minus the unsettled proceeds not covered by `same_day_sell_credit`.
+    pub available_cash: f64,
 }
 
 impl BarContext<'_> {
@@ -717,6 +725,8 @@ pub struct BarContextPayload<'a> {
     pub warmup: bool,
     pub cash: f64,
     pub equity: f64,
+    pub unsettled_cash: f64,
+    pub available_cash: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -757,6 +767,8 @@ impl<'a> BarContext<'a> {
             warmup: self.warmup,
             cash: self.cash,
             equity: self.equity,
+            unsettled_cash: self.unsettled_cash,
+            available_cash: self.available_cash,
         }
     }
 

@@ -146,7 +146,8 @@ class StrategyRunner:
     def _dispatch(self, event: Any) -> None:
         s = self.strategy
         if isinstance(event, Fill):
-            s._terminal.setdefault(event.order_id, "filled")
+            if not event.is_partial:
+                s._terminal.setdefault(event.order_id, "filled")
             s.on_fill(event)
             for trip in self._tracker.push(event):
                 self.round_trips.append(trip)

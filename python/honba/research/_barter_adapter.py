@@ -36,7 +36,7 @@ from honba.strategy.types import (
     TrailUpdate,
 )
 
-from .config import BacktestConfig, MarginConfig
+from .config import BacktestConfig, MarginConfig, Slippage
 from .engine import BacktestReport, BacktestRequest, BarHandler, ReportSummary
 
 __all__ = ["BarterEngine", "OverfitCore"]
@@ -65,7 +65,12 @@ _CAPABILITIES = EngineCapabilities(
 # contract 0) but lack the features listed in ``_FEATURE_MIN_CONTRACT``.
 CONTRACT_MIN = 0
 CONTRACT_MAX = 3
-_FEATURE_MIN_CONTRACT = {"liquidate_at_end": 2, "margin": 2, "attached_exit_same_bar": 2}
+_FEATURE_MIN_CONTRACT = {
+    "liquidate_at_end": 2,
+    "margin": 2,
+    "attached_exit_same_bar": 2,
+    "slippage": 3,
+}
 
 
 def core_contract(core: Any) -> int:
@@ -129,6 +134,17 @@ def _session_wire(session: TradingSession) -> dict[str, Any]:
     return out
 
 
+def _slippage_wire(slippage: Slippage) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "model": slippage.model,
+        "bps": float(slippage.base_bps),
+        "impact_bps": float(slippage.impact_bps),
+    }
+    if slippage.max_volume_share is not None:
+        out["max_volume_share"] = float(slippage.max_volume_share)
+    return out
+
+
 def config_to_wire(config: BacktestConfig, symbols: list[str], start_ms: int | None) -> dict:
     """The ``config_json`` object of ``_core.run_backtest``."""
     wire: dict[str, Any] = {
@@ -171,6 +187,8 @@ def config_to_wire(config: BacktestConfig, symbols: list[str], start_ms: int | N
             "nrml_margin_pct": float(config.margin.nrml_margin_pct),
             "short_margin_pct": float(config.margin.short_margin_pct),
         }
+    if config.slippage is not None:
+        wire["slippage"] = _slippage_wire(config.slippage)
     if start_ms is not None:
         wire["start_ms"] = int(start_ms)
     return wire
@@ -292,6 +310,8 @@ def _fill(raw: dict[str, Any]) -> Fill:
         raw.get("product"),
         raw.get("tag"),
         raw.get("reason", "signal"),
+        float(raw.get("remaining_qty", 0.0)),
+        raw.get("slice"),
     )
 
 

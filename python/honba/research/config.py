@@ -9,7 +9,7 @@ from typing import Literal
 from honba.strategy.market import Instrument, TradingSession
 from honba.strategy.types import IST
 
-__all__ = ["BacktestConfig", "CostModel", "MarginConfig"]
+__all__ = ["BacktestConfig", "CostModel", "MarginConfig", "Slippage"]
 
 
 # Conservative all-in rate for the value-proportional Indian buy-side charges (STT 0.1%,
@@ -90,6 +90,47 @@ class MarginConfig:
             raise ValueError("short_margin_pct must be in (0, 1000]")
 
 
+@dataclass(frozen=True, slots=True)
+class Slippage:
+    """Adverse price movement on market-like fills and the bar-volume participation cap.
+
+    Build with :meth:`bps` or :meth:`volume_share`. Slippage moves market, stop-market, stop-loss
+    and trailing exits, square-off and end-of-data fills against the order (buys up, sells down,
+    rounded to the tick away from the market); limit, take-profit and stop-limit fills are never
+    worse than their limit and get none. ``max_volume_share`` caps what all orders of a symbol
+    together may fill per bar (a fraction of the bar's volume, rounded down to lots): the rest of
+    an order keeps working (order status ``partially_filled``, fills report ``remaining_qty``).
+    Bars without volume are not capped.
+    """
+
+    model: Literal["bps", "volume_share"] = "bps"
+    base_bps: float = 0.0
+    impact_bps: float = 0.0
+    max_volume_share: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.model not in ("bps", "volume_share"):
+            raise ValueError(f"slippage model must be bps or volume_share, got {self.model!r}")
+        if self.base_bps < 0 or self.impact_bps < 0:
+            raise ValueError("slippage bps must be >= 0")
+        if self.max_volume_share is not None and not 0 < self.max_volume_share <= 1:
+            raise ValueError("max_volume_share must be in (0, 1]")
+
+    @classmethod
+    def bps(cls, bps: float, *, max_volume_share: float | None = None) -> Slippage:
+        """A fixed adverse offset of ``bps`` basis points (1 bp = 0.01%) of the fill price."""
+        return cls("bps", base_bps=bps, max_volume_share=max_volume_share)
+
+    @classmethod
+    def volume_share(
+        cls, bps: float = 0.0, impact_bps: float = 0.0, max_volume_share: float | None = None
+    ) -> Slippage:
+        """``bps`` plus ``impact_bps`` x (fill qty / bar volume), capped at ``max_volume_share``."""
+        return cls(
+            "volume_share", base_bps=bps, impact_bps=impact_bps, max_volume_share=max_volume_share
+        )
+
+
 def _to_ms(value: datetime | date | str | int | float) -> int:
     if isinstance(value, (int, float)):
         return int(value if value >= 10**11 else value * 1000)
@@ -110,7 +151,8 @@ class BacktestConfig:
     ``start`` (a time, IST when naive) or ``warmup_bars`` (bars of the first symbol) mark the
     end of warm-up: bars before it feed indicators but place no orders and are not measured.
     ``timeframe`` overrides the strategy's base timeframe. ``validation`` is ``"error"``
-    (raise on bad candles), ``"warn"`` (warn) or ``"off"``.
+    (raise on bad candles), ``"warn"`` (warn) or ``"off"``. ``slippage`` (a :class:`Slippage`)
+    adds adverse fill prices and a volume participation cap (partial fills).
     """
 
     capital: float = 1_000_000.0
@@ -131,6 +173,7 @@ class BacktestConfig:
     liquidate_at_end: bool = False
     margin: MarginConfig = field(default_factory=MarginConfig)
     attached_exit_same_bar: bool = False
+    slippage: Slippage | None = None
     validation: Literal["error", "warn", "off"] = "error"
     sort_candles: bool = False
 

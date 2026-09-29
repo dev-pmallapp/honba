@@ -26,7 +26,9 @@ class EngineCapabilities:
     ``trail:<mode>``, ``bracket`` (attached stop_loss / take_profit), ``modify``, ``cancel``,
     ``multi_symbol``, ``session`` (hours, holidays, MIS square-off), ``instruments`` (lot / tick /
     freeze validation), ``cost:<model>``, ``fill:<model>``, ``warmup``, ``liquidate_at_end``
-    (the engine flattens open positions itself at the end of the data). ``check`` and
+    (the engine flattens open positions itself at the end of the data), and the ``extra`` names
+    ``margin``, ``attached_exit_same_bar``, ``slippage`` (adverse fill prices, volume-capped
+    partial fills). ``check`` and
     ``supports`` are the only consumers of the concrete fields.
     """
 

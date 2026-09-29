@@ -155,6 +155,8 @@ def config_features(request: BacktestRequest) -> set[str]:
         need.add("margin")
     if cfg.attached_exit_same_bar:
         need.add("attached_exit_same_bar")
+    if cfg.slippage is not None:
+        need.add("slippage")
     return need
 
 

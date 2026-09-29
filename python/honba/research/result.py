@@ -127,7 +127,8 @@ class BacktestResult:
         """Every execution as a DataFrame.
 
         Columns: time, order_id, symbol, side, qty, price, value, fees, cost components,
-        realised_pnl (gross), product, tag, reason.
+        realised_pnl (gross), product, tag, reason, remaining_qty (still working after a partial
+        fill, else 0), slice (freeze-quantity child id or ``None``).
         """
         rows = [_fill_row(f) for f in self.report.fills]
         frame = _frame(rows, "time_ms")
@@ -370,6 +371,7 @@ def _fill_row(f: Fill) -> dict[str, Any]:
     }
     row.update({k: getattr(f.costs, k) for k in _COST_FIELDS})
     row.update(realised_pnl=f.realised_pnl, product=f.product, tag=f.tag, reason=f.reason)
+    row.update(remaining_qty=f.remaining_qty, slice=f.slice)
     return row
 
 

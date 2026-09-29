@@ -86,7 +86,7 @@ class OrderHandle:
 
     @property
     def status(self) -> str:
-        """submitted, open, pending, filled, cancelled, expired or rejected."""
+        """submitted, open, pending, partially_filled, filled, cancelled, expired or rejected."""
         return self._strategy._status_of(self.id)
 
     @property
@@ -194,7 +194,15 @@ class Strategy(ABC):
         """Called once per bar timestamp, after this bar's events were delivered."""
 
     def on_fill(self, fill: Fill) -> None:
-        """One of this strategy's orders (or an attached exit) was filled."""
+        """One of this strategy's orders (or an attached exit) was executed.
+
+        Called once per fill event, including attached exits. With volume-capped slippage an
+        order fills in pieces: ``on_fill`` runs for every piece, ``fill.is_partial`` is True
+        while ``fill.remaining_qty`` is still working (``handle.status`` reads
+        ``partially_filled``) and the order's last piece has ``remaining_qty == 0``. The
+        remainder may later be cancelled or expire (``on_cancel``). ``on_exit`` fires only when
+        the position goes flat, never for a partial fill that leaves quantity open.
+        """
 
     def on_exit(self, trade: RoundTrip) -> None:
         """A position went flat; ``trade`` is the completed round trip."""
@@ -600,7 +608,7 @@ class Strategy(ABC):
             qty = math.copysign(inst.round_qty(qty), qty)
         if cancel_pending:
             for o in self.orders(sym, "entry"):
-                if o.status == "open":
+                if o.status in ("open", "partially_filled"):
                     self.cancel(o)
         current = self._positions[sym].qty + self._queued_net.get(sym, 0.0)
         delta = qty - current

@@ -225,7 +225,12 @@ class Position:
 
 @dataclass(frozen=True, slots=True)
 class Order:
-    """An order as reported by the engine (open, pending or in the final report)."""
+    """An order as reported by the engine (open, pending or in the final report).
+
+    ``status`` is ``open``, ``pending`` (an attached exit waiting for its entry),
+    ``partially_filled`` (part executed, the rest still working: ``0 < filled_qty < qty``),
+    ``filled``, ``cancelled``, ``expired`` or ``rejected``.
+    """
 
     id: str
     symbol: str
@@ -262,8 +267,8 @@ class Order:
 
     @property
     def is_active(self) -> bool:
-        """True while the order can still fill (open, or an exit waiting for its entry)."""
-        return self.status in ("open", "pending")
+        """True while the order can still fill (open, partially filled, or pending)."""
+        return self.status in ("open", "partially_filled", "pending")
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +277,12 @@ class Fill:
 
     ``reason`` is signal, limit, stop, stop_loss, take_profit, trailing_stop or square_off.
     ``realised_pnl`` is gross of costs (costs are in ``costs.total``).
+
+    An order can fill in several pieces (volume-capped partial fills): each piece is its own
+    ``Fill`` with the same ``order_id``; ``remaining_qty`` is what the order still has working
+    afterwards (``0`` when it is done, so ``is_partial`` is False for a complete execution).
+    ``slice`` names the freeze-quantity child order (``"<order_id>#<n>"``) when the engine
+    split the order; ``None`` otherwise.
     """
 
     time_ms: int
@@ -287,11 +298,18 @@ class Fill:
     product: str | None = None
     tag: str | None = None
     reason: str = "signal"
+    remaining_qty: float = 0.0
+    slice: str | None = None
 
     @property
     def time(self) -> datetime:
         """Fill time as an IST datetime."""
         return _ist(self.time_ms)
+
+    @property
+    def is_partial(self) -> bool:
+        """True when the order still has quantity working after this fill."""
+        return self.remaining_qty > _EPS
 
     @property
     def signed_qty(self) -> float:

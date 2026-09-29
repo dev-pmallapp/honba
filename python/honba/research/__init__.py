@@ -6,7 +6,7 @@ is selected.
 """
 
 from .backtest import backtest, sweep
-from .config import BacktestConfig, CostModel, MarginConfig
+from .config import BacktestConfig, CostModel, MarginConfig, Slippage
 from .engine import (
     BacktestEngine,
     BacktestReport,
@@ -42,6 +42,7 @@ __all__ = [
     "OptimizationResult",
     "PBOResult",
     "ReportSummary",
+    "Slippage",
     "UnsupportedFeature",
     "WalkForwardResult",
     "available_engines",

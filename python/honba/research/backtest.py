@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import multiprocessing
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any
 
@@ -90,6 +90,16 @@ def _prepare(
     return candles
 
 
+def _check_param_names(strategy: type[Strategy], names: Mapping[str, Any]) -> None:
+    declared = strategy.params() if inspect.isclass(strategy) else {}
+    unknown = set(names) - set(declared)
+    if unknown:
+        raise ValueError(
+            f"undeclared parameters {sorted(unknown)} for {strategy.__name__}; "
+            f"declared: {sorted(declared)}"
+        )
+
+
 def backtest(
     strategy: type[Strategy],
     data: Any,
@@ -110,6 +120,7 @@ def backtest(
     lacks. Candles are validated first (``config.validation``).
     """
     config = config or BacktestConfig()
+    _check_param_names(strategy, params or {})
     candles = _prepare(strategy, data, config, symbols)
     return _run(strategy, candles, config, dict(params or {}), engine)
 
@@ -127,6 +138,7 @@ def sweep(
     symbols: Sequence[str] | str | None = None,
     params: Mapping[str, Any] | None = None,
     engine: str | BacktestEngine | None = None,
+    constraint: Callable[[dict[str, Any]], bool] | None = None,
     sort_by: str | None = "net_pnl",
     ascending: bool = False,
     jobs: int = 1,
@@ -135,7 +147,10 @@ def sweep(
 
     ``grid`` maps parameter names to candidate values; omitted, it is built from every declared
     :class:`Param` (its ``choices`` or ``low..high``). Values are validated against the declared
-    bounds before anything runs. Returns one row per run (the parameters, engine summary
+    bounds before anything runs (numpy scalars are accepted; NaN / inf are rejected). ``constraint``
+    is a callable on the parameter dict returning False for combinations to skip (e.g.
+    ``lambda p: p["fast"] < p["slow"]``); skipped combinations are counted in
+    ``df.attrs["n_skipped"]``. Returns one row per run (the parameters, engine summary
     metrics, trade metrics), sorted by ``sort_by`` (missing values last); the results are in
     ``df.attrs["results"]`` (same order) and ``df.attrs["n_trials"]`` holds the trial count
     (feed it to the deflated-Sharpe audit).
@@ -155,7 +170,13 @@ def sweep(
         raise ValueError(
             f"grid names undeclared parameters {sorted(unknown)}; declared {sorted(declared)}"
         )
+    _check_param_names(strategy, params or {})
     combos = [{**dict(params or {}), **c} for c in grid_of(grid)]
+    total = len(combos)
+    if constraint is not None:
+        combos = [c for c in combos if constraint(c)]
+        if not combos:
+            raise ValueError(f"constraint excluded all {total} parameter combinations")
     for combo in combos:  # fail fast on out-of-bounds values
         for name, value in combo.items():
             declared[name].validate(value)
@@ -192,4 +213,5 @@ def sweep(
         results = [results[i] for i in order]
     frame.attrs["results"] = results
     frame.attrs["n_trials"] = len(results)
+    frame.attrs["n_skipped"] = total - len(results)
     return frame

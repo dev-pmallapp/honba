@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import itertools
+import math
+import numbers
 import random
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
+
+import numpy as np
 
 __all__ = ["Param", "grid_of"]
 
@@ -68,15 +72,21 @@ class Param:
         if self.kind is bool:
             return bool(value)
         if self.kind in (int, float):
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(f"{self.name or 'param'}: expected a number, got {value!r}")
-            value = self.kind(value) if self.kind is float or float(value).is_integer() else value
-            if self.kind is int and not isinstance(value, int):
-                raise ValueError(f"{self.name or 'param'}: expected an integer, got {value!r}")
+            label = self.name or "param"
+            if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
+                raise ValueError(f"{label}: expected a number, got {value!r}")
+            if not math.isfinite(value):
+                raise ValueError(f"{label}: must be finite, got {value!r}")
+            if self.kind is int:
+                if not float(value).is_integer():
+                    raise ValueError(f"{label}: expected an integer, got {value!r}")
+                value = int(value)
+            else:
+                value = float(value)
             if self.low is not None and value < self.low:
-                raise ValueError(f"{self.name or 'param'}: {value} is below low={self.low}")
+                raise ValueError(f"{label}: {value} is below low={self.low}")
             if self.high is not None and value > self.high:
-                raise ValueError(f"{self.name or 'param'}: {value} is above high={self.high}")
+                raise ValueError(f"{label}: {value} is above high={self.high}")
         return value
 
     def grid(self, points: int = 5) -> list[Any]:

@@ -686,7 +686,7 @@ def test_metrics_from_synthetic_equity_and_trips():
     assert rets.iloc[0] == 0.0 and len(rets) == 6
 
 
-# ------------------------------------------------------------------------------- cash-capped sizing
+# ---------------------------------------------------------------------------- cash-capped sizing
 
 
 def test_cap_cash_accounts_for_costs():
@@ -721,3 +721,46 @@ def test_cap_cash_orders_are_not_rejected_by_the_engine_for_cash():
     cfg = hb.BacktestConfig(capital=10_000.0, costs=hb.CostModel.india())
     res = hb.backtest(All, {"X": _daily(flat(100, 4))}, cfg)
     assert res.rejected.empty and res.fills.qty.iloc[0] >= 90
+
+
+# ---------------------------------------------------------------------------- params / sweep hardening
+
+
+def test_param_accepts_numpy_scalars_and_rejects_non_finite():
+    assert P.fast.validate(np.int64(6)) == 6 and type(P.fast.validate(np.int64(6))) is int
+    assert type(P.mult.validate(np.float32(2.0))) is float and type(P.mult.validate(2)) is float
+    for bad in (float("nan"), float("inf"), -float("inf")):
+        with pytest.raises(ValueError, match="finite"):
+            P.mult.validate(bad)
+    with pytest.raises(ValueError, match="finite"):
+        P.fast.validate(float("nan"))
+    with pytest.raises(ValueError, match="expected a number"):
+        P.mult.validate(True)
+
+
+def test_backtest_and_sweep_reject_undeclared_fixed_params_with_valueerror():
+    from sdk_helpers import SmaCross, trending
+
+    data = {"X": trending(60)}
+    cfg = hb.BacktestConfig(validation="off")
+    with pytest.raises(ValueError, match=r"undeclared parameters.*bogus"):
+        hb.backtest(SmaCross, data, cfg, params={"bogus": 1}, engine="simple")
+    with pytest.raises(ValueError, match=r"undeclared parameters.*bogus"):
+        hb.sweep(SmaCross, data, {"fast": [3, 5]}, cfg, params={"bogus": 1}, engine="simple")
+
+
+def test_sweep_accepts_numpy_grids_and_constraint_filters_combinations():
+    from sdk_helpers import SmaCross, trending
+
+    data = {"X": trending(80)}
+    cfg = hb.BacktestConfig(validation="off")
+    grid = {"fast": np.arange(5, 21, 5), "slow": np.array([10.0, 20.0, 40.0])}
+    frame = hb.sweep(
+        SmaCross, data, grid, cfg, engine="simple", constraint=lambda p: p["fast"] < p["slow"]
+    )
+    assert (frame.fast < frame.slow).all() and len(frame) == 8  # 12 combos - 4 with fast >= slow
+    assert frame.attrs["n_trials"] == 8 and frame.attrs["n_skipped"] == 4
+    with pytest.raises(ValueError, match="excluded all"):
+        hb.sweep(SmaCross, data, {"fast": [5]}, cfg, engine="simple", constraint=lambda p: False)
+    with pytest.raises(ValueError, match="finite"):
+        hb.sweep(SmaCross, data, {"fast": [float("nan")]}, cfg, engine="simple")

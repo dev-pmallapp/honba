@@ -17,7 +17,9 @@ def backtest(
     timeframe: str = typer.Option("5m", "--timeframe", "-t", help="Bar timeframe"),
 ):
     """Run backtest on historical data with full Indian tax accounting."""
-    console.print(f"[bold blue]Running backtest for[/bold blue] {strategy} on {symbol} ({timeframe})")
+    console.print(
+        f"[bold blue]Running backtest for[/bold blue] {strategy} on {symbol} ({timeframe})"
+    )
 
     table = Table(title="Backtest Performance Overview")
     table.add_column("Metric", style="cyan")

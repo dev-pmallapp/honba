@@ -31,6 +31,29 @@ KEYRING_SERVICE = "honba-dhanhq"
 _INTRADAY_MINUTES = {1: "1", 5: "5", 15: "15", 25: "25", 60: "60"}
 _INTRADAY_WINDOW = timedelta(days=90)  # Dhan's per-request limit for intraday history
 _RETRY_STATUS = {429, 500, 502, 503, 504}
+# Only these fields of a Dhan error body are ever echoed (each truncated); everything else, and
+# every header, is dropped so a reflected token or request echo cannot leak into messages/logs.
+_ERROR_FIELDS = ("errorType", "errorCode", "errorMessage", "status", "remarks")
+_ERROR_FIELD_CHARS = 120
+
+
+def _error_summary(body: Any, secrets: tuple[str, ...]) -> str:
+    """A short, redacted description of a Dhan error body."""
+    if isinstance(body, Mapping):
+        parts = []
+        for key in _ERROR_FIELDS:
+            value = body.get(key)
+            if isinstance(value, (Mapping, list)):
+                value = type(value).__name__
+            if value is not None:
+                parts.append(f"{key}={str(value)[:_ERROR_FIELD_CHARS]}")
+        text = ", ".join(parts) or "no error details"
+    else:
+        text = "non-JSON body" if body is None else f"{type(body).__name__} body"
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "***")
+    return text
 
 
 class DhanError(RuntimeError):
@@ -159,11 +182,18 @@ class DhanLoader:
                 delay = float(retry_after) if retry_after.replace(".", "", 1).isdigit() else 0.0
                 self._sleep(max(delay, self.backoff * 2**attempt))
                 continue
+            secrets = (creds.access_token, creds.client_id)
+            try:
+                body: Any = resp.json()
+            except ValueError:
+                body = None
             if resp.status_code >= 400:
-                raise DhanError(f"Dhan {path} returned HTTP {resp.status_code}: {resp.text[:200]}")
-            body = resp.json()
+                detail = _error_summary(body, secrets)
+                raise DhanError(f"Dhan {path} returned HTTP {resp.status_code}: {detail}")
             if isinstance(body, dict) and body.get("status") == "failure":
-                raise DhanError(f"Dhan {path} failed: {str(body)[:200]}")
+                raise DhanError(f"Dhan {path} failed: {_error_summary(body, secrets)}")
+            if body is None:
+                raise DhanError(f"Dhan {path} returned a non-JSON response")
             return body
         raise DhanError(f"Dhan {path}: retries exhausted")  # pragma: no cover
 

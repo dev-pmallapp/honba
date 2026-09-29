@@ -220,6 +220,38 @@ def test_dhan_retries_with_backoff_then_gives_up():
     assert "SECRET" not in str(err.value)
 
 
+def test_dhan_errors_are_redacted_and_bounded():
+    def echo(status, body):
+        def handler(req):
+            # a hostile / misconfigured endpoint reflecting the request headers back
+            echoed = {**body, "headers": dict(req.headers), "blob": "x" * 5000}
+            return httpx.Response(status, json=echoed, headers={"X-Token": "SECRET-TOKEN"})
+
+        return handler
+
+    ld, _ = _loader(
+        echo(400, {"errorCode": "DH-905", "errorMessage": "bad SECRET-TOKEN " + "y" * 500}),
+        min_interval=0,
+    )
+    with pytest.raises(DhanError) as err:
+        ld.fetch("SBIN", "1d", "2024-01-02", "2024-01-02")
+    msg = str(err.value)
+    assert "HTTP 400" in msg and "DH-905" in msg
+    assert "SECRET" not in msg and "access-token" not in msg and "xxxx" not in msg
+    assert len(msg) < 400
+
+    ld, _ = _loader(echo(200, {"status": "failure", "remarks": "nope"}), min_interval=0)
+    with pytest.raises(DhanError) as err:
+        ld.fetch("SBIN", "1d", "2024-01-02", "2024-01-02")
+    assert "nope" in str(err.value) and "SECRET" not in str(err.value)
+    assert "1000" not in str(err.value)  # the client id is not echoed either
+
+    ld, _ = _loader(lambda r: httpx.Response(502, text="SECRET-TOKEN " * 50), max_retries=0)
+    with pytest.raises(DhanError) as err:
+        ld.fetch("SBIN", "1d", "2024-01-02", "2024-01-02")
+    assert "SECRET" not in str(err.value) and "non-JSON" in str(err.value)
+
+
 def test_dhan_rate_limit_spaces_requests():
     ld, sleeps = _loader(lambda r: httpx.Response(200, json=_resp(1)), min_interval=1.0)
     ld.fetch("SBIN", "1d", "2024-01-02", "2024-01-02")

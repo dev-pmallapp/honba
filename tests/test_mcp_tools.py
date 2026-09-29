@@ -170,6 +170,31 @@ def test_sweep_and_overfit_hook(tools):
         tools.overfit_audit("bt-20240101T000000-deadbeef")
 
 
+def test_sweep_grid_is_capped(tools):
+    tools.write_strategy("momo", GOOD)
+    capped = HonbaTools(tools.ws, max_sweep=4)
+    with pytest.raises(ValueError, match=r"5 combinations.*limit is 4"):
+        capped.run_sweep("momo", ["SBIN"], "1d", {"slow": [3, 5, 7, 9, 11]})
+    with pytest.raises(ValueError, match="list of values"):
+        capped.run_sweep("momo", ["SBIN"], "1d", {"slow": "35"})
+    assert capped.run_sweep("momo", ["SBIN"], "1d", {"slow": [5, 10]})["n_trials"] == 2
+    with pytest.raises(ValueError, match="combinations"):  # default grid of the Param (5)
+        capped.run_sweep("momo", ["SBIN"], "1d")
+    with pytest.raises(ValueError, match="limit is 500"):
+        tools.run_sweep("momo", ["SBIN"], "1d", {"slow": list(range(3, 31)) * 20})
+    with pytest.raises(ValueError):
+        HonbaTools(tools.ws, max_sweep=0)
+
+
+def test_get_report_bounds_max_trades(tools):
+    tools.write_strategy("momo", GOOD)
+    run = tools.run_backtest("momo", ["SBIN"], "1d")
+    for bad in (-1, 10**9, 1.5):
+        with pytest.raises(ValueError, match="max_trades"):
+            tools.get_report(run["run_id"], max_trades=bad)
+    assert tools.get_report(run["run_id"], max_trades=0)["trades"] == []
+
+
 @pytest.mark.parametrize(
     "snippet",
     [
@@ -196,6 +221,155 @@ def test_sandbox_rejects_dangerous_code(snippet):
     code += snippet + "\n\nclass S(hb.Strategy):\n    def on_bar(self, ctx):\n        pass\n"
     with pytest.raises(StrategySourceError):
         check_strategy_source(code)
+
+
+_STRATEGY = "\n\nclass S(hb.Strategy):\n    def on_bar(self, ctx):\n        pass\n"
+_PRELUDE = "import honba as hb\nimport pandas as pd\nimport numpy as np\n"
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # stdlib modules and dangerous names re-exported by allowed packages
+        "from honba.research.report import Path",
+        "from pandas.io.common import os",
+        "from typing import sys",
+        "from dataclasses import sys",
+        "from honba.research.optimize import os as o2",
+        "from numpy import ctypeslib",
+        "from numpy import lib",
+        "from honba import research",
+        "from numpy import *",
+        "import honba.research.report as r",
+        "import numpy.lib",
+        "x = hb.research.report.Path",
+        "x = pd.io.common.os",
+        "x = np.lib.npyio",
+        "x = np.ctypeslib.ctypes",
+        "hb.backtest",
+        "from typing import get_type_hints",
+        # modules used as values, imports rebound or monkeypatched, nested imports
+        "m = np",
+        "x = [pd]",
+        "np = 1",
+        "np.sum = abs",
+        "del pd.DataFrame",
+        "def f():\n    import math",
+        # type / dunder / mro tricks
+        "x = type(0).mro()",
+        "x = type(0)",
+        "x = int.mro()",
+        "x = __builtins__",
+        "x = (i for i in ()).gi_frame.f_back.f_globals",
+        "x = (lambda: 0).__globals__",
+        # format-string attribute / index access
+        "s = '{0.__class__}'.format(1)",
+        "s = '{0[0]}'.format([1])",
+        "s = '{0:{1.real}}'.format(1, 2)",
+        "t = '{0.real}'",
+        "s = 'x'\nu = s.format(1)",
+        "s = str.format('{}', 1)",
+        # pandas string dispatch and I/O
+        "pd.Series([1]).agg('to_pickle', '/tmp/x')",
+        "name = 'sum'\npd.Series([1]).apply(name)",
+        "pd.Series([1]).transform(func='to_csv')",
+        "pd.DataFrame().to_csv('/tmp/x')",
+        "pd.DataFrame().to_html('/tmp/x')",
+        "pd.set_option('display.width', 1)",
+        "pd.DataFrame().query('a > 1')",
+        "np.save('x', 1)",
+        # private attributes: only the strategy's own self._x
+        "x = pd.Series([1])._mgr",
+        "f = lambda self: self._mgr",
+        "def g(self):\n    return self._x",
+        "class T:\n    @staticmethod\n    def g(self):\n        return self._x",
+    ],
+)
+def test_sandbox_rejects_escapes(snippet):
+    with pytest.raises(StrategySourceError):
+        check_strategy_source(_PRELUDE + snippet + _STRATEGY)
+
+
+def test_sandbox_rejects_sdk_private_attributes():
+    code = _PRELUDE + (
+        "\n\nclass S(hb.Strategy):\n    def on_bar(self, ctx):\n        x = self._ctx\n"
+    )
+    with pytest.raises(StrategySourceError, match="private"):
+        check_strategy_source(code)
+
+
+LEGIT = """
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+import honba as hb
+from honba import Param, Strategy
+
+
+@dataclass
+class Box:
+    value: float = 0.0
+
+
+def double(v):
+    return v * 2
+
+
+class Legit(Strategy):
+    timeframe = "1d"
+    fast = Param(5, low=2, high=10)
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self._seen = 0
+        self._rng = np.random.default_rng(0)
+
+    def on_bar(self, ctx):
+        self._seen += 1
+        close = pd.Series(self.history().close)
+        roll = close.rolling(self.fast).agg("mean")
+        scaled = close.apply(lambda v: v / 2).transform(double).agg(["min", np.max])
+        note = "{:.2f} {}".format(math.sqrt(2.0), len(scaled)) + f"{roll.iloc[-1]!r}"
+        box = Box(float(hb.ta.sma(close.to_numpy(), 2)) if len(close) > 2 else 0.0)
+        if self._rng.random() > 2 and note and box.value:
+            self.buy(1)
+"""
+
+
+def test_sandbox_accepts_legitimate_strategies(tools):
+    assert check_strategy_source(LEGIT) == "Legit"
+    saved = tools.write_strategy("legit", LEGIT)
+    assert saved["class"] == "Legit" and saved["params"]["fast"]["default"] == 5
+    tools.run_backtest("legit", ["SBIN"], "1d")
+
+
+def test_write_strategy_never_executes_code_in_process(tools, monkeypatch):
+    import honba.mcp.sandbox as sandbox
+
+    def boom(*_a, **_k):
+        raise AssertionError("agent code executed in the server process")
+
+    monkeypatch.setattr(sandbox, "compile_strategy", boom)
+    saved = tools.write_strategy("momo", GOOD)
+    assert saved["class"] == "Momo"
+
+
+def test_write_strategy_isolated_load_errors_and_timeout(tools, monkeypatch):
+    import honba.mcp.sandbox as sandbox
+
+    with pytest.raises(StrategySourceError, match="ZeroDivisionError"):
+        tools.write_strategy("div", "x = 1 / 0\n" + GOOD)
+    monkeypatch.setattr(sandbox, "INTROSPECT_TIMEOUT", 3.0)
+    with pytest.raises(StrategySourceError, match="longer than"):
+        tools.write_strategy("spin", "while True:\n    pass\n" + GOOD)
+    assert not (tools.ws.strategies / "div.py").exists()
+    assert not (tools.ws.strategies / "spin.py").exists()
 
 
 def test_sandbox_structure_rules(tools):

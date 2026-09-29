@@ -34,7 +34,7 @@ from honba.data import (
     load_parquet,
 )
 
-from .sandbox import check_strategy_source, compile_strategy, strategy_path
+from .sandbox import compile_strategy, introspect_strategy, strategy_path
 
 __all__ = ["HonbaTools", "Workspace", "register_overfit_backend"]
 
@@ -49,6 +49,8 @@ _CONFIG_KEYS = {
     "latency_ms",
     "start",
 }
+MAX_SWEEP_COMBINATIONS = 500  # default cap on run_sweep grid size (HonbaTools(max_sweep=...))
+MAX_REPORT_ROWS = 10_000  # upper bound for get_report(max_trades=...)
 _OverfitBackend = Callable[[pd.DataFrame], Mapping[str, Any]]
 _overfit_backend: _OverfitBackend | None = None
 
@@ -126,7 +128,11 @@ class HonbaTools:
         workspace: Workspace | str | Path | None = None,
         *,
         dhan_loader: Callable[[InstrumentMaster | None], Any] | None = None,
+        max_sweep: int = MAX_SWEEP_COMBINATIONS,
     ) -> None:
+        if max_sweep < 1:
+            raise ValueError("max_sweep must be >= 1")
+        self.max_sweep = max_sweep
         self.ws = workspace if isinstance(workspace, Workspace) else Workspace(workspace)
         self.store = CandleStore(self.ws.data)
         self._dhan_loader = dhan_loader or (lambda master: DhanLoader(master=master))
@@ -266,31 +272,20 @@ class HonbaTools:
         return {"strategies": sorted(p.stem for p in self.ws.strategies.glob("*.py"))}
 
     def write_strategy(self, name: str, code: str, overwrite: bool = True) -> dict[str, Any]:
-        """Validate ``code`` (static guard + import + class check) and save it as ``name``.
+        """Validate ``code`` (static guard + isolated load + class check) and save it as ``name``.
 
         Only ``honba``, numpy, pandas and a few stdlib modules may be imported; file, network and
-        introspection primitives are rejected. Nothing is written when validation fails.
+        introspection primitives are rejected. The class is loaded in a resource-limited
+        subprocess, never in the server process. Nothing is written when validation fails.
         """
         path = strategy_path(self.ws.strategies, name)
         if path.exists() and not overwrite:
             raise FileExistsError(f"strategy {name!r} exists (pass overwrite=true)")
-        class_name = check_strategy_source(code)
-        cls = compile_strategy(code, str(path))
+        info = introspect_strategy(code, str(path))
         tmp = path.with_suffix(".tmp")
         tmp.write_text(code)
         os.replace(tmp, path)
-        declared = {
-            k: {"default": p.default, "low": p.low, "high": p.high} for k, p in cls.params().items()
-        }
-        return _jsonable(
-            {
-                "name": name,
-                "class": class_name,
-                "path": str(path),
-                "timeframe": getattr(cls, "timeframe", None),
-                "params": declared,
-            }
-        )
+        return _jsonable({"name": name, "path": str(path), **info})
 
     def run_backtest(
         self,
@@ -335,11 +330,8 @@ class HonbaTools:
             }
         )
 
-    def get_report(
-        self, run_id: str, include_trades: bool = True, max_trades: int = 500
-    ) -> dict[str, Any]:
-        """Metrics, summary and trades (JSON) of a backtest or sweep run."""
-        if not _RUN_ID.fullmatch(run_id):
+    def _report(self, run_id: str) -> dict[str, Any]:
+        if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
             raise ValueError(f"invalid run_id {run_id!r}")
         payload = self._runs.get(run_id)
         if payload is None:
@@ -347,7 +339,19 @@ class HonbaTools:
             if not file.is_file():
                 raise KeyError(f"unknown run_id {run_id!r}")
             payload = json.loads(file.read_text())
-        out = dict(payload)
+        return payload
+
+    def get_report(
+        self, run_id: str, include_trades: bool = True, max_trades: int = 500
+    ) -> dict[str, Any]:
+        """Metrics, summary and trades (JSON) of a backtest or sweep run.
+
+        ``max_trades`` (0..10000) caps the returned ``trades`` / ``rows``; the totals are always
+        reported.
+        """
+        if not isinstance(max_trades, int) or not 0 <= max_trades <= MAX_REPORT_ROWS:
+            raise ValueError(f"max_trades must be an integer in 0..{MAX_REPORT_ROWS}")
+        out = dict(self._report(run_id))
         for key in ("trades", "rows"):
             if key in out:
                 out[f"total_{key}"] = len(out[key])
@@ -369,8 +373,14 @@ class HonbaTools:
         adjust_corporate_actions: bool = False,
         engine: str | None = None,
     ) -> dict[str, Any]:
-        """Grid-search a saved strategy's parameters; returns the best ``top`` rows."""
+        """Grid-search a saved strategy's parameters; returns the best ``top`` rows.
+
+        The grid (or, without one, every declared ``Param``'s default grid) may hold at most
+        ``max_sweep`` combinations (500 by default); larger grids are refused before anything
+        runs.
+        """
         cls = self._load_strategy(strategy)
+        self._check_grid_size(cls, grid)
         frames = self._candles(symbols, timeframe, start, end, adjust_corporate_actions)
         cfg = self._config(config, symbols)
         frame = hb.sweep(
@@ -400,6 +410,24 @@ class HonbaTools:
             }
         )
 
+    def _check_grid_size(self, cls: type, grid: Mapping[str, Sequence[Any]] | None) -> None:
+        if grid is None:
+            sizes = {name: len(p.grid()) for name, p in cls.params().items()}
+        else:
+            if not isinstance(grid, Mapping):
+                raise ValueError("grid must map parameter names to lists of values")
+            sizes = {}
+            for name, values in grid.items():
+                if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+                    raise ValueError(f"grid[{name!r}] must be a list of values")
+                sizes[name] = len(values)
+        total = math.prod(sizes.values()) if sizes else 0
+        if total > self.max_sweep:
+            raise ValueError(
+                f"the grid has {total} combinations ({' x '.join(map(str, sizes.values()))}); "
+                f"the limit is {self.max_sweep}: narrow the grid or use fewer values"
+            )
+
     def overfit_audit(self, run_id: str) -> dict[str, Any]:
         """Overfitting audit (DSR / PBO) of a sweep run.
 
@@ -411,7 +439,7 @@ class HonbaTools:
             raise ValueError("overfit_audit needs the run_id of a run_sweep")
         frame = self._sweeps.get(run_id)
         if frame is None:
-            report = self.get_report(run_id, include_trades=True, max_trades=10**9)
+            report = self._report(run_id)
             frame = pd.DataFrame(report.get("rows", []))
             frame.attrs["n_trials"] = report.get("n_trials", len(frame))
         backend = _overfit_backend

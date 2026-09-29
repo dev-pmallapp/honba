@@ -577,16 +577,21 @@ def walk_forward(
 
     Fold ``k`` optimises on ``train_bars`` bar timestamps (from the start when ``anchored``)
     and tests the winner on the next ``test_bars``; windows advance by ``step`` (default
-    ``test_bars``, i.e. non-overlapping tests). Test runs replay the train window as warm-up,
+    ``test_bars``, i.e. contiguous tests). ``step < test_bars`` is refused: overlapping test
+    windows would count the same out-of-sample bars twice in the stitched equity, and
+    ``step > test_bars`` leaves untested gaps. Test runs replay the train window as warm-up,
     so indicators are primed and no test bar is ever seen during its fold's optimisation.
     Other arguments are those of :func:`optimize`.
     """
     config = config or BacktestConfig()
     if train_bars < 2 or test_bars < 1:
         raise ValueError("train_bars must be >= 2 and test_bars >= 1")
-    step = step or test_bars
-    if step < 1:
-        raise ValueError("step must be >= 1")
+    step = test_bars if step is None else step
+    if step < test_bars:
+        raise ValueError(
+            f"step ({step}) must be >= test_bars ({test_bars}): overlapping out-of-sample "
+            "windows would be stitched twice into the walk-forward equity"
+        )
     _check_objective(objective)
     dims = _search_space(strategy, space)
     fixed = dict(params or {})

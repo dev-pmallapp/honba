@@ -62,13 +62,18 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/.venv" >> "$GITHUB_ENV"
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install ruff pytest pytest-asyncio maturin import-linter \
-            numpy pandas polars pydantic fastapi httpx typer rich
+            numpy pandas polars pydantic pyarrow fastapi httpx typer rich
 
+      # Optional extras the test suite exercises: optuna (optimize), plotly (tearsheets),
+      # mcp (the MCP server wiring test).
       - name: Install Optional Research Dependencies
-        run: .venv/bin/pip install optuna plotly
+        run: .venv/bin/pip install optuna plotly mcp
 
       - name: Lint with Ruff
         run: ruff check python/
+
+      - name: Check Formatting with Ruff
+        run: ruff format --check python/
 
       - name: Build Rust Extension with Maturin
         run: maturin develop --release --skip-install

@@ -325,7 +325,7 @@ opt = hb.optimize(Breakout, data, cfg,
                   constraint=lambda p: p["fast"] < p["slow"])
 opt.best_params, opt.best_value, opt.best, opt.test, opt.test_value, opt.trials
 opt.n_trials                                   # distinct configurations backtested (the DSR's N)
-opt.deflated_sharpe                            # Rust honba-overfit via the adapter; numpy fallback
+opt.deflated_sharpe                            # Bailey & Lopez de Prado DSR (see below)
 opt.pbo(n_splits=8).pbo                        # CSCV over the daily returns of every trial
 
 wf = hb.walk_forward(Breakout, data, cfg, train_bars=500, test_bars=100, step=None, anchored=False,
@@ -338,11 +338,16 @@ wf.metrics, wf.efficiency, wf.in_sample, wf.out_of_sample
 Trials run sequentially (strategy callbacks hold the GIL); repeated suggestions are backtested
 once. `direction` defaults to maximise (minimise for `max_drawdown`-like metrics). Walk-forward
 test windows replay their train window as warm-up, so no test bar is seen during its fold's
-optimisation. `honba.research.overfit` exposes the statistics directly: `dsr(sr, n_trials,
+optimisation; `step` defaults to `test_bars` and smaller values are refused (overlapping
+out-of-sample windows would be stitched twice). `honba.research.overfit` exposes the statistics directly: `dsr(sr, n_trials,
 var_trials, n_obs, skew, kurtosis)`, `deflated_sharpe(returns, n_trials=, trial_sharpes=)`,
-`pbo(is_perf, oos_perf)`, `cscv_pbo(returns_matrix, n_splits=8)`, `overfit_backend()`. The Rust
+`pbo(is_perf, oos_perf)`, `cscv_pbo(returns_matrix, n_splits=8)`, `expected_max_sharpe(n, var)`,
+`overfit_backend()`. The DSR is the published one: `SR0 = sqrt(V)((1-γ)Φ⁻¹(1-1/N) + γΦ⁻¹(1-1/(Ne)))`
+(γ = Euler–Mascheroni) and `DSR = Φ((SR-SR0)·sqrt(T-1)/sqrt(1-skew·SR+(kurt-1)/4·SR²))`. The Rust
 code is resolved by name (`honba.research._barter_adapter:OverfitCore`), so the module stays
-engine-neutral.
+engine-neutral; `overfit_backend("auto")` uses it only when its DSR agrees with the Python
+reference (`dsr_agrees`), otherwise (current `honba-overfit` still uses the `sqrt(2 ln N)`
+approximation and `T`) the numpy implementation is used for both DSR and PBO.
 
 ### Monte Carlo on trades
 
@@ -532,17 +537,35 @@ Python in `honba.mcp.tools.HonbaTools`, usable (and tested) without the SDK.
 | `list_instruments(query, segment, limit)` | search `instruments.csv` (Dhan scrip master) and list stored datasets |
 | `write_strategy(name, code)` / `list_strategies()` | validate and save a `honba.Strategy` file in `strategies/` |
 | `run_backtest(strategy, symbols, timeframe, ...)` | backtest on stored candles; returns `run_id` and the summary |
-| `get_report(run_id)` | metrics, summary and trades as JSON (persisted in `reports/`) |
-| `run_sweep(strategy, symbols, timeframe, grid, ...)` | parameter grid; returns the best rows and `n_trials` |
+| `get_report(run_id, include_trades, max_trades)` | metrics, summary and up to `max_trades` (≤ 10000) trades as JSON (persisted in `reports/`) |
+| `run_sweep(strategy, symbols, timeframe, grid, ...)` | parameter grid (at most `HonbaTools(max_sweep=500)` combinations); returns the best rows and `n_trials` |
 | `overfit_audit(run_id)` | DSR / PBO of a sweep through a backend hook (below) |
 
 The workspace is the sandbox: agents import files only from `imports/` (absolute paths and `..`
-are refused), strategies are loaded only from `strategies/`, and every saved or loaded strategy
-passes a static guard (`honba.mcp.sandbox`): imports limited to `honba`, numpy, pandas and pure
-stdlib modules, no `eval` / `exec` / `open` / `getattr` / dunder access / pandas or numpy file I/O,
-exactly one `Strategy` subclass, `honba.data` unavailable. This stops accidents and casual abuse;
-it is not a security boundary against a determined adversary (strategy code runs in the server
-process), so run the server in a container for untrusted agents.
+are refused) and strategies are loaded only from `strategies/`. Every saved or loaded strategy
+passes a static AST allowlist (`honba.mcp.sandbox.check_strategy_source`):
+
+- imports only at top level and only of listed module paths (`honba`, `honba.strategy.indicators`,
+  `numpy`, `numpy.random` / `.linalg` / `.fft`, `pandas`, `pandas.tseries.offsets`, `math`,
+  `statistics`, `datetime`, `dataclasses`, `typing`, `collections(.abc)`, `itertools`,
+  `functools`, `enum`, `decimal`); every imported name, and every attribute read off an imported
+  module, is resolved against the real module and must be on that module's name allowlist (or,
+  for numpy / pandas, be defined inside numpy / pandas), so re-exports such as
+  `from pandas.io.common import os` or `from honba.research.report import Path` are refused;
+  modules can only be attribute receivers (never passed around, rebound or assigned to);
+- no `eval` / `exec` / `open` / `type` / `getattr` & co, no dunder names or attributes, no frame /
+  generator / `mro` introspection, no private attributes except the strategy's own `self._x`, no
+  pandas / numpy file I/O (`read_*`, `to_*` writers, `save`, `load`, ...), no `pd.set_option`;
+- no `str.format` field access (`'{0.__class__}'`) and `.format` only on string literals; pandas
+  `agg` / `apply` / `transform` take a lambda, a function or a listed reduction name only;
+- exactly one `Strategy` subclass.
+
+`write_strategy` never runs agent code in the server: the class is loaded in a `python -I`
+subprocess with a stripped environment, a timeout and CPU / memory / file-size (zero) limits.
+`run_backtest` / `run_sweep` do execute the re-checked strategy in the server process. The guard is
+defence in depth, not a security boundary: treat an agent that can write strategies as able to
+run code as the server user, and for untrusted agents run the server in a container or VM with no
+credentials, no network and a read-only filesystem outside `$HONBA_HOME`.
 
 Overfit hook: `overfit_audit` calls the backend given to `honba.mcp.register_overfit_backend(fn)`
 (`fn(sweep_frame) -> dict`; the frame has `attrs["n_trials"]` and `attrs["results"]`), else

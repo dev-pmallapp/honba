@@ -64,6 +64,9 @@ jobs:
           .venv/bin/pip install ruff pytest pytest-asyncio maturin import-linter \
             numpy pandas polars pydantic fastapi httpx typer rich
 
+      - name: Install Optional Research Dependencies
+        run: .venv/bin/pip install optuna
+
       - name: Lint with Ruff
         run: ruff check python/
 

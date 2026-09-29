@@ -1,10 +1,8 @@
-"""
-Terminal Command-Line Interface for Honba.
-"""
+"""Terminal Command-Line Interface for Honba."""
 
+import typer
 from rich.console import Console
 from rich.table import Table
-import typer
 
 app = typer.Typer(help="Honba: Quantitative Research & Anti-Overfitting CLI")
 console = Console()
@@ -17,7 +15,9 @@ def backtest(
     timeframe: str = typer.Option("5m", "--timeframe", "-t", help="Bar timeframe"),
 ):
     """Run backtest on historical data with full Indian tax accounting."""
-    console.print(f"[bold blue]Running backtest for[/bold blue] {strategy} on {symbol} ({timeframe})")
+    console.print(
+        f"[bold blue]Running backtest for[/bold blue] {strategy} on {symbol} ({timeframe})"
+    )
 
     table = Table(title="Backtest Performance Overview")
     table.add_column("Metric", style="cyan")

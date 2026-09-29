@@ -64,7 +64,12 @@ pub struct WorkerHealthDto {
 
 /// Tauri Command: Calculate Indian transaction taxes using honba-core tax engine
 #[tauri::command]
-fn calculate_indian_taxes(segment: String, side: String, price: f64, quantity: u32) -> TradeCostsDto {
+fn calculate_indian_taxes(
+    segment: String,
+    side: String,
+    price: f64,
+    quantity: u32,
+) -> TradeCostsDto {
     let market_seg = match segment.to_uppercase().as_str() {
         "FUTURES" | "EQUITYFUTURES" => MarketSegment::EquityFutures,
         "OPTIONS" | "EQUITYOPTIONS" => MarketSegment::EquityOptions,
@@ -77,7 +82,8 @@ fn calculate_indian_taxes(segment: String, side: String, price: f64, quantity: u
     };
 
     let price_dec = Decimal::from_f64_retain(price).unwrap_or(Decimal::ZERO);
-    let costs: TradeCosts = IndianTaxCalculator::calculate(market_seg, order_side, price_dec, quantity);
+    let costs: TradeCosts =
+        IndianTaxCalculator::calculate(market_seg, order_side, price_dec, quantity);
     let turnover = price * (quantity as f64);
 
     TradeCostsDto {

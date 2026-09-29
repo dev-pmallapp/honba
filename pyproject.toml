@@ -19,18 +19,6 @@ classifiers = [
 ]
 
 dependencies = [
-    # PINNED EXACTLY, DELIBERATELY. v2 is a release-candidate line with no GA
-    # date, landing 20-40 breaking changes per ~13-day rc (rc3 removed Cython;
-    # rc4 renamed configs + changed backtest leverage defaults; rc5 deleted
-    # ForwardPrice and PortfolioStatistic.calculate_from_orders; rc6 reworks
-    # the catalog API). Never float a range against this.
-    #
-    # v1 is not a refuge: develop_v1 receives critical security backports only,
-    # for ~3 months after the v2 cutover, and no feature or parity work.
-    #
-    # To bump: read MIGRATION_V2.md, then re-run the golden backtest
-    # (docs/research/build-vs-extend.md §10, week 3) before trusting anything.
-    "nautilus-trader==2.0.0rc5",
     "fastapi>=0.115,<1",
     "uvicorn[standard]>=0.32",
     "jinja2>=3.1",
@@ -46,7 +34,7 @@ dependencies = [
     "scikit-learn>=1.6",
     "xgboost>=2",
     "lightgbm>=4",
-    "pypfopt>=1.5",
+    "PyPortfolioOpt>=1.5",
     "hmmlearn>=0.3",
     "statsmodels>=0.14",
 ]
@@ -86,10 +74,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "D", "UP", "B", "C4", "SIM", "RUF"]
+# Property-style docstrings ("True when ...") and dunder methods read better without D401/D105/D107.
+ignore = ["D105", "D107", "D401"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["python"]
 python_files = "test_*.py"
 addopts = "-v --tb=short --strict-markers"
 
@@ -103,35 +94,51 @@ disallow_incomplete_defs = true
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# The compiled barter engine (``honba._core``) is built with ``maturin develop`` (see the
+# README); ``python-source`` makes it land next to the pure-Python package in ``python/honba``.
+[tool.maturin]
+manifest-path = "crates/honba-pyo3/Cargo.toml"
+python-source = "python"
+module-name = "honba._core"
+features = ["pyo3/extension-module"]
+
 # ---------------------------------------------------------------------------
-# Architectural boundaries — enforced in CI, not by good intentions.
+# Architectural boundaries - enforced in CI, not by good intentions.
 #
-# NautilusTrader v2 breaks 20-40 things every fortnight. The cost of each bump
-# is proportional to how much of its surface we touch, so the research layer is
-# firewalled off from it entirely and speaks DataFrames instead. The Indian
-# dataset is likewise kept in our own Parquet schema, so it survives catalog
-# renames, a v3, or dropping Nautilus altogether.
+# The SDK is backend-agnostic: strategies and results speak SDK-owned types
+# (``honba.strategy.types``) and engines plug in behind ``honba.research.engine``. The
+# barter-rs engine (compiled extension ``honba._core``) is reached through exactly one
+# module, ``honba.research._barter_adapter``. import-linter only sees ``.py`` modules, so it
+# cannot express "only the adapter imports honba._core" directly (the extension resolves to the
+# ``honba`` root package, which no contract can forbid); ``tests/test_engine_boundary.py`` scans
+# the sources for ``_core`` instead, and the contracts below keep every neutral layer from
+# importing an engine module.
 #
-# Run: lint-imports
-# See: docs/research/build-vs-extend.md §9
+# Run: ``make lint-imports`` (= ``cd python && lint-imports --config ../pyproject.toml``). It must
+# run from ``python/``: from the repo root the tracked legacy top-level ``honba/`` package
+# shadows ``python/honba`` and import-linter cannot see the SDK modules.
 # ---------------------------------------------------------------------------
 [tool.importlinter]
 root_package = "honba"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Research layer is engine-free (only _nautilus_adapter may import nautilus_trader)"
+name = "Neutral layers never import an engine implementation"
 type = "forbidden"
-source_modules = ["honba.research"]
-forbidden_modules = ["nautilus_trader"]
-ignore_imports = ["honba.research._nautilus_adapter -> nautilus_trader"]
+source_modules = ["honba"]
+forbidden_modules = ["honba.research._barter_adapter", "honba.research.simple_engine"]
 
 [[tool.importlinter.contracts]]
-name = "Data layer owns its Parquet schema (only _catalog_export may import nautilus_trader)"
+name = "Strategy layer is engine-neutral (does not import honba.research)"
 type = "forbidden"
-source_modules = ["honba.data"]
+source_modules = ["honba.strategy"]
+forbidden_modules = ["honba.research"]
+
+[[tool.importlinter.contracts]]
+name = "Research layer is engine-free (no nautilus_trader anywhere)"
+type = "forbidden"
+source_modules = ["honba"]
 forbidden_modules = ["nautilus_trader"]
-ignore_imports = ["honba.data._catalog_export -> nautilus_trader"]
 
 [[tool.importlinter.contracts]]
 name = "Research layer does not depend on other honba layers"

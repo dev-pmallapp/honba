@@ -4,6 +4,7 @@ members = [
     "crates/honba-indicators",
     "crates/honba-overfit",
     "crates/honba-dhan",
+    "crates/honba-barter",
     "crates/honba-pyo3",
     "src-tauri",
 ]
@@ -50,3 +51,10 @@ honba-core = { path = "crates/honba-core" }
 honba-indicators = { path = "crates/honba-indicators" }
 honba-overfit = { path = "crates/honba-overfit" }
 honba-dhan = { path = "crates/honba-dhan" }
+honba-barter = { path = "crates/honba-barter" }
+
+# Barter ecosystem (engine behind the Python SDK)
+barter = "0.14"
+barter-data = "0.13"
+barter-execution = "0.9"
+barter-instrument = "0.3"

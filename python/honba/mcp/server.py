@@ -1,14 +1,10 @@
-"""
-Model Context Protocol (MCP) server for Honba AI Quant Assistant.
-"""
+"""Model Context Protocol (MCP) server for Honba AI Quant Assistant."""
 
-from typing import Any, Dict, List
+from typing import Any
 
 
 class HonbaMCPServer:
-    """
-    Exposes quantitative tools to AI agents (Claude, Cursor, Antigravity).
-    """
+    """Exposes quantitative tools to AI agents (Claude, Cursor, Antigravity)."""
 
     def __init__(self):
         self.tools = {
@@ -17,11 +13,11 @@ class HonbaMCPServer:
             "honba_audit_overfitting": self.audit_overfitting,
         }
 
-    async def fetch_data(self, symbol: str, timeframe: str) -> Dict[str, Any]:
+    async def fetch_data(self, symbol: str, timeframe: str) -> dict[str, Any]:
         """Fetches historical OHLCV data."""
         return {"symbol": symbol, "timeframe": timeframe, "bars_count": 5000}
 
-    async def run_backtest(self, strategy_name: str, symbol: str) -> Dict[str, Any]:
+    async def run_backtest(self, strategy_name: str, symbol: str) -> dict[str, Any]:
         """Executes backtest with Indian tax calculation."""
         return {
             "strategy": strategy_name,
@@ -32,8 +28,8 @@ class HonbaMCPServer:
         }
 
     async def audit_overfitting(
-        self, is_scores: List[float], oos_scores: List[float]
-    ) -> Dict[str, Any]:
+        self, is_scores: list[float], oos_scores: list[float]
+    ) -> dict[str, Any]:
         """Runs the anti-overfitting audit (CPCV, PBO, DSR)."""
         return {
             "pbo": 0.12,

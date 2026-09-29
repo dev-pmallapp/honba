@@ -52,3 +52,5 @@ node_modules/
 .vite/
 web/dist/
 src-tauri/target/
+# Git worktrees
+.worktrees/

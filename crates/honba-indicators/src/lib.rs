@@ -43,16 +43,14 @@ impl OptionGreeks {
         volatility: f64,
         is_call: bool,
     ) -> Self {
-        let d1 = ((spot / strike).ln() + (risk_free_rate + 0.5 * volatility.powi(2)) * time_to_expiry_years)
+        let d1 = ((spot / strike).ln()
+            + (risk_free_rate + 0.5 * volatility.powi(2)) * time_to_expiry_years)
             / (volatility * time_to_expiry_years.sqrt());
         let d2 = d1 - volatility * time_to_expiry_years.sqrt();
 
-        let norm_cdf = |x: f64| -> f64 {
-            0.5 * (1.0 + erf(x / std::f64::consts::SQRT_2))
-        };
-        let norm_pdf = |x: f64| -> f64 {
-            (-0.5 * x * x).exp() / (2.0 * std::f64::consts::PI).sqrt()
-        };
+        let norm_cdf = |x: f64| -> f64 { 0.5 * (1.0 + erf(x / std::f64::consts::SQRT_2)) };
+        let norm_pdf =
+            |x: f64| -> f64 { (-0.5 * x * x).exp() / (2.0 * std::f64::consts::PI).sqrt() };
 
         let delta = if is_call {
             norm_cdf(d1)
@@ -62,11 +60,20 @@ impl OptionGreeks {
 
         let gamma = norm_pdf(d1) / (spot * volatility * time_to_expiry_years.sqrt());
         let vega = spot * norm_pdf(d1) * time_to_expiry_years.sqrt() / 100.0;
-        let theta = -(spot * norm_pdf(d1) * volatility) / (2.0 * time_to_expiry_years.sqrt()) / 365.0;
+        let theta =
+            -(spot * norm_pdf(d1) * volatility) / (2.0 * time_to_expiry_years.sqrt()) / 365.0;
         let rho = if is_call {
-            strike * time_to_expiry_years * (-risk_free_rate * time_to_expiry_years).exp() * norm_cdf(d2) / 100.0
+            strike
+                * time_to_expiry_years
+                * (-risk_free_rate * time_to_expiry_years).exp()
+                * norm_cdf(d2)
+                / 100.0
         } else {
-            -strike * time_to_expiry_years * (-risk_free_rate * time_to_expiry_years).exp() * norm_cdf(-d2) / 100.0
+            -strike
+                * time_to_expiry_years
+                * (-risk_free_rate * time_to_expiry_years).exp()
+                * norm_cdf(-d2)
+                / 100.0
         };
 
         Self {
@@ -82,9 +89,15 @@ impl OptionGreeks {
 // Approximation of the error function
 fn erf(x: f64) -> f64 {
     let t = 1.0 / (1.0 + 0.5 * x.abs());
-    let tau = t * (-x * x - 1.26551223 + 1.00002368 * t + 0.37409196 * t.powi(2) + 0.09678418 * t.powi(3)
-        - 0.18628806 * t.powi(4) + 0.27886807 * t.powi(5) - 1.13520398 * t.powi(6) + 1.48851587 * t.powi(7)
-        - 0.82215223 * t.powi(8) + 0.17087277 * t.powi(9)).exp();
+    let tau = t
+        * (-x * x - 1.26551223 + 1.00002368 * t + 0.37409196 * t.powi(2) + 0.09678418 * t.powi(3)
+            - 0.18628806 * t.powi(4)
+            + 0.27886807 * t.powi(5)
+            - 1.13520398 * t.powi(6)
+            + 1.48851587 * t.powi(7)
+            - 0.82215223 * t.powi(8)
+            + 0.17087277 * t.powi(9))
+        .exp();
     if x >= 0.0 {
         1.0 - tau
     } else {

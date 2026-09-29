@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
 import logging
-from pathlib import Path
-from typing import Any, Optional
+from datetime import date
+from typing import Any
 
+import polars as pl
 from fastapi import BackgroundTasks, FastAPI, Query, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-import polars as pl
 
 from honba.data.bhavcopy import BhavcopyIngestion
 
@@ -32,6 +31,7 @@ ingestion = BhavcopyIngestion()
 
 @app.get("/health")
 async def health_check():
+    """Report service liveness."""
     return {
         "status": "ok",
         "engine": "honba-core-rust",
@@ -44,7 +44,7 @@ async def health_check():
 async def get_instruments(
     country: str = Query("IN", description="Country code (IN, US, JP, UK)"),
     limit: int = Query(1000, description="Max instruments to return"),
-    search: Optional[str] = Query(None, description="Symbol or name search"),
+    search: str | None = Query(None, description="Symbol or name search"),
 ) -> list[dict[str, Any]]:
     """Loads instruments dynamically from the compressed Parquet store in assets/data."""
     if not ingestion.instruments_path.exists():
@@ -118,7 +118,10 @@ async def get_instruments(
             "deliveryPct": row.get("delivery_pct", 0.0),
             "sparkline": [close_p, close_p],
             "history": [],
-            "description": f"{row.get('name', row['symbol'])} listed on NSE (Series {row.get('series', 'EQ')}).",
+            "description": (
+                f"{row.get('name', row['symbol'])} listed on NSE "
+                f"(Series {row.get('series', 'EQ')})."
+            ),
         }
         results.append(item)
 
@@ -128,7 +131,7 @@ async def get_instruments(
 @app.post("/api/instruments/update")
 async def trigger_update(
     background_tasks: BackgroundTasks,
-    target_date: Optional[str] = Query(None, description="Optional target date YYYY-MM-DD"),
+    target_date: str | None = Query(None, description="Optional target date YYYY-MM-DD"),
 ):
     """Triggers an asynchronous background update of the daily Bhavcopy into Parquet."""
     parsed_date = date.fromisoformat(target_date) if target_date else None
@@ -150,8 +153,8 @@ async def trigger_update(
 @app.get("/api/bars/{symbol}")
 async def get_symbol_bars(
     symbol: str,
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
 ):
     """Vectorized scan of historical bars for a specific symbol from daily_bars.parquet."""
     try:
@@ -163,6 +166,7 @@ async def get_symbol_bars(
 
 @app.websocket("/ws/telemetry")
 async def ws_telemetry(websocket: WebSocket):
+    """Stream telemetry over a websocket."""
     await websocket.accept()
     try:
         while True:

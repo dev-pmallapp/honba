@@ -41,7 +41,7 @@ def run(strategy, rows, config=CFG, **kw):
     return hb.backtest(strategy, {"X": daily(rows)}, config, **kw)
 
 
-# --------------------------------------------------------------------------- bracket exits
+# ---------------------------------------------------------------------------- bracket exits
 
 
 class BracketBuy(Recorder):
@@ -89,7 +89,7 @@ def test_on_exit_and_on_fill_hooks_fire_with_typed_events():
     assert seen["trip"].exit_reason == "take_profit" and seen["trip"].entry_tag == "bracket"
 
 
-# --------------------------------------------------------------------------- trailing stop
+# ---------------------------------------------------------------------------- trailing stop
 
 
 class TrailBuy(Recorder):
@@ -155,7 +155,7 @@ def test_modify_stop_of_live_position_via_exit_order_handle():
     assert (last.reason, last.price) == ("stop_loss", 99.0)  # would not have hit 90
 
 
-# --------------------------------------------------------------------------- limit orders
+# ---------------------------------------------------------------------------- limit orders
 
 
 class LimitBuy(Recorder):
@@ -211,7 +211,7 @@ def test_cancel_and_modify_open_order():
     assert res.fills.empty
 
 
-# --------------------------------------------------------------------------- smart orders
+# ---------------------------------------------------------------------------- smart orders
 
 
 def test_target_close_and_close_all_net_open_orders_and_positions():
@@ -292,7 +292,7 @@ def test_insufficient_cash_reject_event():
     assert res.rejected.reason.tolist() == ["insufficient_cash"]
 
 
-# --------------------------------------------------------------------------- warm-up
+# ---------------------------------------------------------------------------- warm-up
 
 
 def test_warmup_bars_ignore_orders_and_start_equity_later():
@@ -310,7 +310,7 @@ def test_warmup_bars_ignore_orders_and_start_equity_later():
     assert res.fills.iloc[0].time == res.equity.index[0]
 
 
-# --------------------------------------------------------------------------- multi-timeframe
+# ---------------------------------------------------------------------------- multi-timeframe
 
 
 class MtfProbe(Recorder):
@@ -374,7 +374,7 @@ def test_undeclared_timeframe_is_a_clear_error():
         run(Bad, [*flat(100, 3)])
 
 
-# --------------------------------------------------------------------------- sizing / instruments
+# ---------------------------------------------------------------------------- sizing / instruments
 
 
 class SizedFuture(Recorder):
@@ -414,7 +414,7 @@ def test_engine_rejects_off_lot_orders_without_sdk_rounding_help():
     assert res.fills.empty and res.rejected.empty
 
 
-# --------------------------------------------------------------------------- costs / metrics
+# ---------------------------------------------------------------------------- costs / metrics
 
 
 def test_india_costs_and_metrics_reconcile_with_engine_summary():
@@ -468,7 +468,7 @@ def test_metrics_streaks_and_long_short_split():
     assert m.profit_factor == pytest.approx(1.0)
 
 
-# --------------------------------------------------------------------------- sweep / validation
+# ---------------------------------------------------------------------------- sweep / validation
 
 
 def test_sweep_grid_sorted_with_trial_count_and_bounds_check():

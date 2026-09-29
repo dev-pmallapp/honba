@@ -6,9 +6,16 @@ registry), so this module stays engine-neutral. When the compiled extension is n
 pure-numpy implementation of the same formulas is used; :func:`overfit_backend` tells which.
 
 - :func:`dsr` / :func:`deflated_sharpe`: probability that the observed Sharpe ratio beats the
-  expected maximum Sharpe of ``n_trials`` unskilled trials (Bailey & Lopez de Prado, 2014),
-  corrected for the skewness / kurtosis of the returns. Sharpe ratios are per period
-  (daily, not annualised).
+  expected maximum Sharpe of ``n_trials`` unskilled trials, corrected for the skewness /
+  kurtosis of the returns (Bailey & Lopez de Prado, 2014)::
+
+      SR0 = sqrt(V) * ((1 - g) * Phi^-1(1 - 1/N) + g * Phi^-1(1 - 1/(N e)))    g = Euler-Mascheroni
+      DSR = Phi((SR - SR0) * sqrt(T - 1) / sqrt(1 - skew * SR + (kurt - 1) / 4 * SR^2))
+
+  Sharpe ratios are per period (daily, not annualised). The Python implementation is the
+  reference: ``overfit_backend("auto")`` only routes to the Rust core when its DSR agrees
+  with it (older ``honba-overfit`` builds use the ``sqrt(2 ln N)`` approximation and ``T``),
+  and falls back to Python otherwise.
 - :func:`pbo` (one IS / OOS split) and :func:`cscv_pbo` (combinatorially symmetric
   cross-validation over a ``T x N`` matrix of trial returns): the probability that the best
   in-sample configuration ranks below the median out of sample.
@@ -21,6 +28,7 @@ import itertools
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from statistics import NormalDist
 from typing import Any, Protocol
 
 import numpy as np
@@ -30,6 +38,8 @@ __all__ = [
     "cscv_pbo",
     "deflated_sharpe",
     "dsr",
+    "dsr_agrees",
+    "expected_max_sharpe",
     "overfit_backend",
     "pbo",
     "return_moments",
@@ -37,7 +47,8 @@ __all__ = [
 
 # Resolved by name (no static import): only the adapter may touch the compiled engine.
 _CORE_BACKEND = "honba.research._barter_adapter:OverfitCore"
-_EULER_MASCHERONI = 0.5772156649
+_EULER_MASCHERONI = 0.5772156649015329
+_NORMAL = NormalDist()
 
 
 class OverfitBackend(Protocol):
@@ -63,7 +74,7 @@ class OverfitBackend(Protocol):
 
 
 class PythonOverfit:
-    """Pure-numpy twin of the Rust ``AntiOverfitEngine`` (same formulas, same edge cases)."""
+    """Pure-numpy reference implementation (the Rust ``AntiOverfitEngine`` must agree)."""
 
     name = "python"
 
@@ -79,9 +90,11 @@ class PythonOverfit:
         """Deflated Sharpe Ratio (a probability)."""
         if n_trials <= 1:
             return 1.0
-        z = math.sqrt(2.0 * math.log(n_trials))
-        expected_max = math.sqrt(var_trials) * (z + _EULER_MASCHERONI / z)
-        denom = (1.0 - skew * observed_sharpe + (kurtosis - 1.0) / 4.0 * observed_sharpe**2) / n_obs
+        if n_obs < 2:
+            return math.nan
+        expected_max = expected_max_sharpe(n_trials, var_trials)
+        moments = 1.0 - skew * observed_sharpe + (kurtosis - 1.0) / 4.0 * observed_sharpe**2
+        denom = moments / (n_obs - 1)
         if denom <= 0.0:
             return 0.5
         score = (observed_sharpe - expected_max) / math.sqrt(denom)
@@ -96,6 +109,37 @@ class PythonOverfit:
         return 1.0 - float((oos < oos[best]).sum()) / len(oos)
 
 
+def expected_max_sharpe(n_trials: int, var_trials: float) -> float:
+    """Expected maximum of ``n_trials`` unskilled Sharpe ratios with variance ``var_trials``.
+
+    Bailey & Lopez de Prado (2014), eq. for ``SR0``:
+    ``sqrt(V) * ((1 - g) * Phi^-1(1 - 1/N) + g * Phi^-1(1 - 1/(N e)))``.
+    """
+    if n_trials <= 1:
+        return 0.0
+    g = _EULER_MASCHERONI
+    z1 = _NORMAL.inv_cdf(1.0 - 1.0 / n_trials)
+    z2 = _NORMAL.inv_cdf(1.0 - 1.0 / (n_trials * math.e))
+    return math.sqrt(max(var_trials, 0.0)) * ((1.0 - g) * z1 + g * z2)
+
+
+# (observed_sharpe, n_trials, var_trials, n_obs, skew, kurtosis) probes for backend agreement
+_DSR_PROBES = (
+    (0.1, 20, 0.002, 400, 0.0, 3.0),
+    (0.05, 500, 0.02, 250, -0.5, 6.0),
+    (0.2, 3, 0.001, 60, 0.3, 4.0),
+)
+
+
+def dsr_agrees(backend: OverfitBackend, tol: float = 1e-9) -> bool:
+    """Whether ``backend``'s DSR matches the Python reference formula on fixed probes."""
+    ref = PythonOverfit()
+    try:
+        return all(abs(backend.dsr(*p) - ref.dsr(*p)) <= tol for p in _DSR_PROBES)
+    except Exception:
+        return False
+
+
 _backends: dict[str, OverfitBackend] = {}
 
 
@@ -103,7 +147,8 @@ def overfit_backend(name: str = "auto") -> OverfitBackend:
     """The DSR / PBO implementation: ``"core"`` (Rust), ``"python"`` or ``"auto"``.
 
     ``auto`` prefers the compiled Rust implementation and falls back to Python when the
-    extension is not built.
+    extension is not built or when its DSR disagrees with the published formula implemented
+    here (:func:`dsr_agrees`). ``"core"`` returns the Rust implementation unconditionally.
     """
     if name not in ("auto", "core", "python"):
         raise ValueError(f"backend must be auto, core or python, got {name!r}")
@@ -117,6 +162,11 @@ def overfit_backend(name: str = "auto") -> OverfitBackend:
             if name == "core":
                 raise
             return overfit_backend("python")
+    if name == "auto":
+        if "auto" not in _backends:
+            core = _backends["core"]
+            _backends["auto"] = core if dsr_agrees(core) else overfit_backend("python")
+        return _backends["auto"]
     return _backends["core"]
 
 
@@ -156,8 +206,8 @@ def dsr(
     ``var_trials`` is the variance of the per-period Sharpe ratios across the ``n_trials``
     configurations tested; ``n_obs`` the number of returns behind ``observed_sharpe``.
     """
-    if n_obs < 1:
-        raise ValueError("n_obs must be >= 1")
+    if n_obs < 2:
+        raise ValueError("n_obs must be >= 2")
     return float(
         overfit_backend(backend).dsr(
             float(observed_sharpe),

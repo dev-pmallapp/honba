@@ -325,7 +325,7 @@ opt = hb.optimize(Breakout, data, cfg,
                   constraint=lambda p: p["fast"] < p["slow"])
 opt.best_params, opt.best_value, opt.best, opt.test, opt.test_value, opt.trials
 opt.n_trials                                   # distinct configurations backtested (the DSR's N)
-opt.deflated_sharpe                            # Rust honba-overfit via the adapter; numpy fallback
+opt.deflated_sharpe                            # Bailey & Lopez de Prado DSR (see below)
 opt.pbo(n_splits=8).pbo                        # CSCV over the daily returns of every trial
 
 wf = hb.walk_forward(Breakout, data, cfg, train_bars=500, test_bars=100, step=None, anchored=False,
@@ -341,9 +341,13 @@ test windows replay their train window as warm-up, so no test bar is seen during
 optimisation; `step` defaults to `test_bars` and smaller values are refused (overlapping
 out-of-sample windows would be stitched twice). `honba.research.overfit` exposes the statistics directly: `dsr(sr, n_trials,
 var_trials, n_obs, skew, kurtosis)`, `deflated_sharpe(returns, n_trials=, trial_sharpes=)`,
-`pbo(is_perf, oos_perf)`, `cscv_pbo(returns_matrix, n_splits=8)`, `overfit_backend()`. The Rust
+`pbo(is_perf, oos_perf)`, `cscv_pbo(returns_matrix, n_splits=8)`, `expected_max_sharpe(n, var)`,
+`overfit_backend()`. The DSR is the published one: `SR0 = sqrt(V)((1-γ)Φ⁻¹(1-1/N) + γΦ⁻¹(1-1/(Ne)))`
+(γ = Euler–Mascheroni) and `DSR = Φ((SR-SR0)·sqrt(T-1)/sqrt(1-skew·SR+(kurt-1)/4·SR²))`. The Rust
 code is resolved by name (`honba.research._barter_adapter:OverfitCore`), so the module stays
-engine-neutral.
+engine-neutral; `overfit_backend("auto")` uses it only when its DSR agrees with the Python
+reference (`dsr_agrees`), otherwise (current `honba-overfit` still uses the `sqrt(2 ln N)`
+approximation and `T`) the numpy implementation is used for both DSR and PBO.
 
 ### Monte Carlo on trades
 

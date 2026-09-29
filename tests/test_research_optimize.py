@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import math
 import sys
 
 import numpy as np
@@ -52,23 +53,51 @@ def test_dsr_edge_cases_and_validation():
         overfit.deflated_sharpe(np.ones(10), n_trials=5)
     with pytest.raises(ValueError, match="n_obs"):
         overfit.dsr(0.1, 3, 0.1, 0)
+    with pytest.raises(ValueError, match="n_obs"):
+        overfit.dsr(0.1, 3, 0.1, 1)
+
+
+def test_dsr_follows_bailey_lopez_de_prado():
+    from statistics import NormalDist
+
+    phi = NormalDist()
+    g = 0.5772156649015329
+    for n, var in ((2, 0.01), (10, 0.002), (1000, 0.04)):
+        expected = math.sqrt(var) * (
+            (1 - g) * phi.inv_cdf(1 - 1 / n) + g * phi.inv_cdf(1 - 1 / (n * math.e))
+        )
+        assert overfit.expected_max_sharpe(n, var) == pytest.approx(expected, rel=1e-12)
+    # E[max] of 100 standard normals is ~2.5 (the formula is a close approximation)
+    assert overfit.expected_max_sharpe(100, 1.0) == pytest.approx(2.5, abs=0.05)
+    sr, n, var, t, skew, kurt = 0.12, 25, 0.001, 300, -0.4, 5.0
+    sr0 = overfit.expected_max_sharpe(n, var)
+    z = (sr - sr0) * math.sqrt(t - 1) / math.sqrt(1 - skew * sr + (kurt - 1) / 4 * sr**2)
+    got = overfit.dsr(sr, n, var, t, skew, kurt, backend="python")
+    assert got == pytest.approx(phi.cdf(z), rel=1e-12)
+    assert math.isnan(overfit.overfit_backend("python").dsr(0.1, 5, 0.01, 1, 0.0, 3.0))
 
 
 @needs_core
 def test_rust_and_python_backends_agree():
     rng = np.random.default_rng(0)
     r = rng.normal(0.001, 0.01, 400)
+    core_backend = overfit.overfit_backend("core")
+    agrees = overfit.dsr_agrees(core_backend)
+    # auto routes DSR to Rust only when it implements the same (published) formula
+    assert overfit.overfit_backend().name == ("core" if agrees else "python")
     for n, var in ((2, 0.0), (20, 0.002), (500, 0.02)):
-        core = overfit.deflated_sharpe(r, n_trials=n, var_trials=var, backend="core")
+        auto = overfit.deflated_sharpe(r, n_trials=n, var_trials=var)
         py = overfit.deflated_sharpe(r, n_trials=n, var_trials=var, backend="python")
-        assert core == pytest.approx(py, abs=1e-6)
+        assert auto == pytest.approx(py, abs=1e-12)
+        if agrees:
+            core = overfit.deflated_sharpe(r, n_trials=n, var_trials=var, backend="core")
+            assert core == pytest.approx(py, abs=1e-6)
     is_perf, oos_perf = rng.normal(size=12), rng.normal(size=12)
     assert overfit.pbo(is_perf, oos_perf, backend="core") == overfit.pbo(
         is_perf, oos_perf, backend="python"
     )
     mat = rng.normal(0, 0.01, (320, 9))
     assert overfit.cscv_pbo(mat, backend="core").pbo == overfit.cscv_pbo(mat, backend="python").pbo
-    assert overfit.overfit_backend().name == "core"
 
 
 def test_cscv_pbo_detects_skill_and_noise():

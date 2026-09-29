@@ -274,6 +274,35 @@ rebuild. The report echoes `contract_version`.
 The barter engine speaks JSON (`_core.run_backtest(config_json, candles, on_bar) -> report_json`,
 contract in `crates/honba-barter/src/lib.rs` and `report.rs`); `_barter_adapter.py` translates.
 
+## Data (`honba.data`)
+
+Candle schema everywhere: a frame with an IST-aware `time` column and `open high low close volume`
+(daily bars at 00:00 IST). `hb.backtest` takes these frames as they are.
+
+```python
+from honba.data import CandleStore, DhanLoader, load_csv, load_parquet
+
+df = load_csv("sbin.csv")                       # headers case-insensitive; date/datetime/epoch ok
+store = CandleStore("~/.honba/candles", session=hb.TradingSession())
+store.append("SBIN", "1d", df)                  # validated (hb.validate_candles), deduped, incremental
+store.update(DhanLoader(master=master), "SBIN", "5m", start="2024-01-01")   # resumes at last bar
+frames = store.load(["SBIN", "INFY"], "1d", "2023-01-01", "2024-12-31")     # {symbol: frame}
+store.missing_sessions("SBIN", "1d", "2024-01-01", "2024-03-31")            # trading days with no bars
+```
+
+`CandleStore` writes `root/symbol=<SYM>/timeframe=<TF>/year=<YYYY>.parquet` (one file per year,
+only touched years are rewritten; symbols are URL-quoted so paths cannot escape the root). New bars
+replace stored bars with the same time. Validation runs on the incoming bars: errors (NaN,
+broken OHLC, duplicates, bars on holidays or outside the session hours) raise
+`CandleValidationError` and nothing is written; warnings come back in `AppendResult.issues`.
+Overnight, weekend and holiday gaps are never reported as missing data.
+
+`DhanLoader` calls Dhan HQ v2 `/charts/historical` (1d) and `/charts/intraday` (1m, 5m, 15m, 25m,
+1h; fetched in 90-day windows). The token is never in code: `DHAN_CLIENT_ID` + `DHAN_ACCESS_TOKEN`
+in the environment, else the keyring entry stored by `honba-dhan` (service `honba-dhanhq`, user =
+client id; install the `keyring` extra). Requests are rate limited (`min_interval`, default 0.25s)
+and 429 / 5xx responses are retried with exponential backoff honouring `Retry-After`.
+
 ## Development
 
 ```bash

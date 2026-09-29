@@ -63,6 +63,12 @@ dev = [
 docs = [
     "mkdocs-material>=9.5",
 ]
+keyring = [
+    "keyring>=25",
+]
+mcp = [
+    "mcp>=1.2",
+]
 
 [tool.pyright]
 typeCheckingMode = "strict"
@@ -150,3 +156,9 @@ forbidden_modules = [
     "honba.data",
     "honba.strategies",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Data layer is engine-free and sits below the interfaces"
+type = "forbidden"
+source_modules = ["honba.data"]
+forbidden_modules = ["honba.cli", "honba.server", "honba.mcp", "honba.research._barter_adapter"]

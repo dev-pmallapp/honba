@@ -61,7 +61,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | J19 | Rule significance test (bootstrap) | none | SDK | P2 | Complements honba DSR/PBO. |
 | J20 | Metrics (expectancy, avg win/loss, streaks, holding periods, long/short split, omega, serenity, largest win/loss, underwater period, trades/day) | done | SDK (from trades/equity) | P0 | Derive in Python from fills/round trips and equity; keep Rust report lean. Annualise with ~250 NSE sessions, not 365. |
 | J21 | Charts / reports (equity, drawdown, monthly returns, benchmark, candle chart with trades, custom lines) | none | SDK | P1 | Benchmark default NIFTY 50 / NIFTY 500 TRI. Plotly/HTML tearsheet; web2 can reuse JSON. |
-| J22 | Import candles (exchange drivers) + candle store | draft (frame ingest + validation, no loaders) | SDK + `honba-dhan` | P1 | Dhan historical API, CSV/Parquet catalog. Validate against session calendar (overnight/holiday gaps are not missing data). Corporate-action adjustment (splits/bonus) for equity. |
+| J22 | Import candles (exchange drivers) + candle store | done (`honba.data`: `load_csv`, `load_parquet`, `CandleStore`, `DhanLoader`; corporate actions: I10) | SDK + `honba-dhan` | P1 | Dhan historical API, CSV/Parquet catalog. Validate against session calendar (overnight/holiday gaps are not missing data). Corporate-action adjustment (splits/bonus) for equity. |
 | J23 | Candle validation (contiguous, monotonic) | done | SDK | P0 | Session-aware gap check, duplicate timestamps, OHLC sanity (low <= open/close <= high). |
 | J24 | Research API (`research.backtest` with in-memory candles) | done | SDK | P0 | Current `backtest()`; to be reshaped (section 3). |
 | J25 | Filters (`filters()` gates entries) | none | SDK | P1 | Trivial in Python. |
@@ -94,7 +94,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O10 | Option chain, Greeks, IV, OI, PCR, max pain | draft (Greeks in Rust) | SDK + `honba-indicators` | P2 | Black-Scholes exists in `honba-indicators`. |
 | O11 | Quotes (LTP, bid/ask) | none | SDK (`honba-dhan`) | P2 | Live only; backtest uses bars. |
 | O12 | Market depth (L5) | none | SDK (`honba-dhan`) | P2 | Live only; Dhan offers 20-level depth. |
-| O13 | Historical data / intervals | none | SDK (`honba-dhan`) | P1 | Same loader as J22. |
+| O13 | Historical data / intervals | done (`DhanLoader`, 1d + 1m..1h) | SDK (`honba-dhan`) | P1 | Same loader as J22. |
 | O14 | Symbol search / instrument master / expiry list | none | SDK | P1 | Instrument master supplies `lot_size`, `tick_size`, `freeze_qty`, segment to the engine config. |
 | O15 | Account: funds, order book, trade book, position book, holdings | done (ctx) | Bridge (backtest ctx) / `honba-dhan` (live) | P0 (ctx) / P2 (live) | Backtest ctx must expose open orders, fills, positions with avg price, holdings (CNC) vs positions (MIS). |
 | O16 | Margin calculator | partial (percent-based margin in the engine) | Engine | P2 | SPAN approximation for NRML; MIS leverage table. |

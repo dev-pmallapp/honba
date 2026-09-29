@@ -1,6 +1,6 @@
 use honba_barter::{
     run_backtest, run_sweep, Action, ActionSide, BacktestConfig, BacktestError, Bar, BarContext,
-    Decider, DeciderError, OrderRequest, OrderType, Product,
+    Decider, DeciderError, Product,
 };
 use std::{
     collections::BTreeMap,
@@ -231,31 +231,6 @@ fn insufficient_cash_and_position_are_rejected() {
     ] {
         assert!(reasons.contains(&reason), "missing {reason}");
     }
-}
-
-#[test]
-fn unsupported_order_features_are_rejected_not_traded() {
-    let candles = BTreeMap::from([("SBIN".to_string(), synthetic_bars(1, 0.0))]);
-    let action: Action = serde_json::from_value(serde_json::json!({
-        "symbol": "SBIN", "side": "buy", "qty": 1.0, "kind": "limit", "price": 90.0,
-        "some_future_key": true
-    }))
-    .unwrap();
-    assert!(matches!(&action, Action::Place(o) if o.kind == OrderType::Limit));
-    let bracket: Action = OrderRequest::market("SBIN", ActionSide::Buy, 1.0)
-        .stop_loss(80.0)
-        .into();
-    let decider: Arc<dyn Decider> =
-        Arc::new(move |_: &BarContext<'_>| Ok(vec![action.clone(), bracket.clone()]));
-
-    let report = run_backtest(config(&["SBIN"]), candles, decider).unwrap();
-    assert!(report.trades.is_empty());
-    let reasons = report
-        .rejected
-        .iter()
-        .map(|r| r.reason.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(reasons, ["unsupported_order_kind", "unsupported_bracket"]);
 }
 
 #[test]

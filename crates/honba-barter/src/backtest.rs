@@ -256,6 +256,7 @@ fn setup_run(
         initial_cash: prepared.config.initial_cash,
         fee_rate: prepared.fee_rate,
         allow_short: prepared.config.allow_short,
+        utc_offset: IST,
     });
     let strategy = DeciderStrategy::new(
         decider,

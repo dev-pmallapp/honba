@@ -7,6 +7,8 @@ replaces the Jesse/OpenAlgo look-alike draft in `python/honba/strategy` and
 
 Update: the P0 SDK below is implemented (`docs/interfaces/python-sdk.md`); the sketches in section 3 were adapted (`self.history(tf=)` instead of `self.bars(tf)`, `PortfolioStrategy` folded into the single multi-symbol `Strategy`, `trail_stop` replaced by engine-native `Trail`).
 
+Update (engine contract 3): J9, O5, I2, I5, I6 and I9 are implemented in the barter engine and the SDK (`python-sdk.md`: partial exits, freeze split, T+1 settlement, price bands, slippage and partial fills).
+
 Update (P1 research depth): J16, J17, J21, J25, J30, J31, J32 and O4 are implemented in the SDK (`python-sdk.md`, Research depth); `PortfolioStrategy` returns as a `Strategy` subclass adding a universe, a rebalance schedule and `rebalance(weights)`.
 
 Direction: the SDK does not copy Jesse's or OpenAlgo's API shape or naming. It must cover
@@ -50,7 +52,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | J6 | Indicator library (~170, `sequential=`) | draft (14 numpy indicators) | SDK (wrap), Engine later | P1 | Wrap a vetted library (TA-Lib / polars-ta-extension) behind `honba.ta`; do not hand-roll 170. Rust `honba-indicators` for hot paths later. India extras: VWAP anchored to session, Supertrend, CPR/pivots, OI-based (P2). |
 | J7 | Position sizing helpers (`risk_to_qty`, `size_to_qty`, `kelly_criterion`, `estimate_risk`) | done | SDK | P0 | Must round down to `lot_size` (F&O) and respect `freeze_qty`; equity cash lot = 1. |
 | J8 | Stop-loss / take-profit on entry (`self.stop_loss = ...`) | done | Engine | P0 | Needs conditional orders evaluated intrabar against bar high/low; gap-through fills at open. Circuit lock can prevent exit fill. |
-| J9 | Partial exits (list of TP/SL legs) | none (single-level bracket only) | Engine (orders) + SDK (sugar) | P1 | Legs must be multiples of lot size. |
+| J9 | Partial exits (list of TP/SL legs) | done (engine contract 3 + `hb.Leg` / `move_sl_to_entry_after_first_tp`, capability `partial_exits`) | Engine (orders) + SDK (sugar) | P1 | Legs must be multiples of lot size. |
 | J10 | Trailing stop (`update_position` moves SL) | done (engine-native trail) | SDK (P0 via modify), Engine native trail (P1) | P0 | With modify/cancel in the contract, trailing is Python logic per bar; a native `trail` field avoids per-bar Python round trips. |
 | J11 | Limit and stop entries (price vs current decides type) | done | Engine | P0 | barter `MockExchange` only accepts Market: honba must hold resting orders itself and submit a Market request at the computed fill price when triggered. Tick-size rounding (0.05, price-banded). |
 | J12 | `should_cancel_entry`, order cancel | done | Engine (cancel op) + SDK | P0 | Default: cancel unfilled entry at next bar (Jesse) or DAY TIF expiry at session close (India). |
@@ -88,7 +90,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O2 | Product types CNC / MIS / NRML (MTF) | done | Engine | P0 | Drives costs (STT differs MIS vs CNC), short rules, auto square-off, settlement. |
 | O3 | Smart order (target position size) | done | SDK | P0 | Pure delta computation; must account for open orders to avoid double-sending. |
 | O4 | Basket order (many orders at once) | done (`group=` / `with self.group(...)`, `result.groups`) | SDK | P1 | Actions are already a list per bar; add tag/group for reporting. |
-| O5 | Split order (slice large qty) | partial (`hb.split_order` Python helper; engine-native split separate) | SDK | P1 | Needed for F&O freeze quantity (exchange max qty per order); slices must be lot multiples. |
+| O5 | Split order (slice large qty) | done (`freeze_policy="split"` native on barter contract 3, capability `freeze_split`; `hb.split_order` remains the fallback) | SDK | P1 | Needed for F&O freeze quantity (exchange max qty per order); slices must be lot multiples. |
 | O6 | Modify order / cancel order / cancel all | done | Engine | P0 | Contract ops `modify`, `cancel`, `cancel_all`. |
 | O7 | Close position / close all | done | SDK | P0 | Smart order to 0; `close_all` iterates positions. |
 | O8 | Options order by offset (ATM/ITMn/OTMn, expiry) | none | SDK (resolver) + data | P2 | Needs option chain history and instrument master (strikes, expiries, lot sizes). Weekly expiry rules changed (one weekly index expiry per exchange). |
@@ -119,14 +121,14 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | # | Mechanic | Status | Belongs in | Pri | Notes |
 |---|---|---|---|---|---|
 | I1 | Per-fill statutory costs | done | Engine | P0 | Wire `IndianTaxCalculator` into the ledger. Fix before wiring: it takes `MarketSegment` only, so `EquityCash` is always treated as delivery (STT on both sides, zero brokerage). Needs `ProductType`: intraday equity STT is sell-side only at a lower rate and stamp duty differs; options exchange charge is on premium at a different rate than futures/cash; brokerage should be a pluggable plan (flat per order, % capped). DP charge per scrip on delivery sells is missing. Rates change with budgets: keep them in a versioned, dated table. Report must carry the cost breakdown per fill. |
-| I2 | T+1 settlement / holdings vs positions | none | Engine | P1 | CNC buys become holdings next session. Config for how much sale credit is usable the same day (broker-dependent) and T+1 for withdrawal. BTST (sell before delivery) allowed. |
+| I2 | T+1 settlement / holdings vs positions | done (contract 3: `Settlement`, `unsettled_cash` / `available_cash`, `Position.qty_settled`; capability `settlement`) | Engine | P1 | CNC buys become holdings next session. Config for how much sale credit is usable the same day (broker-dependent) and T+1 for withdrawal. BTST (sell before delivery) allowed. |
 | I3 | Lot size | done | Engine (validate) + SDK (round) | P0 | F&O qty must be a multiple of `lot_size`; reject otherwise (`invalid_lot`). Lot sizes change over time: point-in-time table (P2). |
 | I4 | Tick size | done | Engine (validate) + SDK (round) | P0 | Limit/trigger prices rounded to `tick_size`. |
-| I5 | Freeze quantity | none | Engine (validate) + SDK (split) | P1 | Reject single orders above freeze qty; SDK auto-splits. |
-| I6 | Circuit limits / price bands | none | Engine | P1 | Not in `risk.rs` today. Per-symbol band (2/5/10/20% of previous close; F&O stocks have dynamic bands). Reject orders priced outside the band; a bar locked at a band (high == low == band) fills no market orders on the blocked side. Index-wide market circuit halts trading. |
+| I5 | Freeze quantity | done (reject `above_freeze_qty` or native split, `freeze_policy`) | Engine (validate) + SDK (split) | P1 | Reject single orders above freeze qty; SDK auto-splits. |
+| I6 | Circuit limits / price bands | done (`Instrument.price_band_pct`, `outside_price_band`, locked bars; capability `price_bands`; no index-wide halts, no dynamic bands) | Engine | P1 | Not in `risk.rs` today. Per-symbol band (2/5/10/20% of previous close; F&O stocks have dynamic bands). Reject orders priced outside the band; a bar locked at a band (high == low == band) fills no market orders on the blocked side. Index-wide market circuit halts trading. |
 | I7 | Sessions / holidays / pre-open | done | Engine | P0 | Calendar in config; DAY TIF expiry at session close; no trading outside session. |
 | I8 | Short-selling restriction | done | Engine | P0 | Cash equity shorts MIS-only (I7/O18 square-off); no overnight cash shorts. |
-| I9 | Slippage / impact cost | none | Engine | P1 | `slippage_bps` (fixed) first; volume-participation cap later. Important for small/mid caps. |
+| I9 | Slippage / impact cost | done (`Slippage.bps` / `volume_share`, volume cap with partial fills; capability `slippage`) | Engine | P1 | `slippage_bps` (fixed) first; volume-participation cap later. Important for small/mid caps. |
 | I10 | Corporate actions (split, bonus, dividend) | done for history adjustment (`adjust_candles`, dividends recorded only) | SDK (data) | P1 | Adjust history; dividends credited to cash for CNC holdings (P2). |
 
 ## 2. Engine vs pure Python

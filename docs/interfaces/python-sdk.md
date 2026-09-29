@@ -47,19 +47,22 @@ class Breakout(hb.Strategy):
             self.buy(qty, stop_loss=stop, take_profit=ctx.bar.close + 3 * atr,
                      trail=hb.Trail.atr(self.atr_mult), tag="breakout")
 
-    def on_fill(self, fill: hb.Fill) -> None: ...        # any fill, incl. attached exits
+    def on_fill(self, fill: hb.Fill) -> None: ...        # every fill (a piece of an order, incl. exits)
     def on_exit(self, trade: hb.RoundTrip) -> None: ...  # position went flat
     def on_reject(self, reject) -> None: ...             # engine refused an order (reject.reason)
     def on_cancel(self, cancel) -> None: ...             # cancelled / expired (cancel.kind)
+    def on_stop_update(self, update) -> None: ...        # trail ratchet / move-to-entry (TrailUpdate, StopUpdate)
     def on_start(self) -> None: ...                      # once, before the first bar
 ```
 
-`ctx` (`BarContext`): `time`, `time_ms`, `warmup`, `cash`, `equity`, `bars` (latest `Bar` per
+`ctx` (`BarContext`): `time`, `time_ms`, `warmup`, `cash`, `unsettled_cash`, `available_cash`
+(T+1, see Running), `equity`, `bars` (latest `Bar` per
 symbol), `bar` (the only symbol's bar), `positions`, `open_orders`, `events`, `session`. On
 `self`: `symbols`, `symbol` (single-symbol runs), `positions[sym]` / `position`, `orders(symbol,
 role)`, `instrument(sym)`, `last_price(sym)`, `cash`, `equity`, `session`, `log(msg)`.
-`position` is `Position(qty, avg_price, product, realised_pnl, unrealised_pnl, pnl)` with
-`is_long / is_short / is_flat`. Bars during warm-up (`ctx.warmup`) feed history but orders are
+`position` is `Position(qty, avg_price, product, realised_pnl, unrealised_pnl, pnl, qty_settled)`
+with `is_long / is_short / is_flat` (`qty_settled`: delivered CNC long quantity, whole long
+quantity without T+1). `self.unsettled_cash` / `self.available_cash` mirror the context. Bars during warm-up (`ctx.warmup`) feed history but orders are
 ignored.
 
 `Param(default, low=, high=, step=, choices=)`: typed and bounded; values passed to
@@ -94,8 +97,8 @@ self.close("SBIN"); self.close_all()
 ```
 
 `buy/sell(qty, symbol=None, *, limit, stop, kind, tif, product, tag, stop_loss, take_profit,
-trail, reduce_only, id)` return an `OrderHandle` (`id`, `status`, `order`, `modify`, `cancel`,
-`stop_order`, `target_order`) or `None` when nothing was sent (warm-up, below one lot). The kind
+trail, reduce_only, id, group, move_sl_to_entry_after_first_tp)` return an `OrderHandle` (`id`, `status`, `order`, `modify`, `cancel`,
+`stop_order`, `target_order`, `stop_leg(n)`, `target_leg(n)`) or `None` when nothing was sent (warm-up, below one lot). The kind
 follows the prices given. Prices are rounded to the tick and `qty` down to whole lots using the
 configured `Instrument`.
 
@@ -104,6 +107,29 @@ configured `Instrument`.
 (trailing starts when price trades through it) and `step=` (minimum improvement before the stop
 moves). On an entry with `stop_loss` it trails that stop; on a `stop` order without `stop_loss`
 it trails the order's own trigger. `TrailUpdate` events appear in `ctx.events`.
+
+Partial exits (capability `partial_exits`): `stop_loss=` / `take_profit=` take a list of legs,
+`hb.Leg(price, qty=None, pct=None)` or `{"price", "qty" | "pct"}` dicts (`qty` a lot multiple,
+`pct` percent of the entry quantity rounded down to lots; a leg with neither takes the rest, one
+per list):
+
+```python
+self.buy(10, stop_loss=95,
+         take_profit=[hb.Leg(110, qty=5), {"price": 120}],   # half at 110, the rest at 120
+         move_sl_to_entry_after_first_tp=True)               # TP1 fills -> stop moves to entry
+self.buy(20, stop_loss=[hb.Leg(95, pct=50), hb.Leg(92)], take_profit=110)
+self.modify(h, take_profit=[hb.Leg(115, qty=6), hb.Leg(125)])   # replaces the legs
+```
+
+Each side covers the entry's open quantity; when a leg fills the other side shrinks so it never
+exceeds what is left (a single stop therefore covers whatever the targets leave). Leg orders are
+`<id>:sl<n>` / `<id>:tp<n>` (`handle.stop_leg(n)`, `handle.target_leg(n)`; a single level keeps
+`<id>:sl` / `<id>:tp`). The SDK checks before sending: legs at most cover `qty`, `qty` legs are
+lot multiples, at most one rest leg, `pct` sums to at most 100, `move_sl_to_entry_after_first_tp`
+needs both exits, and `trail=` cannot be combined with several stop-loss legs (the engine would
+reject `unsupported_trail`). Replaced legs are cancelled with `CancelReason.REPLACED`. The move
+to entry is reported as a `StopUpdate` (`id`, `old_stop`, `new_stop`, `reason`) in `ctx.events`
+and `on_stop_update`, like `TrailUpdate`.
 
 `target` cancels the symbol's resting entry orders, then sends only the delta to the current
 position (netting orders queued earlier in the same bar), so repeated calls never double up.
@@ -114,12 +140,13 @@ Reducing orders keep the position's product. `close_all` cancels every order fir
 `Reject.reason` is a `hb.RejectReason` (a `str` enum, so `== "no_bar"` works; unknown engine
 reasons stay plain strings): `unknown_symbol invalid_qty invalid_price invalid_trigger
 invalid_stop_loss invalid_take_profit invalid_trail unsupported_trail invalid_lot invalid_tick
-above_freeze_qty no_price no_bar no_position duplicate_id unknown_order order_closed
+above_freeze_qty outside_price_band no_price no_bar no_position duplicate_id unknown_order order_closed
 not_an_entry market_closed after_square_off warmup insufficient_cash insufficient_margin
 insufficient_position`. `Fill.reason` values are in `hb.FillReason` (`signal limit stop
 stop_loss take_profit trailing_stop square_off liquidate_end`); `hb.strategy.CancelReason`
-lists cancel / expire reasons (`user oco position_closed parent_closed square_off end_of_data
-day ioc`). Orders placed on warm-up bars are refused by the SDK itself with
+lists cancel / expire reasons (`user oco position_closed parent_closed replaced square_off
+end_of_data day ioc`). `Order.status` is `open pending partially_filled filled cancelled
+expired rejected`. Orders placed on warm-up bars are refused by the SDK itself with
 `RejectReason.WARMUP`.
 
 ### Sizing and instruments
@@ -158,9 +185,13 @@ cfg = hb.BacktestConfig(
     intrabar="stop_first",                        # or "target_first" when SL and TP both trigger
     attached_exit_same_bar=False,                 # True: bracket exits may trigger on the entry bar
     margin=hb.MarginConfig(mis_leverage=5, nrml_margin_pct=15, short_margin_pct=30),  # buying power
+    slippage=hb.Slippage.bps(5),                  # or Slippage.volume_share(bps, impact_bps, max_volume_share)
+    freeze_policy="split",                        # orders above freeze_qty: "reject" (default) | "split"
+    settlement=hb.Settlement("T+1", same_day_sell_credit=0.0),   # CNC settlement (default T+0)
     trading_days_per_year=250,                    # annualisation (SDK metrics and engine)
     session=hb.TradingSession(holidays=frozenset({date(2025, 10, 21)})),   # NSE hours + MIS square-off
-    instruments={"NIFTYFUT": hb.Instrument("equity_futures", lot_size=75, tick_size=0.05)},
+    instruments={"NIFTYFUT": hb.Instrument("equity_futures", lot_size=75, tick_size=0.05,
+                                            freeze_qty=1800, price_band_pct=10)},
     warmup_bars=100,                              # or start="2024-06-03"
 )
 res = hb.backtest(Breakout, {"SBIN": df}, cfg, params={"lookback": 30})   # engine="barter" default
@@ -182,6 +213,32 @@ contract >= 2, also under `fill="next_open"`), else by an SDK `close_all` on the
 fills only; `next_open` then raises `UnsupportedFeature`). `margin` sets the buying power rules
 (opening exposure needs `notional x rate` of `equity - margin of open positions`; new
 exposure beyond that is rejected `insufficient_margin`).
+
+Market realism (barter contract 3; each is an engine capability, `UnsupportedFeature` otherwise):
+
+- `slippage` (`Slippage.bps(x)`, `Slippage.volume_share(bps, impact_bps, max_volume_share)`):
+  market, stop-market, stop-loss / trailing exits, square-off and end-of-data fills move against
+  the order (buys up, sells down, tick rounded away from the market); limit, take-profit and
+  stop-limit fills are never worse than their limit. `max_volume_share` caps what all orders of
+  a symbol fill per bar (fraction of the bar's volume, whole lots): the rest keeps working with
+  status `partially_filled` (IOC remainders and DAY remainders at the session end expire).
+  `on_fill` runs once per piece: `fill.remaining_qty` is what is still working
+  (`fill.is_partial`), the last piece has `remaining_qty == 0`; `on_exit` fires only when the
+  position goes flat. `result.fills` has `remaining_qty` and `slice` columns (the engine's final
+  report does not carry `remaining_qty`; it is on the events).
+- `Instrument.price_band_pct` (capability `price_bands`): limit / trigger prices outside the
+  band (percent of the previous session's close) are rejected `outside_price_band`; a bar locked
+  at a band fills no buys / sells on the blocked side (orders keep working).
+- `freeze_policy="split"` (capability `freeze_split`): orders above `freeze_qty` execute as
+  freeze-sized lot-multiple slices instead of being rejected `above_freeze_qty`; every slice
+  pays its own costs (brokerage per slice) and fills carry `slice="<id>#<n>"`. Engines without
+  it raise `UnsupportedFeature` for `"split"`; slice yourself with `hb.split_order`.
+- `settlement=Settlement("T+1", same_day_sell_credit)` (capability `settlement`): CNC sale
+  proceeds settle at the first bar of a later trading date. Meanwhile `ctx.unsettled_cash` holds
+  them and only `same_day_sell_credit` of them counts in `ctx.available_cash` (`Sizer(cap_cash=
+  True)` sizes against `available_cash`); a buy beyond it is rejected `insufficient_cash`. CNC
+  buys become `Position.qty_settled` on the next date; selling earlier (BTST) is allowed.
+  `res.summary["unsettled_cash"]` is what is still unsettled at the end.
 
 `BacktestResult`:
 
@@ -323,7 +380,7 @@ durations in seconds. The benchmark is a price Series (naive index = IST) or a f
 
 | Engine | Orders | Extras |
 |---|---|---|
-| `barter` (default) | market, limit, stop, stop-limit; day / ioc / gtc; CNC / MIS / NRML / MTF | brackets, native trailing (percent / amount / atr), modify, sessions, MIS square-off, lot / tick / freeze rules, Indian costs, margin, same-bar exits, `next_open`, warm-up, native `liquidate_at_end`, engine round trips (contract 2; older builds work without the newer features, see below) |
+| `barter` (default) | market, limit, stop, stop-limit; day / ioc / gtc; CNC / MIS / NRML / MTF | brackets, partial exits, native trailing (percent / amount / atr), modify, sessions, MIS square-off, lot / tick / freeze rules (native split), price bands, Indian costs, margin, slippage and partial fills, T+1 settlement, same-bar exits, `next_open`, warm-up, native `liquidate_at_end`, engine round trips (contracts 2 and 3; older builds work without the newer features, see below) |
 | `simple` | market, limit; day / ioc / gtc; CNC | pure-Python reference (flat costs, close fills, warm-up); no stops, brackets, trailing, sessions |
 
 Features an engine lacks raise `hb.UnsupportedFeature` (with `.engine` and `.missing`): config
@@ -376,9 +433,11 @@ factory). `honba.research.simple_engine` is a complete, small example; conforman
   execution order (the SDK rebuilds round trips and metrics from them);
 - exceptions raised by `on_bar` (strategy errors, `UnsupportedFeature`) must propagate unchanged.
 
-`_core.contract_version()` (2 today; `_core.version()` is the crate version) is checked on every
+`_core.contract_version()` (3 today; `_core.version()` is the crate version) is checked on every
 run: a build without the function counts as contract 0 and works but lacks margin,
-`attached_exit_same_bar` and native `liquidate_at_end` (declared through capabilities); a version
+`attached_exit_same_bar` and native `liquidate_at_end` (contract 2) and `slippage`,
+`price_bands`, `freeze_split`, `partial_exits`, `settlement` (contract 3), all declared through
+capabilities (`UnsupportedFeature` names what is missing); a version
 outside `CONTRACT_MIN..CONTRACT_MAX` in `_barter_adapter.py` raises a clear error asking to
 rebuild. The report echoes `contract_version`.
 
@@ -456,6 +515,9 @@ hb.split_order(-4500, 1800, 75, balanced=True) # [-1500, -1500, -1500]
 for q in hb.split_order(qty, self.instrument().freeze_qty, self.instrument().lot_size):
     self.buy(qty=q)                             # when the engine has no native order splitting
 ```
+
+With the barter engine (contract 3) `BacktestConfig(freeze_policy="split")` does it natively; the
+helper stays the fallback for engines without the `freeze_split` capability.
 
 ## MCP server (`honba.mcp`)
 

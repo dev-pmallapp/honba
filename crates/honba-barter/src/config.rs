@@ -25,6 +25,9 @@ pub struct BacktestConfig {
     pub latency_ms: u64,
     pub risk_free_return: f64,
     pub allow_short: bool,
+    /// Bars before this timestamp (epoch ms) are warm-up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_ms: Option<i64>,
 }
 
 impl Default for BacktestConfig {
@@ -38,6 +41,7 @@ impl Default for BacktestConfig {
             latency_ms: 0,
             risk_free_return: 0.0,
             allow_short: false,
+            start_ms: None,
         }
     }
 }

@@ -1,6 +1,6 @@
 use honba_barter::{
     run_backtest, run_sweep, Action, ActionSide, BacktestConfig, BacktestError, Bar, BarContext,
-    Decider, DeciderError, OrderType,
+    Decider, DeciderError, OrderRequest, OrderType, Product,
 };
 use std::{
     collections::BTreeMap,
@@ -62,7 +62,7 @@ impl Decider for SmaCross {
             else {
                 continue;
             };
-            let position = ctx.positions[symbol];
+            let position = ctx.qty(symbol);
             if fast > slow && position == 0.0 {
                 actions.push(Action::buy(symbol.clone(), self.qty));
             } else if fast < slow && position > 0.0 {
@@ -148,7 +148,7 @@ fn buy_and_hold_accounting() {
     let bars = synthetic_bars(30, 1.0);
     let candles = BTreeMap::from([("TCS".to_string(), bars.clone())]);
     let decider: Arc<dyn Decider> = Arc::new(|ctx: &BarContext<'_>| {
-        Ok(if ctx.positions["TCS"] == 0.0 {
+        Ok(if ctx.qty("TCS") == 0.0 {
             vec![Action::buy("TCS", 10.0)]
         } else {
             vec![]
@@ -180,7 +180,7 @@ fn positions_and_cash_visible_on_next_bar() {
         seen_decider
             .lock()
             .unwrap()
-            .push((ctx.time_ms, ctx.positions["INFY"], ctx.cash));
+            .push((ctx.time_ms, ctx.qty("INFY"), ctx.cash));
         Ok(vec![Action::buy("INFY", 1.0)])
     });
 
@@ -241,9 +241,10 @@ fn unsupported_order_features_are_rejected_not_traded() {
         "some_future_key": true
     }))
     .unwrap();
-    assert_eq!(action.kind, OrderType::Limit);
-    let mut bracket = Action::buy("SBIN", 1.0);
-    bracket.stop_loss = Some(80.0);
+    assert!(matches!(&action, Action::Place(o) if o.kind == OrderType::Limit));
+    let bracket: Action = OrderRequest::market("SBIN", ActionSide::Buy, 1.0)
+        .stop_loss(80.0)
+        .into();
     let decider: Arc<dyn Decider> =
         Arc::new(move |_: &BarContext<'_>| Ok(vec![action.clone(), bracket.clone()]));
 
@@ -262,7 +263,7 @@ fn shorting_when_allowed() {
     let bars = synthetic_bars(4, 0.0);
     let candles = BTreeMap::from([("HDFC".to_string(), bars)]);
     let decider: Arc<dyn Decider> = Arc::new(|ctx: &BarContext<'_>| {
-        Ok(if ctx.positions["HDFC"] == 0.0 {
+        Ok(if ctx.qty("HDFC") == 0.0 {
             vec![Action::sell("HDFC", 3.0)]
         } else {
             vec![]
@@ -388,4 +389,68 @@ fn sweep_runs_each_parameter_set() {
         assert_eq!(report.trades, single.trades);
         assert_eq!(report.summary, single.summary);
     }
+}
+
+#[test]
+fn position_details_and_equity_in_context() {
+    let bars = synthetic_bars(4, 0.0);
+    let candles = BTreeMap::from([("SBIN".to_string(), bars.clone())]);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let seen_decider = Arc::clone(&seen);
+    let decider: Arc<dyn Decider> = Arc::new(move |ctx: &BarContext<'_>| {
+        seen_decider.lock().unwrap().push((
+            ctx.positions["SBIN"],
+            ctx.cash,
+            ctx.equity,
+            serde_json::from_str::<serde_json::Value>(&ctx.to_json().unwrap()).unwrap(),
+        ));
+        Ok(match ctx.time_ms {
+            t if t == START_MS => vec![Action::buy("SBIN", 10.0)],
+            t if t == START_MS + DAY_MS => vec![Action::buy("SBIN", 10.0)],
+            t if t == START_MS + 2 * DAY_MS => vec![Action::sell("SBIN", 5.0)],
+            _ => vec![],
+        })
+    });
+
+    run_backtest(config(&["SBIN"]), candles, decider).unwrap();
+
+    let seen = seen.lock().unwrap();
+    let (c0, c1, c2, c3) = (bars[0].close, bars[1].close, bars[2].close, bars[3].close);
+    let avg = (c0 + c1) / 2.0;
+
+    let (flat, cash0, equity0, json0) = &seen[0];
+    assert_eq!(flat.qty, 0.0);
+    assert_eq!(flat.product, None);
+    assert_eq!((*cash0, *equity0), (100_000.0, 100_000.0));
+    assert_eq!(json0["positions"]["SBIN"]["qty"], 0.0);
+    assert!(json0["positions"]["SBIN"]["product"].is_null());
+    assert!(json0["candles"]["SBIN"]["close"].is_number());
+    for key in [
+        "time_ms",
+        "cash",
+        "equity",
+        "open_orders",
+        "events",
+        "session",
+        "warmup",
+    ] {
+        assert!(json0.get(key).is_some(), "missing ctx key {key}");
+    }
+
+    let (p1, _, _, json1) = &seen[1];
+    assert_eq!(p1.qty, 10.0);
+    assert_eq!(p1.avg_price, c0);
+    assert_eq!(p1.product, Some(Product::CNC));
+    assert!((p1.unrealised_pnl - 10.0 * (c1 - c0)).abs() < 1e-9);
+    assert_eq!(json1["positions"]["SBIN"]["product"], "CNC");
+    assert_eq!(json1["events"][0]["type"], "fill");
+    assert_eq!(json1["events"][0]["reason"], "signal");
+
+    let (p3, cash3, equity3, _) = &seen[3];
+    assert_eq!(p3.qty, 15.0);
+    assert!((p3.avg_price - avg).abs() < 1e-9);
+    assert!((p3.realised_pnl - 5.0 * (c2 - avg)).abs() < 1e-9);
+    assert!((p3.unrealised_pnl - 15.0 * (c3 - avg)).abs() < 1e-9);
+    assert!((p3.pnl - (p3.realised_pnl + p3.unrealised_pnl)).abs() < 1e-9);
+    assert!((equity3 - (cash3 + 15.0 * c3)).abs() < 1e-6);
 }

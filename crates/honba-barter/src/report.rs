@@ -8,22 +8,26 @@
 //! {
 //!   "id": str,                          // backtest id ("backtest" or the sweep id)
 //!   "config": { ...BacktestConfig },    // echo of the effective config
-//!   "time_start_ms": int,               // first bar timestamp
+//!   "time_start_ms": int,               // first bar timestamp (including warm-up)
 //!   "time_end_ms": int,                 // last bar timestamp
+//!   "start_ms": int,                    // first non-warm-up bar timestamp
 //!   "num_bars": int,                    // distinct bar timestamps replayed
+//!   "warmup_bars": int,                 // of which warm-up (time_ms < config.start_ms)
 //!   "bars_decided": int,                // timestamps the decider was called for
 //!   "summary": {                        // portfolio level, computed by honba from the equity curve
 //!     "initial_cash": float,
 //!     "final_cash": float,
 //!     "final_equity": float,
-//!     "net_pnl": float,                 // final_equity - initial_cash (after fees)
+//!     "net_pnl": float,                 // final_equity - initial_cash (after costs)
 //!     "total_return": float,            // net_pnl / initial_cash
 //!     "cagr": float|null,               // annualised on a 365.25 day year
-//!     "realised_pnl": float,            // sum of closed-quantity PnL, gross of fees
-//!     "total_fees": float,
+//!     "realised_pnl": float,            // sum of closed-quantity PnL, gross of costs
+//!     "total_fees": float,              // == costs.total
+//!     "costs": Costs,                   // totals per cost component
 //!     "num_trades": int,                // fills
 //!     "num_closing_trades": int,        // fills that closed (part of) a position
-//!     "num_rejected": int,              // honba rejections + exchange order failures
+//!     "num_orders": int,
+//!     "num_rejected": int,
 //!     "max_drawdown": float,            // peak-to-trough fraction of equity, >= 0
 //!     "sharpe": float|null,             // daily equity returns, annualised x sqrt(252)
 //!     "sortino": float|null,            // as sharpe, downside deviation
@@ -34,35 +38,33 @@
 //!   "instruments": {                    // per symbol; metrics from barter's TearSheet (Annual(252))
 //!     "<symbol>": {
 //!       "pnl": float,                   // barter realised PnL of closed positions
-//!       "pnl_return": float|null,
-//!       "sharpe": float|null,
-//!       "sortino": float|null,
-//!       "calmar": float|null,
-//!       "max_drawdown": float|null,     // barter PnL drawdown
-//!       "mean_drawdown": float|null,
-//!       "win_rate": float|null,
-//!       "profit_factor": float|null,
+//!       "pnl_return": float|null, "sharpe": float|null, "sortino": float|null,
+//!       "calmar": float|null, "max_drawdown": float|null, "mean_drawdown": float|null,
+//!       "win_rate": float|null, "profit_factor": float|null,
 //!       "num_trades": int,
 //!       "final_position": float
 //!     }
 //!   },
-//!   "trades": [ { "time_ms": int, "symbol": str, "side": "buy"|"sell", "qty": float,
-//!                 "price": float, "value": float, "fees": float, "realised_pnl": float } ],
-//!   "rejected": [ { "time_ms": int, "symbol": str, "side": "buy"|"sell", "qty": float,
-//!                   "reason": str } ],  // unknown_symbol | invalid_qty | no_price |
-//!                                       // insufficient_cash | insufficient_position |
-//!                                       // unsupported_order_kind | unsupported_bracket | exchange: ...
-//!   "equity_curve": [[time_ms, equity], ...],  // one point per bar timestamp
-//!   "final_positions": { "<symbol>": float }
+//!   "trades": [Fill],                   // every fill, in execution order
+//!   "orders": [Order],                  // every accepted order with its final state
+//!   "rejected": [ { "time_ms": int, "id": str|null, "symbol": str, "side": "buy"|"sell"|null,
+//!                   "qty": float, "reason": str } ],
+//!   "equity_curve": [[time_ms, equity], ...],  // one point per bar timestamp >= start_ms
+//!   "final_positions": { "<symbol>": float },
+//!   "positions": { "<symbol>": Position }      // final position details
 //! }
+//! Costs = {"brokerage","stt","exchange_fee","sebi_fee","stamp_duty","gst","dp","total"}: float
+//! Fill  = {"time_ms","fill_id","order_id","symbol","side","qty","price","value",
+//!          "fees" (== costs.total),"costs": Costs,"realised_pnl","product","tag","reason"}
+//! Order / Position: see `OrderView` / `PositionView` in `honba_barter::model`.
 //! ```
 
 use crate::{
+    book::Book,
     config::BacktestConfig,
-    strategy::{ActionSide, RunRecord},
+    model::{ActionSide, CostBreakdown, FillReason, OrderView, PositionView, Product},
 };
 use barter::statistic::{summary::TradingSummary, time::Annual252};
-use barter_instrument::Side;
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -74,14 +76,18 @@ pub struct BacktestReport {
     pub config: BacktestConfig,
     pub time_start_ms: i64,
     pub time_end_ms: i64,
+    pub start_ms: i64,
     pub num_bars: usize,
+    pub warmup_bars: usize,
     pub bars_decided: usize,
     pub summary: SummaryMetrics,
     pub instruments: BTreeMap<String, InstrumentMetrics>,
     pub trades: Vec<TradeRecord>,
+    pub orders: Vec<OrderView>,
     pub rejected: Vec<RejectedRecord>,
     pub equity_curve: Vec<(i64, f64)>,
     pub final_positions: BTreeMap<String, f64>,
+    pub positions: BTreeMap<String, PositionView>,
 }
 
 impl BacktestReport {
@@ -100,8 +106,10 @@ pub struct SummaryMetrics {
     pub cagr: Option<f64>,
     pub realised_pnl: f64,
     pub total_fees: f64,
+    pub costs: CostBreakdown,
     pub num_trades: usize,
     pub num_closing_trades: usize,
+    pub num_orders: usize,
     pub num_rejected: usize,
     pub max_drawdown: f64,
     pub sharpe: Option<f64>,
@@ -129,20 +137,27 @@ pub struct InstrumentMetrics {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TradeRecord {
     pub time_ms: i64,
+    pub fill_id: String,
+    pub order_id: String,
     pub symbol: String,
     pub side: ActionSide,
     pub qty: f64,
     pub price: f64,
     pub value: f64,
     pub fees: f64,
+    pub costs: CostBreakdown,
     pub realised_pnl: f64,
+    pub product: Product,
+    pub tag: Option<String>,
+    pub reason: FillReason,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RejectedRecord {
     pub time_ms: i64,
+    pub id: Option<String>,
     pub symbol: String,
-    pub side: ActionSide,
+    pub side: Option<ActionSide>,
     pub qty: f64,
     pub reason: String,
 }
@@ -162,13 +177,6 @@ fn finite(value: f64) -> Option<f64> {
 
 fn f64_of(value: Decimal) -> f64 {
     value.to_f64().unwrap_or(f64::NAN)
-}
-
-fn side_of(side: Side) -> ActionSide {
-    match side {
-        Side::Buy => ActionSide::Buy,
-        Side::Sell => ActionSide::Sell,
-    }
 }
 
 const MS_PER_DAY: i64 = 86_400_000;
@@ -259,11 +267,11 @@ pub(crate) fn equity_stats(
 pub(crate) struct ReportInputs<'a> {
     pub id: String,
     pub config: &'a BacktestConfig,
-    pub symbols: &'a [String],
-    /// barter `InstrumentNameInternal` of each instrument (same order as `symbols`).
+    /// barter `InstrumentNameInternal` of each instrument (same order as the book symbols).
     pub names_internal: &'a [String],
     pub schedule: &'a [(i64, usize)],
-    pub record: RunRecord,
+    pub book: &'a Book,
+    pub bars_decided: usize,
     pub trading_summary: &'a TradingSummary<Annual252>,
 }
 
@@ -271,61 +279,56 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
     let ReportInputs {
         id,
         config,
-        symbols,
         names_internal,
         schedule,
-        record,
+        book,
+        bars_decided,
         trading_summary,
     } = inputs;
+    let symbols = &book.config().symbols;
 
-    let symbol_of = |index: usize| symbols[index].clone();
-
-    let trades = record
-        .trades
+    let trades = book
+        .fills
         .iter()
-        .map(|trade| TradeRecord {
-            time_ms: trade.time_ms,
-            symbol: symbol_of(trade.instrument.index()),
-            side: side_of(trade.side),
-            qty: f64_of(trade.quantity),
-            price: f64_of(trade.price),
-            value: f64_of(trade.quantity * trade.price),
-            fees: f64_of(trade.fees),
-            realised_pnl: f64_of(trade.realised_pnl),
+        .map(|fill| TradeRecord {
+            time_ms: fill.time_ms,
+            fill_id: fill.fill_id.clone(),
+            order_id: fill.id.clone(),
+            symbol: fill.symbol.clone(),
+            side: fill.side,
+            qty: fill.qty,
+            price: fill.price,
+            value: fill.value,
+            fees: fill.costs.total,
+            costs: fill.costs,
+            realised_pnl: fill.realised_pnl,
+            product: fill.product,
+            tag: fill.tag.clone(),
+            reason: fill.reason,
         })
         .collect::<Vec<_>>();
 
-    let rejected = record
+    let rejected = book
         .rejections
         .iter()
         .map(|rejection| RejectedRecord {
             time_ms: rejection.time_ms,
-            symbol: rejection.action.symbol.clone(),
-            side: rejection.action.side,
-            qty: rejection.action.qty,
+            id: rejection.id.clone(),
+            symbol: rejection.symbol.clone(),
+            side: rejection.side,
+            qty: rejection.qty,
             reason: rejection.reason.clone(),
         })
-        .chain(record.order_failures.iter().map(|failure| RejectedRecord {
-            time_ms: failure.time_ms,
-            symbol: symbol_of(failure.instrument.index()),
-            side: side_of(failure.side),
-            qty: f64_of(failure.quantity),
-            reason: format!("exchange: {}", failure.reason),
-        }))
         .collect::<Vec<_>>();
 
-    let final_positions = symbols
+    let positions = symbols
         .iter()
         .enumerate()
-        .map(|(index, symbol)| {
-            let quantity = record
-                .positions
-                .iter()
-                .find(|(instrument, _)| instrument.index() == index)
-                .map(|(_, quantity)| *quantity)
-                .unwrap_or_default();
-            (symbol.clone(), quantity)
-        })
+        .map(|(index, symbol)| (symbol.clone(), book.position_view(index)))
+        .collect::<BTreeMap<_, _>>();
+    let final_positions = positions
+        .iter()
+        .map(|(symbol, position)| (symbol.clone(), position.qty))
         .collect::<BTreeMap<_, _>>();
 
     let instruments = symbols
@@ -364,22 +367,21 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         .collect();
 
     // Portfolio summary
-    let final_equity = record
+    let final_equity = book
         .equity_curve
         .last()
         .map(|(_, equity)| *equity)
         .unwrap_or(config.initial_cash);
     let net_pnl = final_equity - config.initial_cash;
     let stats = equity_stats(
-        &record.equity_curve,
+        &book.equity_curve,
         config.initial_cash,
         config.risk_free_return,
     );
 
-    let closing = record
-        .trades
+    let closing = trades
         .iter()
-        .map(|trade| f64_of(trade.realised_pnl))
+        .map(|trade| trade.realised_pnl)
         .filter(|pnl| *pnl != 0.0)
         .collect::<Vec<_>>();
     let gross_profit = closing.iter().filter(|pnl| **pnl > 0.0).sum::<f64>();
@@ -388,7 +390,7 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
 
     let summary = SummaryMetrics {
         initial_cash: config.initial_cash,
-        final_cash: record.cash,
+        final_cash: book.cash,
         final_equity,
         net_pnl,
         total_return: if config.initial_cash != 0.0 {
@@ -398,9 +400,11 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         },
         cagr: stats.cagr,
         realised_pnl: closing.iter().sum(),
-        total_fees: record.fees_paid,
+        total_fees: book.costs.total,
+        costs: book.costs,
         num_trades: trades.len(),
         num_closing_trades: closing.len(),
+        num_orders: book.orders.len(),
         num_rejected: rejected.len(),
         max_drawdown: stats.max_drawdown,
         sharpe: stats.sharpe,
@@ -413,19 +417,29 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         profit_factor: (gross_loss > 0.0).then(|| gross_profit / gross_loss),
     };
 
+    let start_ms = config
+        .start_ms
+        .and_then(|start| schedule.iter().map(|(t, _)| *t).find(|t| *t >= start))
+        .or_else(|| schedule.first().map(|(t, _)| *t))
+        .unwrap_or_default();
+
     BacktestReport {
         id,
         config: config.clone(),
         time_start_ms: schedule.first().map(|(t, _)| *t).unwrap_or_default(),
         time_end_ms: schedule.last().map(|(t, _)| *t).unwrap_or_default(),
+        start_ms,
         num_bars: schedule.len(),
-        bars_decided: record.bars_decided,
+        warmup_bars: schedule.iter().filter(|(t, _)| *t < start_ms).count(),
+        bars_decided,
         summary,
         instruments,
         trades,
+        orders: book.orders.iter().map(|order| order.view()).collect(),
         rejected,
-        equity_curve: record.equity_curve,
+        equity_curve: book.equity_curve.clone(),
         final_positions,
+        positions,
     }
 }
 

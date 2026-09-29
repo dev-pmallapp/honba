@@ -7,9 +7,11 @@
 //!   with barter's mock execution and return a serializable [`BacktestReport`].
 
 pub mod backtest;
+pub mod book;
 pub mod config;
 pub mod data;
 pub mod ledger;
+pub mod model;
 pub mod report;
 pub mod strategy;
 
@@ -17,8 +19,10 @@ pub use backtest::{run_backtest, run_sweep, BacktestError};
 pub use config::BacktestConfig;
 pub use data::{Bar, BarGate, CandleData, CandleMarketData};
 pub use ledger::Ledger;
-pub use report::{BacktestReport, InstrumentMetrics, SummaryMetrics, TradeRecord};
-pub use strategy::{
-    Action, ActionSide, BarContext, Decider, DeciderError, DeciderStrategy, HonbaEngineState,
-    OrderType,
+pub use model::{
+    parse_actions, Action, ActionSide, BarContext, CostBreakdown, Event, FillEvent, FillReason,
+    ModifyRequest, OrderRequest, OrderRole, OrderStatus, OrderType, OrderView, PositionView,
+    Product, Segment, SessionView, TimeInForce, TrailMode, TrailSpec,
 };
+pub use report::{BacktestReport, InstrumentMetrics, SummaryMetrics, TradeRecord};
+pub use strategy::{Decider, DeciderError, DeciderStrategy, HonbaEngineState};

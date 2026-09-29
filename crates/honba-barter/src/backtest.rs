@@ -1,11 +1,12 @@
 //! Backtest entry points built on [`barter::backtest::backtest`].
 
 use crate::{
+    book::{Book, BookConfig},
     config::{BacktestConfig, MAX_LATENCY_MS},
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
     report::{build_report, BacktestReport, ReportInputs},
-    strategy::{Decider, DeciderStrategy, DeciderStrategyConfig, HonbaEngineState},
+    strategy::{lock, Decider, DeciderStrategy, DeciderStrategyConfig, HonbaEngineState, RunState},
 };
 use barter::{
     backtest::{backtest, BacktestArgsConstant, BacktestArgsDynamic},
@@ -25,7 +26,7 @@ use barter_instrument::{
     instrument::{kind::InstrumentKind, name::InstrumentNameExchange, quote::InstrumentQuoteAsset},
     Underlying,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use futures_util::future::try_join_all;
 use rust_decimal::{prelude::FromPrimitive, Decimal};
 use smol_str::SmolStr;
@@ -55,6 +56,12 @@ pub enum BacktestError {
 const MOCK_QUOTE_BALANCE: i64 = 1_000_000_000_000_000;
 
 const EXCHANGE: ExchangeId = ExchangeId::Mock;
+
+/// India Standard Time (UTC+05:30): trading dates are IST calendar dates.
+const IST: FixedOffset = match FixedOffset::east_opt(5 * 3600 + 30 * 60) {
+    Some(offset) => offset,
+    None => panic!("valid offset"),
+};
 
 /// Validated, instrument-indexed inputs shared by every run over the same data.
 struct Prepared {
@@ -223,7 +230,7 @@ struct RunSetup {
     args_constant: Arc<BacktestArgsConstant<CandleMarketData, Annual252, HonbaEngineState>>,
     args_dynamic: BacktestArgsDynamic<DeciderStrategy, DefaultRiskManager<HonbaEngineState>>,
     schedule: Vec<(i64, usize)>,
-    record: Arc<Mutex<crate::strategy::RunRecord>>,
+    run: Arc<Mutex<RunState>>,
 }
 
 fn setup_run(
@@ -236,28 +243,30 @@ fn setup_run(
         .ok_or_else(|| BacktestError::Data("no candles provided".into()))?;
     let schedule = market_data.schedule();
 
-    let initial_cash = Decimal::from_f64(prepared.config.initial_cash)
-        .ok_or_else(|| BacktestError::Config("invalid initial_cash".into()))?;
     let time_start = DateTime::<Utc>::from_timestamp_millis(schedule[0].0).unwrap_or_default();
-    let engine_state =
-        EngineStateBuilder::new(&prepared.instruments, Ledger::new(initial_cash), |_| {
-            CandleData::default()
-        })
-        .time_engine_start(time_start)
-        .trading_state(TradingState::Enabled)
-        .build();
+    let engine_state = EngineStateBuilder::new(&prepared.instruments, Ledger::default(), |_| {
+        CandleData::default()
+    })
+    .time_engine_start(time_start)
+    .trading_state(TradingState::Enabled)
+    .build();
 
+    let book = Book::new(BookConfig {
+        symbols: prepared.symbols.clone(),
+        initial_cash: prepared.config.initial_cash,
+        fee_rate: prepared.fee_rate,
+        allow_short: prepared.config.allow_short,
+    });
     let strategy = DeciderStrategy::new(
         decider,
         Arc::new(DeciderStrategyConfig {
-            symbols: prepared.symbols.clone(),
             schedule: schedule.clone(),
-            fee_rate: prepared.fee_rate,
-            allow_short: prepared.config.allow_short,
+            utc_offset: IST,
         }),
         gate,
+        book,
     );
-    let record = strategy.record();
+    let run = strategy.run_state();
 
     Ok(RunSetup {
         args_constant: Arc::new(BacktestArgsConstant {
@@ -275,7 +284,7 @@ fn setup_run(
         },
         id,
         schedule,
-        record,
+        run,
     })
 }
 
@@ -285,25 +294,25 @@ async fn execute(prepared: &Prepared, setup: RunSetup) -> Result<BacktestReport,
         args_constant,
         args_dynamic,
         schedule,
-        record,
+        run,
     } = setup;
 
     let summary = backtest(args_constant, args_dynamic)
         .await
         .map_err(|error| BacktestError::Engine(error.to_string()))?;
 
-    let record = std::mem::take(&mut *record.lock().unwrap_or_else(|p| p.into_inner()));
-    if let Some(error) = &record.error {
+    let run = lock(&run);
+    if let Some(error) = &run.error {
         return Err(BacktestError::Decider(error.0.clone()));
     }
 
     Ok(build_report(ReportInputs {
         id,
         config: &prepared.config,
-        symbols: &prepared.symbols,
         names_internal: &prepared.names_internal,
         schedule: &schedule,
-        record,
+        book: &run.book,
+        bars_decided: run.bars_decided,
         trading_summary: &summary.trading_summary,
     }))
 }

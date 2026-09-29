@@ -1,16 +1,17 @@
 //! `_core.run_backtest`: Python bindings for the barter-backed backtester (`honba-barter`).
+//!
+//! The bar context and the actions cross the boundary as JSON so the contract is defined once,
+//! by the serde types in `honba_barter::model`.
 
 // pyo3 0.22 `#[pyfunction]` expansion trips this lint on newer clippy.
 #![allow(clippy::useless_conversion)]
 
 use honba_barter::{
-    Action, ActionSide, BacktestConfig, BacktestError, Bar, BarContext, Decider, DeciderError,
-    OrderType,
+    parse_actions, Action, BacktestConfig, BacktestError, Bar, BarContext, Decider, DeciderError,
 };
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyDict, PyString},
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -20,12 +21,14 @@ use std::{
 /// `(time_ms, open, high, low, close, volume)`
 type CandleTuple = (i64, f64, f64, f64, f64, f64);
 
-/// [`Decider`] calling a Python `on_bar(ctx: dict) -> list[dict]` callback.
+/// [`Decider`] calling a Python `on_bar(ctx: dict) -> list[dict] | None` callback.
 ///
 /// The backtest runs with the GIL released; each callback re-acquires it. The first Python
 /// exception is kept so it can be re-raised unchanged once the backtest unwinds.
 struct PyDecider {
     on_bar: Py<PyAny>,
+    json_loads: Py<PyAny>,
+    json_dumps: Py<PyAny>,
     error: Mutex<Option<PyErr>>,
 }
 
@@ -36,16 +39,26 @@ impl PyDecider {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .take()
     }
+
+    fn call(&self, py: Python<'_>, ctx: &BarContext<'_>) -> PyResult<Vec<Action>> {
+        let ctx_json = ctx
+            .to_json()
+            .map_err(|error| PyRuntimeError::new_err(format!("failed to encode ctx: {error}")))?;
+        let ctx = self.json_loads.bind(py).call1((ctx_json,))?;
+        let actions = self.on_bar.bind(py).call1((ctx,))?;
+        let actions_json: String = self.json_dumps.bind(py).call1((actions,))?.extract()?;
+        parse_actions(&actions_json).map_err(|error| {
+            PyValueError::new_err(format!(
+                "invalid on_bar return value (expected a list of action dicts or None): {error}"
+            ))
+        })
+    }
 }
 
 impl Decider for PyDecider {
     fn on_bar(&self, ctx: &BarContext<'_>) -> Result<Vec<Action>, DeciderError> {
         Python::with_gil(|py| {
-            let result = context_to_py(py, ctx)
-                .and_then(|dict| self.on_bar.bind(py).call1((dict,)))
-                .and_then(|actions| actions_from_py(&actions));
-
-            result.map_err(|error| {
+            self.call(py, ctx).map_err(|error| {
                 let message = error.to_string();
                 self.error
                     .lock()
@@ -55,112 +68,6 @@ impl Decider for PyDecider {
             })
         })
     }
-}
-
-/// `{"time_ms", "candles": {sym: {...}}, "positions": {sym: qty}, "cash", "equity"}`
-fn context_to_py<'py>(py: Python<'py>, ctx: &BarContext<'_>) -> PyResult<Bound<'py, PyDict>> {
-    let candles = PyDict::new_bound(py);
-    for (symbol, bar) in &ctx.candles {
-        let candle = PyDict::new_bound(py);
-        candle.set_item("time_ms", bar.time_ms)?;
-        candle.set_item("open", bar.open)?;
-        candle.set_item("high", bar.high)?;
-        candle.set_item("low", bar.low)?;
-        candle.set_item("close", bar.close)?;
-        candle.set_item("volume", bar.volume)?;
-        candles.set_item(symbol, candle)?;
-    }
-
-    let positions = PyDict::new_bound(py);
-    for (symbol, quantity) in &ctx.positions {
-        positions.set_item(symbol, quantity)?;
-    }
-
-    let dict = PyDict::new_bound(py);
-    dict.set_item("time_ms", ctx.time_ms)?;
-    dict.set_item("candles", candles)?;
-    dict.set_item("positions", positions)?;
-    dict.set_item("cash", ctx.cash)?;
-    dict.set_item("equity", ctx.equity)?;
-    Ok(dict)
-}
-
-fn optional_f64(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<f64>> {
-    match dict.get_item(key)? {
-        Some(value) if !value.is_none() => value.extract().map(Some),
-        _ => Ok(None),
-    }
-}
-
-fn required<'py>(dict: &Bound<'py, PyDict>, key: &str) -> PyResult<Bound<'py, PyAny>> {
-    dict.get_item(key)?
-        .ok_or_else(|| PyValueError::new_err(format!("action is missing required key {key:?}")))
-}
-
-/// Parse `list[dict]` (or `None`) returned by `on_bar`. Unknown keys are ignored.
-fn actions_from_py(actions: &Bound<'_, PyAny>) -> PyResult<Vec<Action>> {
-    if actions.is_none() {
-        return Ok(Vec::new());
-    }
-    if actions.is_instance_of::<PyString>() || actions.is_instance_of::<PyDict>() {
-        return Err(PyTypeError::new_err(
-            "on_bar must return a list of action dicts (or None)",
-        ));
-    }
-
-    actions
-        .iter()
-        .map_err(|_| PyTypeError::new_err("on_bar must return a list of action dicts (or None)"))?
-        .map(|item| {
-            let item = item?;
-            let dict = item
-                .downcast::<PyDict>()
-                .map_err(|_| PyTypeError::new_err("each action must be a dict"))?;
-
-            let symbol: String = required(dict, "symbol")?.extract()?;
-            let side = match required(dict, "side")?
-                .extract::<String>()?
-                .to_ascii_lowercase()
-                .as_str()
-            {
-                "buy" => ActionSide::Buy,
-                "sell" => ActionSide::Sell,
-                other => {
-                    return Err(PyValueError::new_err(format!(
-                        "action side must be \"buy\" or \"sell\", got {other:?}"
-                    )));
-                }
-            };
-            let qty: f64 = required(dict, "qty")?.extract()?;
-
-            let kind = match dict.get_item("kind")? {
-                Some(kind) if !kind.is_none() => {
-                    match kind.extract::<String>()?.to_ascii_lowercase().as_str() {
-                        "market" => OrderType::Market,
-                        "limit" => OrderType::Limit,
-                        "stop" => OrderType::Stop,
-                        "stop_limit" => OrderType::StopLimit,
-                        other => {
-                            return Err(PyValueError::new_err(format!(
-                                "unknown action kind {other:?}"
-                            )));
-                        }
-                    }
-                }
-                _ => OrderType::Market,
-            };
-
-            Ok(Action {
-                symbol,
-                side,
-                qty,
-                kind,
-                price: optional_f64(dict, "price")?,
-                stop_loss: optional_f64(dict, "stop_loss")?,
-                take_profit: optional_f64(dict, "take_profit")?,
-            })
-        })
-        .collect()
 }
 
 fn backtest_error_to_py(error: BacktestError) -> PyErr {
@@ -175,14 +82,12 @@ fn backtest_error_to_py(error: BacktestError) -> PyErr {
 /// Run a bar-by-bar backtest on the barter engine.
 ///
 /// Args:
-///     config_json: JSON object with optional keys `symbols`, `exchange` ("NSE"),
-///         `quote` ("INR"), `initial_cash`, `fees_percent` (percent, 0.03 = 0.03%),
-///         `latency_ms` (< 500), `risk_free_return` (annual fraction), `allow_short`.
+///     config_json: JSON object, see `honba_barter::config::BacktestConfig` (unknown keys are
+///         ignored).
 ///     candles: `{symbol: [(time_ms, open, high, low, close, volume), ...]}`.
-///     on_bar: called once per bar timestamp with
-///         `{"time_ms", "candles": {sym: {"time_ms","open","high","low","close","volume"}},
-///         "positions": {sym: qty}, "cash", "equity"}`; returns a list of
-///         `{"symbol", "side": "buy"|"sell", "qty"}` market orders filled at the bar close.
+///     on_bar: called once per bar timestamp with the bar context dict (see
+///         `honba_barter::model::BarContextPayload`); returns a list of action dicts (see
+///         `honba_barter::model::Action`) or None.
 ///
 /// Returns:
 ///     The backtest report as a JSON string (see `honba_barter::report`).
@@ -212,8 +117,11 @@ pub fn run_backtest(
         })
         .collect::<BTreeMap<_, _>>();
 
+    let json = py.import_bound("json")?;
     let decider = Arc::new(PyDecider {
         on_bar,
+        json_loads: json.getattr("loads")?.unbind(),
+        json_dumps: json.getattr("dumps")?.unbind(),
         error: Mutex::new(None),
     });
     let engine_decider: Arc<dyn Decider> = Arc::clone(&decider) as Arc<dyn Decider>;

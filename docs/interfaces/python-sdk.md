@@ -322,6 +322,21 @@ strike and option type. The scrip master has no freeze quantity: it is merged fr
 file. `to_engine_instruments` maps each exact trading symbol to `hb.Instrument` (segment, lot,
 tick, freeze); `InstrumentMaster.dhan_security` feeds `DhanLoader`.
 
+### Corporate actions
+
+```python
+from honba.data import CorporateAction, adjust_candles, load_actions_csv
+
+actions = load_actions_csv("actions.csv")      # symbol, ex_date, action, ratio ("5:1" or 5), amount
+adj = adjust_candles(df, actions, symbol="TCS")            # or a {symbol: frame} mapping
+```
+
+Splits (`ratio` = new shares per old) and bonus (`ratio` = bonus shares per share held, `1:1` is
+1.0) back-adjust every bar before the ex-date: prices divide by the cumulative factor, volume
+multiplies by it. Dividends are recorded in `adj.attrs["dividends"]` only: prices are not
+adjusted and no cash is credited (CNC dividend credit is P2). Adjust before `hb.backtest`; the
+store keeps raw prices.
+
 ## Development
 
 ```bash

@@ -1,5 +1,5 @@
 """Instrument master parsing, search, expiries and engine metadata."""
-# ruff: noqa: D103
+# ruff: noqa: D103, E501
 
 from __future__ import annotations
 

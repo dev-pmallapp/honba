@@ -125,7 +125,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | I7 | Sessions / holidays / pre-open | done | Engine | P0 | Calendar in config; DAY TIF expiry at session close; no trading outside session. |
 | I8 | Short-selling restriction | done | Engine | P0 | Cash equity shorts MIS-only (I7/O18 square-off); no overnight cash shorts. |
 | I9 | Slippage / impact cost | none | Engine | P1 | `slippage_bps` (fixed) first; volume-participation cap later. Important for small/mid caps. |
-| I10 | Corporate actions (split, bonus, dividend) | none | SDK (data) | P1 | Adjust history; dividends credited to cash for CNC holdings (P2). |
+| I10 | Corporate actions (split, bonus, dividend) | done for history adjustment (`adjust_candles`, dividends recorded only) | SDK (data) | P1 | Adjust history; dividends credited to cash for CNC holdings (P2). |
 
 ## 2. Engine vs pure Python
 

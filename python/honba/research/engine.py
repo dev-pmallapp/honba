@@ -149,6 +149,8 @@ def config_features(request: BacktestRequest) -> set[str]:
         need.add("session")
     if cfg.instruments:
         need.add("instruments")
+        if any(i.price_band_pct is not None for i in cfg.instruments.values()):
+            need.add("price_bands")
     if request.start_ms is not None:
         need.add("warmup")
     if cfg.margin != MarginConfig():

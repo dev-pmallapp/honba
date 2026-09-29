@@ -21,6 +21,9 @@ class Instrument:
     """Exchange rules of one symbol.
 
     Unknown symbols behave as equity cash with lot 1 and no tick validation, like the engine.
+    ``price_band_pct`` is the circuit band in percent of the previous session's close: limit /
+    trigger prices outside it are rejected (``RejectReason.OUTSIDE_PRICE_BAND``) and a bar locked
+    at a band fills nothing on the blocked side. ``None`` means no band.
     """
 
     segment: str = "equity_cash"
@@ -28,6 +31,7 @@ class Instrument:
     tick_size: float | None = None
     freeze_qty: float | None = None
     default_product: str | None = None
+    price_band_pct: float | None = None
 
     def __post_init__(self) -> None:
         if self.segment not in _SEGMENTS:
@@ -36,6 +40,8 @@ class Instrument:
             raise ValueError("lot_size must be positive")
         if self.tick_size is not None and not self.tick_size > 0:
             raise ValueError("tick_size must be positive")
+        if self.price_band_pct is not None and not 0 < self.price_band_pct <= 100:
+            raise ValueError("price_band_pct must be in (0, 100]")
 
     def round_price(self, price: float, mode: str = "nearest") -> float:
         """Round ``price`` to a tick multiple (``nearest``, ``down`` or ``up``)."""

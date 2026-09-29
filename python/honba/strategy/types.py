@@ -60,6 +60,7 @@ class RejectReason(StrEnum):
     INVALID_LOT = "invalid_lot"
     INVALID_TICK = "invalid_tick"
     ABOVE_FREEZE_QTY = "above_freeze_qty"
+    OUTSIDE_PRICE_BAND = "outside_price_band"  # limit / trigger outside today's circuit band
     NO_PRICE = "no_price"
     NO_BAR = "no_bar"  # market order on a symbol without a bar at this timestamp
     NO_POSITION = "no_position"  # exit change on an entry whose position is closed

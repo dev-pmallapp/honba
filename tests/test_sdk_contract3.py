@@ -117,3 +117,47 @@ def test_slippage_validation():
         hb.Slippage.volume_share(1.0, 1.0, 1.5)
     with pytest.raises(ValueError, match=">= 0"):
         hb.Slippage.bps(-1)
+
+
+# ---------------------------------------------------------------------------- price bands
+
+
+class BandProbe(Recorder):
+    def on_bar(self, ctx):
+        n = len(self.history())
+        if n == 3:
+            self.buy(10, limit=120.0, tif="gtc", id="far")  # +20% vs the 100 close, band is 5%
+            self.buy(10, limit=103.0, tif="gtc", id="near")
+
+
+def test_price_band_rejects_a_limit_outside_the_band_only():
+    cfg = CFG.with_(instruments={"X": hb.Instrument(price_band_pct=5.0)})
+    res = run(BandProbe, flat(100, 6), cfg)
+    assert [(r.id, r.reason) for r in res.report.rejected] == [
+        ("far", hb.RejectReason.OUTSIDE_PRICE_BAND)
+    ]
+    assert res.positions["X"].qty == 10.0  # the in-band limit was marketable and filled
+    plain = run(BandProbe, flat(100, 6), CFG.with_(instruments={"X": hb.Instrument()}))
+    assert not plain.report.rejected
+
+
+def test_price_band_locked_bar_blocks_buys_until_the_band_opens():
+    class Buy(Recorder):
+        def on_bar(self, ctx):
+            if len(self.history()) == 2:
+                self.buy(10, tif="gtc")
+
+    up_lock = (105, 105, 105, 105)  # +5% locked at the upper band of a 100 close
+    rows = [*flat(100, 2), up_lock, up_lock, (105, 106, 104, 105)]
+    cfg = CFG.with_(instruments={"X": hb.Instrument(price_band_pct=5.0)}, fill="next_open")
+    banded = run(Buy, rows, cfg)
+    free = run(Buy, rows, cfg.with_(instruments={"X": hb.Instrument()}))
+    assert banded.fills.time.iloc[0] > free.fills.time.iloc[0]  # the locked bar filled nothing
+
+
+def test_price_bands_are_a_capability_and_simple_engine_names_them():
+    cfg = CFG.with_(instruments={"X": hb.Instrument(price_band_pct=10.0)})
+    simple_caps_missing(cfg, BandProbe, "price_bands", "instruments")
+    assert hb.research.get_engine("barter").capabilities().supports("price_bands")
+    with pytest.raises(ValueError, match="price_band_pct"):
+        hb.Instrument(price_band_pct=0)

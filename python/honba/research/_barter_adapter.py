@@ -70,6 +70,7 @@ _FEATURE_MIN_CONTRACT = {
     "margin": 2,
     "attached_exit_same_bar": 2,
     "slippage": 3,
+    "price_bands": 3,
 }
 
 
@@ -115,7 +116,7 @@ def _trail_wire(trail: Trail) -> dict[str, Any]:
 
 def _instrument_wire(inst: Instrument) -> dict[str, Any]:
     out: dict[str, Any] = {"segment": inst.segment, "lot_size": inst.lot_size}
-    for key in ("tick_size", "freeze_qty", "default_product"):
+    for key in ("tick_size", "freeze_qty", "default_product", "price_band_pct"):
         if getattr(inst, key) is not None:
             out[key] = getattr(inst, key)
     return out

@@ -318,6 +318,22 @@ fn setup_run(
             .collect(),
         allow_short: prepared.config.allow_short,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),
+        intraday: prepared
+            .bars
+            .iter()
+            .map(|series| {
+                let offset = prepared.session.as_ref().map_or(IST, |s| s.offset);
+                let date = |bar: &Bar| {
+                    DateTime::from_timestamp_millis(bar.time_ms)
+                        .unwrap_or_default()
+                        .with_timezone(&offset)
+                        .date_naive()
+                };
+                series
+                    .windows(2)
+                    .any(|pair| date(&pair[0]) == date(&pair[1]))
+            })
+            .collect(),
         session: prepared.session.clone(),
         next_open: prepared.config.fill_model == FillModel::NextOpen,
         start_ms: prepared.config.start_ms,

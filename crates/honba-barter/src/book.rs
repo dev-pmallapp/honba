@@ -137,6 +137,8 @@ pub struct BookConfig {
     pub allow_short: bool,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
+    /// Per instrument: more than one bar per trading date (intraday data).
+    pub intraday: Vec<bool>,
     /// Trading hours; `None` means always open (no square-off).
     pub session: Option<Session>,
     /// `next_open` fill model: market orders fill at the next bar's open and nothing executes
@@ -1736,12 +1738,11 @@ impl Book {
             trail_active: false,
             triggered: false,
             active_from_bar: bar_index + 1,
-            // With a session, a day order placed during it belongs to that session
-            first_eval_date: self
-                .cfg
-                .session
-                .as_ref()
-                .map(|_| self.trading_date(time_ms)),
+            // A day order belongs to the trading date it was placed on (with a session, or for
+            // intraday data); on daily bars it is valid for the next bar's session instead
+            first_eval_date: (self.cfg.session.is_some()
+                || self.cfg.intraday.get(instrument).copied().unwrap_or(false))
+            .then(|| self.trading_date(time_ms)),
             created_ms: time_ms,
             updated_ms: time_ms,
         };

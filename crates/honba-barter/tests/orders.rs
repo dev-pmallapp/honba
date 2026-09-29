@@ -287,3 +287,23 @@ fn product_and_fill_time_rejections() {
     let big = report.orders.iter().find(|o| o.id == "big").unwrap();
     assert_eq!(big.status, OrderStatus::Rejected);
 }
+
+#[test]
+fn intraday_day_orders_expire_at_the_date_change_without_a_session() {
+    // 15-minute bars (UTC stamps; IST dates), last bar of day 1 places a day limit
+    let day1 = bars_every(START_MS + 9 * 3_600_000, 900_000, &flat(3, 100.0));
+    let mut day2 = bars_every(START_MS + DAY_MS + 4 * 3_600_000, 900_000, &flat(2, 100.0));
+    day2[0] = honba_barter::Bar::new(day2[0].time_ms, 89.0, 89.0, 89.0, 89.0, 1.0);
+    let bars = [day1, day2].concat();
+    let (report, seen) = run(
+        config(&["SBIN"]),
+        "SBIN",
+        bars,
+        [(2, vec![buy(1.0).limit(90.0).with_id("D").into()])],
+    );
+    assert!(seen[3]
+        .events
+        .iter()
+        .any(|e| matches!(e, Event::Expire { id, reason, .. } if id == "D" && reason == "day")));
+    assert!(report.trades.is_empty());
+}

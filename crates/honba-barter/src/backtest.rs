@@ -2,7 +2,7 @@
 
 use crate::{
     book::{Book, BookConfig},
-    config::{BacktestConfig, MAX_LATENCY_MS},
+    config::{BacktestConfig, IntrabarPriority, MAX_LATENCY_MS},
     data::{Bar, BarGate, CandleData, CandleMarketData},
     ledger::Ledger,
     report::{build_report, BacktestReport, ReportInputs},
@@ -257,6 +257,7 @@ fn setup_run(
         fee_rate: prepared.fee_rate,
         allow_short: prepared.config.allow_short,
         utc_offset: IST,
+        stop_first: prepared.config.intrabar_priority == IntrabarPriority::StopFirst,
     });
     let strategy = DeciderStrategy::new(
         decider,

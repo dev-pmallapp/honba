@@ -48,6 +48,9 @@ pub struct BookConfig {
     pub allow_short: bool,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
+    /// When a bracket's stop loss and take profit both trigger inside one bar (neither at the
+    /// open), the stop loss wins if true.
+    pub stop_first: bool,
 }
 
 /// Net position in one instrument with average-cost accounting.
@@ -181,6 +184,7 @@ pub struct FillIntent {
     pub reason: FillReason,
     pub costs: CostBreakdown,
     pub time_ms: i64,
+    pub bar_index: usize,
 }
 
 /// A request honba refused (or an order that failed at fill time).
@@ -240,7 +244,9 @@ fn match_order(order: &Order, bar: &Bar) -> Match {
         OrderType::Limit => order
             .price
             .and_then(|limit| limit_fill(side, limit, bar))
-            .map_or(Match::None, |price| Match::Fill(price, FillReason::Limit)),
+            .map_or(Match::None, |price| {
+                Match::Fill(price, order.limit_reason())
+            }),
         OrderType::Stop => order
             .trigger
             .and_then(|trigger| stop_touch(side, trigger, bar))
@@ -275,6 +281,13 @@ fn match_order(order: &Order, bar: &Bar) -> Match {
 }
 
 impl Order {
+    fn limit_reason(&self) -> FillReason {
+        match self.role {
+            OrderRole::TakeProfit => FillReason::TakeProfit,
+            _ => FillReason::Limit,
+        }
+    }
+
     fn stop_reason(&self) -> FillReason {
         match self.role {
             OrderRole::StopLoss if self.trail.is_some() => FillReason::TrailingStop,
@@ -292,7 +305,7 @@ impl Order {
             OrderType::Limit => self
                 .price
                 .filter(|limit| within_limit(side, close, *limit))
-                .map(|_| FillReason::Limit),
+                .map(|_| self.limit_reason()),
             OrderType::Stop => self
                 .trigger
                 .filter(|trigger| within_limit(side.opposite(), close, *trigger))
@@ -454,7 +467,7 @@ impl Book {
             let Some(bar) = bar else {
                 continue;
             };
-            let candidates = self
+            let mut candidates = self
                 .orders
                 .iter()
                 .enumerate()
@@ -465,8 +478,14 @@ impl Book {
                 })
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
+            // Protective exits act before new entries
+            candidates.sort_by_key(|&index| self.orders[index].role == OrderRole::Entry);
 
+            let mut brackets_done: Vec<String> = Vec::new();
             for index in candidates {
+                if !self.orders[index].is_open() {
+                    continue;
+                }
                 // Expire day orders whose session has passed
                 let order = &mut self.orders[index];
                 if order.tif == TimeInForce::Day && order.first_eval_date.is_some_and(|d| d < date)
@@ -476,9 +495,20 @@ impl Book {
                 }
                 order.first_eval_date.get_or_insert(date);
 
-                match match_order(order, bar) {
+                let (index, result) = match self.orders[index].parent.clone() {
+                    Some(parent) if brackets_done.contains(&parent) => continue,
+                    Some(parent) => {
+                        brackets_done.push(parent);
+                        self.resolve_bracket(index, bar_index, bar)
+                    }
+                    None => (index, match_order(&self.orders[index], bar)),
+                };
+
+                match result {
                     Match::Fill(price, reason) => {
-                        if let Some(intent) = self.try_fill(index, price, reason, time_ms) {
+                        if let Some(intent) =
+                            self.try_fill(index, price, reason, time_ms, bar_index)
+                        {
                             intents.push(intent);
                         }
                     }
@@ -491,6 +521,51 @@ impl Book {
             }
         }
         intents
+    }
+
+    /// Open, active OCO sibling of a bracket exit.
+    fn active_sibling(&self, index: usize, bar_index: usize) -> Option<usize> {
+        let parent = self.orders[index].parent.as_ref()?;
+        self.orders.iter().position(|order| {
+            order.parent.as_ref() == Some(parent)
+                && order.id != self.orders[index].id
+                && order.status == OrderStatus::Open
+                && order.active_from_bar <= bar_index
+        })
+    }
+
+    /// Match a bracket exit together with its OCO sibling: when both trigger in one bar, the
+    /// one filling at the open (a gap) happened first; otherwise `stop_first` decides.
+    fn resolve_bracket(&self, index: usize, bar_index: usize, bar: &Bar) -> (usize, Match) {
+        let result = match_order(&self.orders[index], bar);
+        let Some(sibling) = self.active_sibling(index, bar_index) else {
+            return (index, result);
+        };
+        let sibling_result = match_order(&self.orders[sibling], bar);
+        match (result, sibling_result) {
+            (Match::Fill(price, _), Match::Fill(sibling_price, _)) => {
+                let at_open = price == bar.open;
+                let sibling_at_open = sibling_price == bar.open;
+                let preferred = if self.cfg.stop_first {
+                    OrderRole::StopLoss
+                } else {
+                    OrderRole::TakeProfit
+                };
+                let this_first = match (at_open, sibling_at_open) {
+                    (true, false) => true,
+                    (false, true) => false,
+                    _ => self.orders[index].role == preferred,
+                };
+                if this_first {
+                    (index, result)
+                } else {
+                    (sibling, sibling_result)
+                }
+            }
+            (Match::Fill(..), _) => (index, result),
+            (_, Match::Fill(..)) => (sibling, sibling_result),
+            _ => (index, result),
+        }
     }
 
     fn expire_ioc(&mut self, index: usize, time_ms: i64) {
@@ -555,6 +630,20 @@ impl Book {
 
     /// Close an order as cancelled / expired / rejected with an event.
     fn close_order(&mut self, index: usize, status: OrderStatus, reason: &str, time_ms: i64) {
+        // Attached exits of an entry that never filled go with it
+        if self.orders[index].role == OrderRole::Entry {
+            let id = self.orders[index].id.clone();
+            let children = self
+                .orders
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| o.parent.as_ref() == Some(&id) && o.status == OrderStatus::Pending)
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
+            for child in children {
+                self.close_order(child, OrderStatus::Cancelled, "parent_closed", time_ms);
+            }
+        }
         let order = &mut self.orders[index];
         order.status = status;
         order.reason = Some(reason.to_string());
@@ -640,6 +729,7 @@ impl Book {
         price: f64,
         reason: FillReason,
         time_ms: i64,
+        bar_index: usize,
     ) -> Option<FillIntent> {
         let order = &self.orders[index];
         let instrument = order.instrument?;
@@ -660,7 +750,7 @@ impl Book {
             self.close_order(index, OrderStatus::Rejected, reason, time_ms);
             return None;
         }
-        Some(self.intent(index, qty, price, reason, time_ms))
+        Some(self.intent(index, qty, price, reason, time_ms, bar_index))
     }
 
     fn intent(
@@ -670,6 +760,7 @@ impl Book {
         price: f64,
         reason: FillReason,
         time_ms: i64,
+        bar_index: usize,
     ) -> FillIntent {
         let (instrument, side) = {
             let order = &self.orders[order];
@@ -695,6 +786,7 @@ impl Book {
             reason,
             costs,
             time_ms,
+            bar_index,
         };
         self.pending.insert(intent.fill_id.clone(), intent.clone());
         intent
@@ -709,7 +801,7 @@ impl Book {
                 .into_iter()
                 .collect(),
             Action::Modify(modify) => {
-                self.modify(time_ms, modify);
+                self.modify(bar_index, time_ms, modify);
                 Vec::new()
             }
             Action::Cancel { id } => {
@@ -756,6 +848,150 @@ impl Book {
         }
     }
 
+    /// Attached exits must be on the protective / profitable side of the entry reference.
+    fn check_bracket(
+        side: ActionSide,
+        reference: f64,
+        stop_loss: Option<f64>,
+        take_profit: Option<f64>,
+    ) -> Check {
+        let valid = |v: f64| v.is_finite() && v > 0.0;
+        if let Some(stop) = stop_loss {
+            let protective = match side {
+                ActionSide::Buy => stop < reference,
+                ActionSide::Sell => stop > reference,
+            };
+            if !valid(stop) || !protective {
+                return Err("invalid_stop_loss");
+            }
+        }
+        if let Some(target) = take_profit {
+            let profitable = match side {
+                ActionSide::Buy => target > reference,
+                ActionSide::Sell => target < reference,
+            };
+            if !valid(target) || !profitable {
+                return Err("invalid_take_profit");
+            }
+        }
+        Ok(())
+    }
+
+    /// Open or pending attached exit of `parent` with `role`.
+    fn find_child(&self, parent: &str, role: OrderRole) -> Option<usize> {
+        self.orders.iter().position(|order| {
+            order.parent.as_deref() == Some(parent) && order.role == role && order.is_open()
+        })
+    }
+
+    /// Create the stop-loss (stop) or take-profit (limit) exit of entry `parent`. It stays
+    /// `pending` until the entry fills, then covers the filled quantity (reduce-only, GTC).
+    fn attach_exit(
+        &mut self,
+        parent: usize,
+        role: OrderRole,
+        level: f64,
+        time_ms: i64,
+        bar_index: usize,
+    ) -> usize {
+        let entry = &self.orders[parent];
+        let filled = entry.filled_qty > 0.0;
+        let (kind, price, trigger, suffix) = match role {
+            OrderRole::StopLoss => (OrderType::Stop, None, Some(level), "sl"),
+            _ => (OrderType::Limit, Some(level), None, "tp"),
+        };
+        let child = Order {
+            id: format!("{}:{suffix}", entry.id),
+            instrument: entry.instrument,
+            symbol: entry.symbol.clone(),
+            side: entry.side.opposite(),
+            kind,
+            qty: if filled { entry.filled_qty } else { entry.qty },
+            filled_qty: 0.0,
+            filled_value: 0.0,
+            price,
+            trigger,
+            tif: TimeInForce::Gtc,
+            product: entry.product,
+            tag: entry.tag.clone(),
+            role,
+            parent: Some(entry.id.clone()),
+            status: if filled {
+                OrderStatus::Open
+            } else {
+                OrderStatus::Pending
+            },
+            reason: None,
+            reduce_only: true,
+            stop_loss: None,
+            take_profit: None,
+            trail: None,
+            trail_stop: None,
+            triggered: false,
+            active_from_bar: if filled { bar_index + 1 } else { usize::MAX },
+            first_eval_date: None,
+            created_ms: time_ms,
+            updated_ms: time_ms,
+        };
+        self.orders.push(child);
+        self.orders.len() - 1
+    }
+
+    /// After a fill: activate an entry's exits, cancel an exit's OCO sibling, and drop exits
+    /// that no longer have a position to protect.
+    fn after_fill(&mut self, order: usize, bar_index: usize, time_ms: i64) {
+        let id = self.orders[order].id.clone();
+        match self.orders[order].role {
+            OrderRole::Entry => {
+                let filled = self.orders[order].filled_qty;
+                for child in self.orders.iter_mut().filter(|o| {
+                    o.parent.as_ref() == Some(&id) && o.is_open() && o.role != OrderRole::Entry
+                }) {
+                    child.qty = filled;
+                    if child.status == OrderStatus::Pending {
+                        child.status = OrderStatus::Open;
+                        child.active_from_bar = bar_index + 1;
+                        child.updated_ms = time_ms;
+                    }
+                }
+            }
+            OrderRole::StopLoss | OrderRole::TakeProfit => {
+                let parent = self.orders[order].parent.clone();
+                let siblings = self
+                    .orders
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, o)| *i != order && o.parent == parent && o.is_open())
+                    .map(|(i, _)| i)
+                    .collect::<Vec<_>>();
+                for sibling in siblings {
+                    self.close_order(sibling, OrderStatus::Cancelled, "oco", time_ms);
+                }
+            }
+            OrderRole::SquareOff => {}
+        }
+
+        let Some(instrument) = self.orders[order].instrument else {
+            return;
+        };
+        if self.positions[instrument].qty.abs() <= EPS {
+            let orphans = self
+                .orders
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| {
+                    o.instrument == Some(instrument)
+                        && o.status == OrderStatus::Open
+                        && matches!(o.role, OrderRole::StopLoss | OrderRole::TakeProfit)
+                })
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
+            for orphan in orphans {
+                self.close_order(orphan, OrderStatus::Cancelled, "position_closed", time_ms);
+            }
+        }
+    }
+
     /// Accept a new order. Returns a fill intent if it executes immediately.
     pub fn place(
         &mut self,
@@ -784,14 +1020,25 @@ impl Book {
             self.reject_request(time_ms, &request, Some(id), reason);
             return None;
         }
-        if request.stop_loss.is_some() || request.take_profit.is_some() || request.trail.is_some() {
-            self.reject_request(time_ms, &request, Some(id), "unsupported_bracket");
+        if request.trail.is_some() {
+            self.reject_request(time_ms, &request, Some(id), "unsupported_trail");
             return None;
         }
         let Some(close) = self.last_close[instrument] else {
             self.reject_request(time_ms, &request, Some(id), "no_price");
             return None;
         };
+        let reference = request.price.or(request.trigger).unwrap_or(close);
+        if let Err(reason) = Self::check_bracket(
+            request.side,
+            reference,
+            request.stop_loss,
+            request.take_profit,
+        ) {
+            self.reject_request(time_ms, &request, Some(id), reason);
+            return None;
+        }
+        let (stop_loss, take_profit) = (request.stop_loss, request.take_profit);
 
         let order = Order {
             id,
@@ -814,8 +1061,8 @@ impl Book {
             status: OrderStatus::Open,
             reason: None,
             reduce_only: request.reduce_only,
-            stop_loss: None,
-            take_profit: None,
+            stop_loss,
+            take_profit,
             trail: None,
             trail_stop: None,
             triggered: false,
@@ -829,9 +1076,15 @@ impl Book {
         let immediate = order.marketable_at(close);
         self.orders.push(order);
         let index = self.orders.len() - 1;
+        if let Some(level) = stop_loss {
+            self.attach_exit(index, OrderRole::StopLoss, level, time_ms, bar_index);
+        }
+        if let Some(level) = take_profit {
+            self.attach_exit(index, OrderRole::TakeProfit, level, time_ms, bar_index);
+        }
 
         match immediate {
-            Some(reason) => self.try_fill(index, close, reason, time_ms),
+            Some(reason) => self.try_fill(index, close, reason, time_ms, bar_index),
             None if self.orders[index].tif == TimeInForce::Ioc => {
                 self.close_order(index, OrderStatus::Expired, "ioc", time_ms);
                 None
@@ -852,12 +1105,32 @@ impl Book {
         }
     }
 
-    fn modify(&mut self, time_ms: i64, modify: ModifyRequest) {
-        let Some(index) = self.open_order_index(&modify.id) else {
+    fn modify(&mut self, bar_index: usize, time_ms: i64, modify: ModifyRequest) {
+        let brackets = modify.stop_loss.is_some() || modify.take_profit.is_some();
+        // A filled entry can still have its attached exits changed
+        let index = self.open_order_index(&modify.id).or_else(|| {
+            brackets
+                .then(|| {
+                    self.orders.iter().rposition(|o| {
+                        o.id == modify.id && o.role == OrderRole::Entry && o.filled_qty > 0.0
+                    })
+                })
+                .flatten()
+        });
+        let Some(index) = index else {
             self.reject_op(time_ms, Some(modify.id), "unknown_order");
             return;
         };
         let order = &self.orders[index];
+        let open = order.is_open();
+        let order_fields = modify.qty.is_some()
+            || modify.price.is_some()
+            || modify.trigger.is_some()
+            || modify.tif.is_some();
+        if !open && order_fields {
+            self.reject_op(time_ms, Some(modify.id), "order_closed");
+            return;
+        }
         let qty = modify.qty.unwrap_or(order.qty);
         let price = modify.price.or(order.price);
         let trigger = modify.trigger.or(order.trigger);
@@ -869,24 +1142,90 @@ impl Book {
             self.reject_op(time_ms, Some(modify.id), reason);
             return;
         }
-        if modify.stop_loss.is_some() || modify.take_profit.is_some() || modify.trail.is_some() {
-            self.reject_op(time_ms, Some(modify.id), "unsupported_bracket");
+        if modify.trail.is_some() {
+            self.reject_op(time_ms, Some(modify.id), "unsupported_trail");
             return;
+        }
+        if brackets {
+            if order.role != OrderRole::Entry {
+                self.reject_op(time_ms, Some(modify.id), "not_an_entry");
+                return;
+            }
+            let reference = if order.filled_qty > 0.0 {
+                // Protective side relative to the current market once in the position
+                order
+                    .instrument
+                    .and_then(|i| self.last_close[i])
+                    .unwrap_or(order.filled_value / order.filled_qty)
+            } else {
+                price
+                    .or(trigger)
+                    .or(order.instrument.and_then(|i| self.last_close[i]))
+                    .unwrap_or(f64::NAN)
+            };
+            if let Err(reason) =
+                Self::check_bracket(order.side, reference, modify.stop_loss, modify.take_profit)
+            {
+                self.reject_op(time_ms, Some(modify.id), reason);
+                return;
+            }
+        }
+
+        for (role, level) in [
+            (OrderRole::StopLoss, modify.stop_loss),
+            (OrderRole::TakeProfit, modify.take_profit),
+        ] {
+            let Some(level) = level else {
+                continue;
+            };
+            match self.find_child(&modify.id, role) {
+                Some(child) => {
+                    let child = &mut self.orders[child];
+                    match role {
+                        OrderRole::StopLoss => child.trigger = Some(level),
+                        _ => child.price = Some(level),
+                    }
+                    child.updated_ms = time_ms;
+                }
+                None => {
+                    self.attach_exit(index, role, level, time_ms, bar_index);
+                }
+            }
+            match role {
+                OrderRole::StopLoss => self.orders[index].stop_loss = Some(level),
+                _ => self.orders[index].take_profit = Some(level),
+            }
         }
 
         let order = &mut self.orders[index];
-        order.qty = qty;
-        if order.kind != OrderType::Market {
-            order.price = price.filter(|_| order.kind != OrderType::Stop);
-            order.trigger = trigger.filter(|_| order.kind != OrderType::Limit);
-        }
-        if let Some(tif) = modify.tif {
-            order.tif = tif;
+        if open {
+            order.qty = qty;
+            if order.kind != OrderType::Market {
+                order.price = price.filter(|_| order.kind != OrderType::Stop);
+                order.trigger = trigger.filter(|_| order.kind != OrderType::Limit);
+            }
+            if let Some(tif) = modify.tif {
+                order.tif = tif;
+            }
         }
         if let Some(tag) = modify.tag {
             order.tag = Some(tag);
         }
         order.updated_ms = time_ms;
+
+        // Keep the entry's view of its exits in sync
+        let (role, parent, level) = (
+            order.role,
+            order.parent.clone(),
+            order.trigger.or(order.price),
+        );
+        if let Some(parent) = parent.and_then(|p| self.orders.iter().position(|o| o.id == p)) {
+            match role {
+                OrderRole::StopLoss => self.orders[parent].stop_loss = level,
+                OrderRole::TakeProfit => self.orders[parent].take_profit = level,
+                _ => {}
+            }
+        }
     }
 
     /// barter executed `fill_id`: apply it to the portfolio.
@@ -929,6 +1268,7 @@ impl Book {
         };
         self.fills.push(fill.clone());
         self.events.push(Event::Fill(fill));
+        self.after_fill(intent.order, intent.bar_index, intent.time_ms);
         true
     }
 

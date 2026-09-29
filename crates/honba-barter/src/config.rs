@@ -25,6 +25,9 @@ pub struct BacktestConfig {
     pub latency_ms: u64,
     pub risk_free_return: f64,
     pub allow_short: bool,
+    /// Which bracket exit wins when stop loss and take profit both trigger inside one bar.
+    #[serde(alias = "same_bar_priority")]
+    pub intrabar_priority: IntrabarPriority,
     /// Bars before this timestamp (epoch ms) are warm-up.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_ms: Option<i64>,
@@ -41,9 +44,20 @@ impl Default for BacktestConfig {
             latency_ms: 0,
             risk_free_return: 0.0,
             allow_short: false,
+            intrabar_priority: IntrabarPriority::StopFirst,
             start_ms: None,
         }
     }
+}
+
+/// Tie-break for a bracket whose stop loss and take profit both trigger within one bar.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntrabarPriority {
+    /// Assume the stop loss was hit first (conservative).
+    #[default]
+    StopFirst,
+    TargetFirst,
 }
 
 /// barter's execution layer times out requests after 1s; a round trip costs 2 x latency.

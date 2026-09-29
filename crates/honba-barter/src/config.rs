@@ -4,7 +4,8 @@ use crate::model::{Product, Segment};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Backtest configuration (JSON keys match field names, every key is optional).
+/// Backtest configuration (JSON keys match field names, every key is optional, unknown keys
+/// are ignored). See the crate docs for the full JSON contract.
 ///
 /// | key                | type      | default     | meaning                                                   |
 /// |--------------------|-----------|-------------|-----------------------------------------------------------|
@@ -12,12 +13,16 @@ use std::collections::BTreeMap;
 /// | `exchange`         | str       | `"NSE"`     | Venue label (reporting only; execution is barter's mock). |
 /// | `quote`            | str       | `"INR"`     | Quote / cash currency.                                    |
 /// | `initial_cash`     | float     | `1000000`   | Starting cash in `quote`.                                 |
-/// | `fees_percent`     | float     | `0`         | Fee in **percent** of traded value (`0.03` = 0.03%).      |
+/// | `fees_percent`     | float     | `0`         | Flat fee in **percent** of traded value (`0.03` = 0.03%). |
 /// | `latency_ms`       | int       | `0`         | Simulated exchange latency, must be `< 500` (virtual time).|
 /// | `risk_free_return` | float     | `0`         | Annual risk-free rate as a fraction (`0.065` = 6.5%).     |
-/// | `allow_short`      | bool      | `false`     | Allow sells beyond the current long position.             |
-///
-/// Further keys are documented on the fields below and in the crate docs.
+/// | `allow_short`      | bool      | `false`     | Allow any short (otherwise cash equity needs MIS).        |
+/// | `fill_model`       | str       | `"close"`   | `close` or `next_open`.                                   |
+/// | `intrabar_priority`| str       | `stop_first`| Bracket tie-break (alias `same_bar_priority`).            |
+/// | `start_ms`         | int       | `null`      | Warm-up bars before it.                                   |
+/// | `costs`            | object    | `null`      | [`CostsConfig`]; `null` = flat `fees_percent`.            |
+/// | `instruments`      | object    | `{}`        | Per-symbol [`InstrumentMeta`].                            |
+/// | `session`          | object    | `null`      | [`SessionConfig`]; `null` = always open.                  |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BacktestConfig {

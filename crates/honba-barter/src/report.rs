@@ -6,6 +6,7 @@
 //!
 //! ```text
 //! {
+//!   "contract_version": int,            // crate::CONTRACT_VERSION
 //!   "id": str,                          // backtest id ("backtest" or the sweep id)
 //!   "config": { ...BacktestConfig },    // echo of the effective config
 //!   "time_start_ms": int,               // first bar timestamp (including warm-up)
@@ -79,6 +80,7 @@ use std::collections::BTreeMap;
 /// Complete result of one backtest. See the [module docs](self) for the JSON schema.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BacktestReport {
+    pub contract_version: u32,
     pub id: String,
     pub config: BacktestConfig,
     pub time_start_ms: i64,
@@ -571,6 +573,7 @@ pub(crate) fn build_report(inputs: ReportInputs<'_>) -> BacktestReport {
         .unwrap_or_default();
 
     BacktestReport {
+        contract_version: crate::CONTRACT_VERSION,
         id,
         config: config.clone(),
         time_start_ms: schedule.first().map(|(t, _)| *t).unwrap_or_default(),

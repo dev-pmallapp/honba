@@ -151,6 +151,8 @@ fn context_events_and_open_orders_json() {
         TimeInForce::Gtc
     );
 
+    assert_eq!(json["contract_version"], honba_barter::CONTRACT_VERSION);
+    assert!(json["round_trips"].is_array());
     let trade = &json["trades"][0];
     assert_eq!(trade["order_id"], "o1");
     assert_eq!(trade["tag"], "entry");

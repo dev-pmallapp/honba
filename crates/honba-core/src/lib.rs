@@ -6,6 +6,7 @@ pub mod position;
 pub mod risk;
 pub mod tax;
 pub mod types;
+pub mod wire;
 
 // Re-export common types
 pub use event::{FillEvent, MarketEvent, OrderEvent, Signal};

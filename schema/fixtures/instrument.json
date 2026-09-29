@@ -1,0 +1,1 @@
+{"symbol":"NIFTY24DEC24500CE.NSE","code":"NIFTY24DEC24500CE","exchange":"NSE","asset_class":"option","underlying":"NIFTY","currency":"INR","lot_size":25.0,"tick_size":0.05,"expiry_ms":1735210200000,"strike":24500.0,"option_kind":"call","fees":{"algo":"per_value","open":0.0003,"close":0.0003}}

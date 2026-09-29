@@ -1,0 +1,1 @@
+{"order_id":"O-1","request":{"client_order_id":"c-1","symbol":"RELIANCE.NSE","side":"buy","order_type":"limit","product":"MIS","tif":"day","qty":10.0,"price":1190.5,"stop_loss":1180.25,"trail":{"offset":0.5,"is_pct":true},"time_ms":1735200000000},"status":"partially_filled","filled_qty":4.0,"avg_fill_price":1190.5,"created_ms":1735200000000,"updated_ms":1735200001000}

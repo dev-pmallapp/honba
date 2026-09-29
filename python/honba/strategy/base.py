@@ -1,204 +1,548 @@
-"""Jesse-style Strategy base class.
+"""The ``Strategy`` base class: one ``on_bar`` plus optional event hooks and an order API.
 
-Lifecycle, evaluated once per bar by :class:`honba.strategy.adapter.StrategyAdapter`::
+A single instance handles every symbol of the run (one symbol or many)::
 
-    init()                       once, before the first bar
-    before()                     every bar, first
-    if position is open:  update_position()
-    elif should_long():   go_long()
-    elif should_short():  go_short()
-    after()                      every bar, last
+    class Breakout(Strategy):
+        timeframe = "15m"
+        extra_timeframes = ("1d",)
+        product = MIS
+        lookback = Param(20, low=10, high=60)
 
-Orders are expressed by assigning ``self.buy`` / ``self.sell`` (a quantity, or
-``(qty, price)`` for Jesse compatibility - the price is ignored, orders are market
-orders filled by the engine) or by calling :meth:`liquidate`.
+        def on_bar(self, ctx):
+            bars = self.history()
+            if self.position.is_flat and ctx.bar.close > bars.high[-self.lookback - 1 : -1].max():
+                self.buy(self.size.by_fraction(0.1), stop_loss=ctx.bar.close * 0.99, tag="breakout")
+
+Order methods queue actions; the runner hands the queue to the engine when ``on_bar`` (or a
+hook) returns. Nothing here knows which engine executes the orders.
 """
-# ruff: noqa: B027  (optional lifecycle hooks are intentionally empty)
+# ruff: noqa: B027  (optional hooks are intentionally empty)
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
+from .actions import (
+    Action,
+    CancelAll,
+    CancelOrder,
+    ModifyOrder,
+    PlaceOrder,
+    required_features,
+)
+from .capabilities import EngineCapabilities
+from .market import Instrument
+from .params import Param
+from .series import Bars
+from .sizing import Sizer
+from .types import (
+    Bar,
+    BarContext,
+    Cancel,
+    Fill,
+    Order,
+    Position,
+    Reject,
+    RoundTrip,
+    SessionState,
+    Trail,
+)
 
-# Column layout of ``Strategy.candles`` (same as Jesse).
-TS, OPEN, CLOSE, HIGH, LOW, VOLUME = range(6)
+if TYPE_CHECKING:
+    from datetime import datetime
+
+__all__ = ["OrderHandle", "Strategy"]
+
+_LOT_EPS = 1e-9
 
 
-@dataclass
-class Position:
-    """Current position of the strategy's symbol."""
+class _Positions(dict[str, Position]):
+    """Position map that returns a flat ``Position`` for symbols without one."""
 
-    qty: float = 0.0
-    entry_price: float = 0.0
-    current_price: float = 0.0
+    def __missing__(self, key: str) -> Position:
+        return Position()
+
+
+class OrderHandle:
+    """Reference to a submitted order (returned by ``buy`` / ``sell`` / ``target``).
+
+    The order reaches the engine when the current bar's callbacks return, so ``status`` reads
+    ``"submitted"`` until the next bar. Attached exits are ``stop_order`` / ``target_order``.
+    """
+
+    __slots__ = ("_strategy", "id", "symbol")
+
+    def __init__(self, strategy: Strategy, order_id: str, symbol: str) -> None:
+        self._strategy = strategy
+        self.id = order_id
+        self.symbol = symbol
 
     @property
-    def is_long(self) -> bool:
-        """True when qty > 0."""
-        return self.qty > 0
+    def status(self) -> str:
+        """submitted, open, pending, filled, cancelled, expired or rejected."""
+        return self._strategy._status_of(self.id)
 
     @property
-    def is_short(self) -> bool:
-        """True when qty < 0."""
-        return self.qty < 0
+    def order(self) -> Order | None:
+        """Latest engine view while the order is open / pending, else ``None``."""
+        return self._strategy._open_order(self.id)
 
     @property
-    def is_open(self) -> bool:
-        """True when a position is held."""
-        return self.qty != 0
+    def stop_order(self) -> OrderHandle:
+        """Handle of the attached stop loss (``<id>:sl``)."""
+        return OrderHandle(self._strategy, f"{self.id}:sl", self.symbol)
 
     @property
-    def pnl(self) -> float:
-        """Unrealised PnL versus the tracked entry price."""
-        return (self.current_price - self.entry_price) * self.qty if self.is_open else 0.0
+    def target_order(self) -> OrderHandle:
+        """Handle of the attached take profit (``<id>:tp``)."""
+        return OrderHandle(self._strategy, f"{self.id}:tp", self.symbol)
+
+    def modify(self, **changes: Any) -> None:
+        """``Strategy.modify`` on this order."""
+        self._strategy.modify(self, **changes)
+
+    def cancel(self) -> None:
+        """Cancel this order."""
+        self._strategy.cancel(self)
+
+    def __repr__(self) -> str:
+        return f"OrderHandle({self.id!r}, {self.symbol!r}, status={self.status!r})"
 
 
 class Strategy(ABC):
-    """Base Strategy class inspired by Jesse's lifecycle model."""
+    """Base class of every strategy. Implement :meth:`on_bar`; the other hooks are optional.
 
-    timeframe: str = "5m"
-    params: dict[str, Any] = {}  # noqa: RUF012 - class-level defaults, copied per instance
+    Class attributes: ``timeframe`` (bar interval of the data fed by the engine),
+    ``extra_timeframes`` (resampled in Python, session-anchored, closed bars only), ``product``
+    (default product of orders) and ``requires`` (engine features the strategy needs, checked
+    before the run; features used but not listed are still checked when first used). Tunable
+    values are declared as :class:`Param` class attributes.
+    """
 
-    def __init__(
+    timeframe: str = "1d"
+    extra_timeframes: tuple[str, ...] = ()
+    product: str | None = None
+    requires: tuple[str, ...] = ()
+
+    _params: dict[str, Param] = {}  # noqa: RUF012 - filled per subclass in __init_subclass__
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        merged: dict[str, Param] = {}
+        for base in reversed(cls.__mro__[1:]):
+            merged.update(getattr(base, "_params", {}))
+        for name, value in vars(cls).items():
+            if isinstance(value, Param):
+                merged[name] = value
+        cls._params = merged
+
+    def __init__(self, **params: Any) -> None:
+        unknown = set(params) - set(self._params)
+        if unknown:
+            raise TypeError(
+                f"{type(self).__name__}: unknown parameters {sorted(unknown)}; "
+                f"declared: {sorted(self._params)}"
+            )
+        self._param_values = {
+            name: p.validate(params.get(name, p.default)) for name, p in self._params.items()
+        }
+        # runtime state, attached by the runner
+        self.symbols: tuple[str, ...] = ()
+        self.size = Sizer(self)
+        self._instruments: dict[str, Instrument] = {}
+        self._caps: EngineCapabilities | None = None
+        self._ctx: BarContext | None = None
+        self._positions: _Positions = _Positions()
+        self._queue: list[Action] = []
+        self._queued_net: dict[str, float] = {}
+        self._order_symbols: dict[str, str] = {}
+        self._terminal: dict[str, str] = {}
+        self._history: Any = None
+        self._logs: list[tuple[int, str]] = []
+        self._seq = 0
+
+    # -- declared parameters -----------------------------------------------------------------
+
+    @classmethod
+    def params(cls) -> dict[str, Param]:
+        """The declared parameters (name -> :class:`Param`)."""
+        return dict(cls._params)
+
+    @property
+    def param_values(self) -> dict[str, Any]:
+        """Parameter values of this run."""
+        return dict(self._param_values)
+
+    # -- hooks -------------------------------------------------------------------------------
+
+    def on_start(self) -> None:
+        """Called once, before the first bar (``self.symbols`` and params are available)."""
+
+    @abstractmethod
+    def on_bar(self, ctx: BarContext) -> None:
+        """Called once per bar timestamp, after this bar's events were delivered."""
+
+    def on_fill(self, fill: Fill) -> None:
+        """One of this strategy's orders (or an attached exit) was filled."""
+
+    def on_exit(self, trade: RoundTrip) -> None:
+        """A position went flat; ``trade`` is the completed round trip."""
+
+    def on_reject(self, reject: Reject) -> None:
+        """The engine rejected an order or operation (``reject.reason`` says why)."""
+
+    def on_cancel(self, cancel: Cancel) -> None:
+        """An order was cancelled or expired (``cancel.kind`` tells which)."""
+
+    # -- state -------------------------------------------------------------------------------
+
+    @property
+    def ctx(self) -> BarContext:
+        """The current bar context."""
+        if self._ctx is None:
+            raise RuntimeError("no bar yet: state is only available from on_bar onwards")
+        return self._ctx
+
+    @property
+    def time(self) -> datetime:
+        """Current bar time (IST)."""
+        return self.ctx.time
+
+    @property
+    def cash(self) -> float:
+        """Available cash."""
+        return self.ctx.cash
+
+    @property
+    def equity(self) -> float:
+        """Cash plus positions marked at the latest close."""
+        return self.ctx.equity
+
+    @property
+    def session(self) -> SessionState:
+        """Exchange session state at this bar."""
+        return self.ctx.session
+
+    @property
+    def warmup(self) -> bool:
+        """True while bars are warm-up (orders are ignored)."""
+        return self.ctx.warmup
+
+    @property
+    def symbol(self) -> str:
+        """The only symbol of the run (raises with several)."""
+        return self._symbol(None)
+
+    @property
+    def positions(self) -> dict[str, Position]:
+        """Position per symbol (flat ``Position`` for symbols never traded)."""
+        return self._positions
+
+    @property
+    def position(self) -> Position:
+        """Position of the only symbol of the run (raises with several)."""
+        return self._positions[self._symbol(None)]
+
+    def instrument(self, symbol: str | None = None) -> Instrument:
+        """Exchange rules of ``symbol`` (equity cash defaults when not configured)."""
+        return self._instruments.get(self._symbol(symbol), Instrument())
+
+    def last_price(self, symbol: str | None = None) -> float:
+        """Latest close of ``symbol``."""
+        sym = self._symbol(symbol)
+        bar = self.ctx.bars.get(sym)
+        if bar is None:
+            raise ValueError(f"no bar for {sym!r} yet")
+        return bar.close
+
+    def history(self, symbol: str | None = None, tf: str | None = None) -> Bars:
+        """Closed bars of ``symbol`` (oldest first) at ``tf`` (default: the base timeframe).
+
+        Higher timeframes (declared in ``extra_timeframes``) only ever contain bars that have
+        completely closed, anchored to the exchange session; the current base bar is included
+        in the base timeframe.
+        """
+        if self._history is None:
+            raise RuntimeError("history is only available while running")
+        return self._history(self._symbol(symbol), tf)
+
+    def orders(self, symbol: str | None = None, role: str | None = None) -> list[Order]:
+        """List active (open or pending) orders.
+
+        Optionally filtered by symbol and role (entry, stop_loss, take_profit, square_off).
+        """
+        sym = None if symbol is None and len(self.symbols) != 1 else self._symbol(symbol)
+        return [
+            o
+            for o in self.ctx.open_orders
+            if (sym is None or o.symbol == sym) and (role is None or o.role == role)
+        ]
+
+    def log(self, message: str) -> None:
+        """Record a line tagged with the bar time (kept in ``BacktestResult.logs``)."""
+        self._logs.append((self._ctx.time_ms if self._ctx else 0, str(message)))
+
+    # -- orders ------------------------------------------------------------------------------
+
+    def buy(self, qty: float, symbol: str | None = None, **kwargs: Any) -> OrderHandle | None:
+        """Buy ``qty`` (see :meth:`order` for the keyword arguments)."""
+        return self.order("buy", qty, symbol, **kwargs)
+
+    def sell(self, qty: float, symbol: str | None = None, **kwargs: Any) -> OrderHandle | None:
+        """Sell ``qty`` (see :meth:`order` for the keyword arguments)."""
+        return self.order("sell", qty, symbol, **kwargs)
+
+    def order(
         self,
-        symbol: str,
-        initial_capital: float = 100_000.0,
-        params: dict[str, Any] | None = None,
-    ):
-        """Create a strategy bound to one symbol."""
-        self.symbol = symbol
-        self.initial_capital = initial_capital
-        self.cash = initial_capital
-        self.position_qty: float = 0
-        self.params = {**type(self).params, **(params or {})}
-        self.candles: np.ndarray = np.empty((0, 6))
-        self.position = Position()
-        self.time_ms: int = 0
-        self._orders: list[dict[str, Any]] = []
+        side: str,
+        qty: float,
+        symbol: str | None = None,
+        *,
+        limit: float | None = None,
+        stop: float | None = None,
+        kind: str | None = None,
+        tif: str | None = None,
+        product: str | None = None,
+        tag: str | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        trail: Trail | None = None,
+        reduce_only: bool = False,
+        id: str | None = None,
+    ) -> OrderHandle | None:
+        """Place an order and return its handle.
 
-    # ------------------------------------------------------------------ lifecycle
-    def init(self):
-        """Lifecycle hook called before simulation commences."""
+        ``None`` is returned when nothing was sent (warm-up, or ``qty`` below one lot).
 
-    def before(self):
-        """Hook called at the start of every bar."""
-
-    def after(self):
-        """Hook called at the end of every bar."""
-
-    @abstractmethod
-    def should_long(self) -> bool:
-        """Evaluates entry condition for going long."""
-        return False
-
-    def should_short(self) -> bool:
-        """Evaluates entry condition for going short."""
-        return False
-
-    @abstractmethod
-    def go_long(self):
-        """Executes long entry order."""
-
-    def go_short(self):
-        """Executes short entry order."""
-
-    def update_position(self):
-        """Lifecycle hook evaluated on each bar while a position is open."""
-
-    # ------------------------------------------------------------------ data
-    @property
-    def index(self) -> int:
-        """Index of the current bar (0-based)."""
-        return len(self.candles) - 1
-
-    @property
-    def current_candle(self) -> np.ndarray:
-        """Latest candle ``[ts, open, close, high, low, volume]``."""
-        return self.candles[-1]
-
-    @property
-    def open(self) -> float:
-        """Latest open."""
-        return float(self.candles[-1, OPEN])
-
-    @property
-    def close(self) -> float:
-        """Latest close."""
-        return float(self.candles[-1, CLOSE])
-
-    @property
-    def high(self) -> float:
-        """Latest high."""
-        return float(self.candles[-1, HIGH])
-
-    @property
-    def low(self) -> float:
-        """Latest low."""
-        return float(self.candles[-1, LOW])
-
-    @property
-    def volume(self) -> float:
-        """Latest volume."""
-        return float(self.candles[-1, VOLUME])
-
-    price = close
-
-    @property
-    def balance(self) -> float:
-        """Available cash as reported by the engine."""
-        return self.cash
-
-    @property
-    def is_long(self) -> bool:
-        """Shortcut for ``self.position.is_long``."""
-        return self.position.is_long
-
-    @property
-    def is_short(self) -> bool:
-        """Shortcut for ``self.position.is_short``."""
-        return self.position.is_short
-
-    # ------------------------------------------------------------------ orders
-    @staticmethod
-    def _qty(value: Any) -> float:
-        return float(value[0] if isinstance(value, (tuple, list)) else value)
-
-    @property
-    def buy(self) -> float:
-        """Total quantity queued to buy this bar."""
-        return sum(o["qty"] for o in self._orders if o["side"] == "buy")
-
-    @buy.setter
-    def buy(self, value: Any) -> None:
-        self.order("buy", self._qty(value))
-
-    @property
-    def sell(self) -> float:
-        """Total quantity queued to sell this bar."""
-        return sum(o["qty"] for o in self._orders if o["side"] == "sell")
-
-    @sell.setter
-    def sell(self, value: Any) -> None:
-        self.order("sell", self._qty(value))
-
-    def order(self, side: str, qty: float) -> None:
-        """Queue a market order (``side`` is ``"buy"`` or ``"sell"``)."""
+        The kind follows the prices: none is a market order, ``limit`` a limit, ``stop`` a
+        stop-market (SL-M), both a stop-limit (SL); ``kind`` forces one. ``tif`` is ``day``
+        (default), ``ioc`` or ``gtc``; ``product`` defaults to the class ``product``.
+        ``stop_loss`` / ``take_profit`` attach OCO exits that go live when the entry fills;
+        ``trail`` (a :class:`Trail`) makes the attached stop trail the price, or on a
+        stop order without ``stop_loss`` trails its own trigger. Prices are rounded to the
+        tick and ``qty`` down to whole lots.
+        """
         if side not in ("buy", "sell"):
-            raise ValueError(f"side must be 'buy' or 'sell', got {side!r}")
-        if qty > 0:
-            self._orders.append({"symbol": self.symbol, "side": side, "qty": float(qty)})
+            raise ValueError("side must be 'buy' or 'sell'")
+        if not qty > 0 or not math.isfinite(qty):
+            raise ValueError(f"qty must be positive, got {qty!r}")
+        if trail is not None and not isinstance(trail, Trail):
+            raise TypeError("trail must be a honba.Trail (Trail.percent(1.5), Trail.atr(2), ...)")
+        sym = self._symbol(symbol)
+        kind = self._kind(kind, limit, stop, trail, stop_loss)
+        inst = self.instrument(sym)
+        lots = abs(inst.round_qty(qty))
+        if lots <= 0:
+            self.log(f"skipped {side} {sym}: qty {qty:g} is below one lot ({inst.lot_size:g})")
+            return None
+        order_id = id or self._next_id()
+        action = PlaceOrder(
+            order_id,
+            sym,
+            side,  # type: ignore[arg-type]
+            lots,
+            kind,  # type: ignore[arg-type]
+            None if limit is None else inst.round_price(limit),
+            None if stop is None else inst.round_price(stop),
+            tif,
+            product or self.product,
+            tag,
+            None if stop_loss is None else inst.round_price(stop_loss),
+            None if take_profit is None else inst.round_price(take_profit),
+            trail,
+            reduce_only,
+        )
+        return self._submit(action, sym)
 
-    def liquidate(self) -> None:
-        """Queue an order that flattens the current position."""
-        qty = self.position.qty
-        if qty > 0:
-            self.order("sell", qty)
-        elif qty < 0:
-            self.order("buy", -qty)
+    def target(
+        self,
+        symbol: str | None = None,
+        qty: float | None = None,
+        *,
+        pct: float | None = None,
+        **kwargs: Any,
+    ) -> OrderHandle | None:
+        """Smart order: trade whatever it takes to hold a target position.
 
-    def _drain_orders(self) -> list[dict[str, Any]]:
-        orders, self._orders = self._orders, []
-        return orders
+        ``qty`` is the signed target quantity (negative = short, 0 = flat); ``pct`` a signed
+        fraction of equity at the latest close (0.1 = 10% long). Resting entry orders of the
+        symbol are cancelled first (so repeated calls never double up), then only the delta to
+        the current position is sent. Returns ``None`` when already there. Keyword arguments
+        go to :meth:`order` (tag, product, tif, limit, ...).
+        """
+        return self._target(self._symbol(symbol), qty, pct, True, kwargs)
+
+    def close(self, symbol: str | None = None, **kwargs: Any) -> OrderHandle | None:
+        """Flatten ``symbol``: cancel its resting entries and sell/buy the position out."""
+        return self._target(self._symbol(symbol), 0.0, None, True, kwargs)
+
+    def close_all(self, **kwargs: Any) -> list[OrderHandle]:
+        """Cancel every open order and flatten every position."""
+        self._emit(CancelAll())
+        handles = [
+            self._target(sym, 0.0, None, False, dict(kwargs))
+            for sym in self.symbols
+            if self._positions[sym].is_open or self._queued_net.get(sym)
+        ]
+        return [h for h in handles if h is not None]
+
+    def modify(
+        self,
+        order: OrderHandle | Order | str,
+        *,
+        qty: float | None = None,
+        limit: float | None = None,
+        stop: float | None = None,
+        tif: str | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        trail: Trail | None = None,
+        tag: str | None = None,
+    ) -> None:
+        """Change an open order.
+
+        To move the stop of a live position modify its exit order:
+        ``self.modify(handle.stop_order, stop=new_level)``; for an unfilled entry pass
+        ``stop_loss`` / ``take_profit`` / ``trail``. ``None`` leaves a field unchanged.
+        """
+        order_id = order if isinstance(order, str) else order.id
+        inst = self._instruments.get(self._order_symbol(order), Instrument())
+        rnd = inst.round_price
+        self._emit(
+            ModifyOrder(
+                order_id,
+                None if qty is None else abs(inst.round_qty(qty)) or qty,
+                None if limit is None else rnd(limit),
+                None if stop is None else rnd(stop),
+                tif,
+                None if stop_loss is None else rnd(stop_loss),
+                None if take_profit is None else rnd(take_profit),
+                trail,
+                tag,
+            )
+        )
+
+    def cancel(self, order: OrderHandle | Order | str) -> None:
+        """Cancel one order."""
+        self._emit(CancelOrder(order if isinstance(order, str) else order.id))
+
+    def cancel_all(self, symbol: str | None = None) -> None:
+        """Cancel every open order (of ``symbol`` when given)."""
+        self._emit(CancelAll(symbol))
+
+    # -- internals ---------------------------------------------------------------------------
+
+    def _symbol(self, symbol: str | None) -> str:
+        if symbol is not None:
+            return symbol
+        if len(self.symbols) == 1:
+            return self.symbols[0]
+        raise ValueError(f"symbol is required with several symbols {list(self.symbols)}")
+
+    def _next_id(self) -> str:
+        self._seq += 1
+        return f"s{self._seq}"
+
+    @staticmethod
+    def _kind(
+        kind: str | None,
+        limit: float | None,
+        stop: float | None,
+        trail: Trail | None,
+        stop_loss: float | None,
+    ) -> str:
+        inferred = (
+            "market"
+            if limit is None and stop is None
+            else "limit"
+            if stop is None
+            else "stop"
+            if limit is None
+            else "stop_limit"
+        )
+        if trail is not None and stop is None and limit is None and stop_loss is None:
+            inferred = "stop"  # trailing stop entry: trail its own trigger
+        if kind is None:
+            return inferred
+        if kind not in ("market", "limit", "stop", "stop_limit"):
+            raise ValueError(f"kind must be market, limit, stop or stop_limit, got {kind!r}")
+        if kind != inferred and not (kind == "stop" and trail is not None):
+            raise ValueError(f"kind={kind!r} does not match the prices given (limit/stop)")
+        return kind
+
+    def _submit(self, action: PlaceOrder, sym: str) -> OrderHandle | None:
+        if not self._emit(action):
+            return None
+        self._order_symbols[action.id] = sym
+        sign = 1.0 if action.side == "buy" else -1.0
+        self._queued_net[sym] = self._queued_net.get(sym, 0.0) + sign * action.qty
+        return OrderHandle(self, action.id, sym)
+
+    def _emit(self, action: Action) -> bool:
+        if self._ctx is not None and self._ctx.warmup:
+            return False  # orders during warm-up are ignored
+        if self._caps is not None:
+            self._caps.check(
+                required_features(action),
+                f"{type(self).__name__}.{type(action).__name__}",
+            )
+        self._queue.append(action)
+        return True
+
+    def _target(
+        self,
+        sym: str,
+        qty: float | None,
+        pct: float | None,
+        cancel_pending: bool,
+        kwargs: dict[str, Any],
+    ) -> OrderHandle | None:
+        if (qty is None) == (pct is None):
+            raise ValueError("give exactly one of qty= or pct=")
+        inst = self.instrument(sym)
+        if pct is not None:
+            price = self.last_price(sym)
+            qty = math.copysign(inst.round_qty(pct * self.equity / price), pct)
+        else:
+            assert qty is not None
+            qty = math.copysign(inst.round_qty(qty), qty)
+        if cancel_pending:
+            for o in self.orders(sym, "entry"):
+                if o.status == "open":
+                    self.cancel(o)
+        current = self._positions[sym].qty + self._queued_net.get(sym, 0.0)
+        delta = qty - current
+        if abs(delta) < inst.lot_size - _LOT_EPS:
+            return None
+        reducing = abs(current) > _LOT_EPS and delta * current < 0
+        if reducing and "product" not in kwargs:
+            kwargs["product"] = self._positions[sym].product
+        return self.order("buy" if delta > 0 else "sell", abs(delta), sym, **kwargs)
+
+    def _order_symbol(self, order: OrderHandle | Order | str) -> str:
+        if not isinstance(order, str):
+            return order.symbol
+        base = order.split(":")[0]
+        if base in self._order_symbols:
+            return self._order_symbols[base]
+        for o in self._ctx.open_orders if self._ctx else ():
+            if o.id == order:
+                return o.symbol
+        return ""
+
+    def _open_order(self, order_id: str) -> Order | None:
+        for o in self._ctx.open_orders if self._ctx else ():
+            if o.id == order_id:
+                return o
+        return None
+
+    def _status_of(self, order_id: str) -> str:
+        found = self._open_order(order_id)
+        if found is not None:
+            return found.status
+        return self._terminal.get(order_id, "submitted")
+
+    def _bar_of(self, symbol: str) -> Bar | None:
+        return self.ctx.bars.get(symbol)

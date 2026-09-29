@@ -63,6 +63,9 @@ dev = [
 docs = [
     "mkdocs-material>=9.5",
 ]
+report = [
+    "plotly>=5",
+]
 
 [tool.pyright]
 typeCheckingMode = "strict"

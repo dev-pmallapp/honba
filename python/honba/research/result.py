@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from functools import cached_property
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -213,6 +214,61 @@ class BacktestResult:
             ruin=ruin,
             seed=seed,
             keep_paths=keep_paths,
+        )
+
+    def benchmark_metrics(self, benchmark: Any) -> dict[str, Any]:
+        """Alpha, beta, correlation, tracking error, information ratio vs ``benchmark``.
+
+        ``benchmark`` is a price Series indexed by time (naive = IST) or a frame with
+        ``close``; see :func:`honba.research.report.benchmark_metrics`.
+        """
+        from .report import benchmark_metrics
+
+        return benchmark_metrics(self, benchmark)
+
+    def to_dict(self, *, benchmark: Any = None, include_fills: bool = False) -> dict[str, Any]:
+        """JSON-friendly report (schema ``honba.backtest/1``, see :mod:`honba.research.report`)."""
+        from .report import report_dict
+
+        return report_dict(self, benchmark=benchmark, include_fills=include_fills)
+
+    def to_json(
+        self,
+        path: str | Path | None = None,
+        *,
+        benchmark: Any = None,
+        include_fills: bool = False,
+        indent: int | None = None,
+    ) -> str:
+        """The :meth:`to_dict` report as JSON (NaN -> null), also written to ``path``."""
+        from .report import to_json
+
+        return to_json(self, path, benchmark=benchmark, include_fills=include_fills, indent=indent)
+
+    def tearsheet(
+        self,
+        path: str | Path | None = None,
+        *,
+        benchmark: Any = None,
+        benchmark_name: str = "Benchmark",
+        title: str | None = None,
+        charts: str = "auto",
+    ) -> str:
+        """Self-contained HTML tearsheet; written to ``path`` when given, returned as a string.
+
+        Equity (with ``benchmark`` rebased to the capital), drawdown, monthly-returns heatmap,
+        risk / trade metrics, benchmark-relative metrics, groups, trade list and log. ``charts``
+        is ``"auto"`` (Plotly when installed, else inline SVG), ``"plotly"`` or ``"svg"``.
+        """
+        from .report import write_tearsheet
+
+        return write_tearsheet(
+            self,
+            path,
+            benchmark=benchmark,
+            benchmark_name=benchmark_name,
+            title=title,
+            charts=charts,
         )
 
     def metric(self, name: str, default: Any = None) -> Any:

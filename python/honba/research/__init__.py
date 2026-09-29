@@ -22,6 +22,7 @@ from .metrics import Metrics, compute_metrics
 from .montecarlo import MonteCarloResult, monte_carlo_trades
 from .optimize import OptimizationResult, WalkForwardResult, optimize, walk_forward
 from .overfit import PBOResult, cscv_pbo, deflated_sharpe, dsr, pbo
+from .report import benchmark_metrics, monthly_returns
 from .result import BacktestResult
 from .validation import CandleValidationError, Issue, validate_candles
 
@@ -45,12 +46,14 @@ __all__ = [
     "WalkForwardResult",
     "available_engines",
     "backtest",
+    "benchmark_metrics",
     "compute_metrics",
     "cscv_pbo",
     "deflated_sharpe",
     "dsr",
     "get_engine",
     "monte_carlo_trades",
+    "monthly_returns",
     "optimize",
     "pbo",
     "register_engine",

@@ -65,7 +65,7 @@ jobs:
             numpy pandas polars pydantic fastapi httpx typer rich
 
       - name: Install Optional Research Dependencies
-        run: .venv/bin/pip install optuna
+        run: .venv/bin/pip install optuna plotly
 
       - name: Lint with Ruff
         run: ruff check python/

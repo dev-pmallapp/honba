@@ -337,6 +337,15 @@ multiplies by it. Dividends are recorded in `adj.attrs["dividends"]` only: price
 adjusted and no cash is credited (CNC dividend credit is P2). Adjust before `hb.backtest`; the
 store keeps raw prices.
 
+### Freeze-quantity split orders
+
+```python
+hb.split_order(4500, 1800, 75)                 # [1800, 1800, 900]; every slice a lot multiple
+hb.split_order(-4500, 1800, 75, balanced=True) # [-1500, -1500, -1500]
+for q in hb.split_order(qty, self.instrument().freeze_qty, self.instrument().lot_size):
+    self.buy(qty=q)                             # when the engine has no native order splitting
+```
+
 ## Development
 
 ```bash

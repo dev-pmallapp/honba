@@ -7,6 +7,7 @@ behind :class:`honba.research.BacktestEngine`.
 
 __version__ = "0.1.0"
 
+from .orders import split_order
 from .research import (
     BacktestConfig,
     BacktestEngine,
@@ -79,6 +80,7 @@ __all__ = [
     "backtest",
     "indicators",
     "register_engine",
+    "split_order",
     "sweep",
     "ta",
     "validate_candles",

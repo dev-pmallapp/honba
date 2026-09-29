@@ -86,7 +86,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O2 | Product types CNC / MIS / NRML (MTF) | done | Engine | P0 | Drives costs (STT differs MIS vs CNC), short rules, auto square-off, settlement. |
 | O3 | Smart order (target position size) | done | SDK | P0 | Pure delta computation; must account for open orders to avoid double-sending. |
 | O4 | Basket order (many orders at once) | draft (list of actions) | SDK | P1 | Actions are already a list per bar; add tag/group for reporting. |
-| O5 | Split order (slice large qty) | none | SDK | P1 | Needed for F&O freeze quantity (exchange max qty per order); slices must be lot multiples. |
+| O5 | Split order (slice large qty) | partial (`hb.split_order` Python helper; engine-native split separate) | SDK | P1 | Needed for F&O freeze quantity (exchange max qty per order); slices must be lot multiples. |
 | O6 | Modify order / cancel order / cancel all | done | Engine | P0 | Contract ops `modify`, `cancel`, `cancel_all`. |
 | O7 | Close position / close all | done | SDK | P0 | Smart order to 0; `close_all` iterates positions. |
 | O8 | Options order by offset (ATM/ITMn/OTMn, expiry) | none | SDK (resolver) + data | P2 | Needs option chain history and instrument master (strikes, expiries, lot sizes). Weekly expiry rules changed (one weekly index expiry per exchange). |

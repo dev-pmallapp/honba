@@ -83,5 +83,5 @@ def test_load_actions_csv(tmp_path):
     ]
     assert acts[0].factor == 2 and acts[3].factor == 1.5
     p.write_text("symbol,ex_date,action\nX,notadate,split\n")
-    with pytest.raises(ValueError, match="a.csv:2"):
+    with pytest.raises(ValueError, match=r"a\.csv:2"):
         load_actions_csv(p)

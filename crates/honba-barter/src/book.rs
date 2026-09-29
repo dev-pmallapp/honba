@@ -24,11 +24,15 @@ use crate::{
     model::{
         Action, ActionSide, CostBreakdown, Event, FillEvent, FillReason, ModifyRequest,
         OrderRequest, OrderRole, OrderStatus, OrderType, OrderView, PositionView, Product,
-        TimeInForce, TrailSpec,
+        TimeInForce, TrailMode, TrailSpec,
     },
 };
 use chrono::{DateTime, FixedOffset, NaiveDate};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+
+/// Longest supported ATR lookback for trailing stops.
+pub const MAX_ATR_PERIOD: usize = 1000;
+const DEFAULT_ATR_PERIOD: usize = 14;
 
 /// Relative tolerance for quantity / cash comparisons.
 const EPS: f64 = 1e-9;
@@ -51,6 +55,8 @@ pub struct BookConfig {
     /// When a bracket's stop loss and take profit both trigger inside one bar (neither at the
     /// open), the stop loss wins if true.
     pub stop_first: bool,
+    /// Tick size per instrument (prices are rounded / validated against it when set).
+    pub tick_sizes: Vec<Option<f64>>,
 }
 
 /// Net position in one instrument with average-cost accounting.
@@ -125,6 +131,9 @@ pub struct Order {
     pub take_profit: Option<f64>,
     pub trail: Option<TrailSpec>,
     pub trail_stop: Option<f64>,
+    /// Highest high (sell stop) / lowest low (buy stop) since the trail activated.
+    pub trail_extreme: Option<f64>,
+    pub trail_active: bool,
     /// Stop-limit whose stop has triggered (now behaves as a limit order).
     pub triggered: bool,
     /// First bar index this order may be matched against.
@@ -335,6 +344,8 @@ pub struct Book {
     pub rejections: Vec<Rejection>,
     pub costs: CostBreakdown,
     pub equity_curve: Vec<(i64, f64)>,
+    /// Most recent bars per instrument (ATR for trailing stops).
+    recent: Vec<VecDeque<Bar>>,
     pending: HashMap<String, FillIntent>,
     /// Batch-local projection of cash / positions including not yet confirmed intents.
     proj_cash: f64,
@@ -361,6 +372,7 @@ impl Book {
             rejections: Vec::new(),
             costs: CostBreakdown::default(),
             equity_curve: Vec::new(),
+            recent: vec![VecDeque::new(); n],
             pending: HashMap::new(),
             events: Vec::new(),
             order_seq: 0,
@@ -452,11 +464,14 @@ impl Book {
         bar_index: usize,
         time_ms: i64,
         bars: &[Option<Bar>],
-        _histories: &[&[Bar]],
     ) -> Vec<FillIntent> {
-        for (close, bar) in self.last_close.iter_mut().zip(bars) {
+        for ((close, recent), bar) in self.last_close.iter_mut().zip(&mut self.recent).zip(bars) {
             if let Some(bar) = bar {
                 *close = Some(bar.close);
+                if recent.len() > MAX_ATR_PERIOD {
+                    recent.pop_front();
+                }
+                recent.push_back(*bar);
             }
         }
         self.sync_projection();
@@ -519,8 +534,202 @@ impl Book {
                     Match::None => self.expire_ioc(index, time_ms),
                 }
             }
+
+            // Trailing stops move after the bar was matched against the stop as it stood at
+            // the open of the bar: the new level only applies from the next bar.
+            self.update_trails(instrument, bar, bar_index, time_ms);
         }
         intents
+    }
+
+    /// Average true range over the last `period` bars of `instrument`.
+    fn atr(&self, instrument: usize, period: usize) -> Option<f64> {
+        let bars = &self.recent[instrument];
+        let n = period.min(bars.len());
+        if n == 0 {
+            return None;
+        }
+        let start = bars.len() - n;
+        let sum = (start..bars.len())
+            .map(|i| {
+                let bar = &bars[i];
+                let range = bar.high - bar.low;
+                match i.checked_sub(1).map(|p| bars[p].close) {
+                    Some(prev) => range
+                        .max((bar.high - prev).abs())
+                        .max((bar.low - prev).abs()),
+                    None => range,
+                }
+            })
+            .sum::<f64>();
+        Some(sum / n as f64)
+    }
+
+    fn trail_offset(&self, instrument: usize, spec: &TrailSpec, extreme: f64) -> Option<f64> {
+        match spec.mode {
+            TrailMode::Percent => Some(extreme * spec.value / 100.0),
+            TrailMode::Amount => Some(spec.value),
+            TrailMode::Atr => self
+                .atr(instrument, spec.atr_period.unwrap_or(DEFAULT_ATR_PERIOD))
+                .map(|atr| atr * spec.value),
+        }
+    }
+
+    /// Round a stop to the instrument tick, away from the market (down for sell stops).
+    fn round_stop(&self, instrument: usize, side: ActionSide, value: f64) -> f64 {
+        match self.cfg.tick_sizes.get(instrument).copied().flatten() {
+            Some(tick) if tick > 0.0 => {
+                let ticks = value / tick;
+                let ticks = match side {
+                    ActionSide::Sell => (ticks + 1e-9).floor(),
+                    ActionSide::Buy => (ticks - 1e-9).ceil(),
+                };
+                ticks * tick
+            }
+            _ => value,
+        }
+    }
+
+    /// Move a trailing stop towards the market if the trail allows; never loosens.
+    fn ratchet(&mut self, index: usize, time_ms: i64) {
+        let order = &self.orders[index];
+        let (Some(spec), Some(extreme), Some(instrument)) =
+            (order.trail, order.trail_extreme, order.instrument)
+        else {
+            return;
+        };
+        if !order.trail_active {
+            return;
+        }
+        let Some(offset) = self.trail_offset(instrument, &spec, extreme) else {
+            return;
+        };
+        let side = order.side;
+        let candidate = self.round_stop(
+            instrument,
+            side,
+            match side {
+                ActionSide::Sell => extreme - offset,
+                ActionSide::Buy => extreme + offset,
+            },
+        );
+        if !(candidate.is_finite() && candidate > 0.0) {
+            return;
+        }
+        let current = order.trigger;
+        let step = spec.step.unwrap_or(0.0).max(0.0);
+        let tighter = match (current, side) {
+            (None, _) => true,
+            (Some(stop), ActionSide::Sell) => candidate > stop && candidate - stop >= step,
+            (Some(stop), ActionSide::Buy) => candidate < stop && stop - candidate >= step,
+        };
+        if !tighter {
+            return;
+        }
+
+        let order = &mut self.orders[index];
+        order.trigger = Some(candidate);
+        order.trail_stop = Some(candidate);
+        order.updated_ms = time_ms;
+        let (id, symbol, parent, role) = (
+            order.id.clone(),
+            order.symbol.clone(),
+            order.parent.clone(),
+            order.role,
+        );
+        if role == OrderRole::StopLoss {
+            if let Some(parent) = parent.and_then(|p| self.orders.iter().position(|o| o.id == p)) {
+                self.orders[parent].stop_loss = Some(candidate);
+            }
+        }
+        self.events.push(Event::TrailUpdate {
+            time_ms,
+            id,
+            symbol,
+            old_stop: current,
+            new_stop: candidate,
+        });
+    }
+
+    /// Start trailing from `reference` (entry fill / placement price) unless an activation
+    /// price is still to be reached.
+    fn init_trail(&mut self, index: usize, reference: f64, time_ms: i64) {
+        let order = &mut self.orders[index];
+        let Some(spec) = order.trail else {
+            return;
+        };
+        order.trail_stop = order.trigger;
+        if spec.activation_price.is_none() {
+            order.trail_active = true;
+            order.trail_extreme = Some(reference);
+            self.ratchet(index, time_ms);
+        }
+    }
+
+    /// Update extremes / activation of the trailing stops on `instrument` from `bar`.
+    fn update_trails(&mut self, instrument: usize, bar: &Bar, bar_index: usize, time_ms: i64) {
+        let trailing = self
+            .orders
+            .iter()
+            .enumerate()
+            .filter(|(index, order)| {
+                order.instrument == Some(instrument)
+                    && order.status == OrderStatus::Open
+                    && order.trail.is_some()
+                    && order.active_from_bar <= bar_index
+                    && !self.pending.values().any(|p| p.order == *index)
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+
+        for index in trailing {
+            let order = &mut self.orders[index];
+            let spec = order.trail.expect("filtered on trail");
+            let (favourable, extreme) = match order.side {
+                ActionSide::Sell => (
+                    bar.high,
+                    order.trail_extreme.map_or(bar.high, |e| e.max(bar.high)),
+                ),
+                ActionSide::Buy => (
+                    bar.low,
+                    order.trail_extreme.map_or(bar.low, |e| e.min(bar.low)),
+                ),
+            };
+            if !order.trail_active {
+                let reached = spec
+                    .activation_price
+                    .is_some_and(|activation| match order.side {
+                        ActionSide::Sell => favourable >= activation,
+                        ActionSide::Buy => favourable <= activation,
+                    });
+                if !reached {
+                    continue;
+                }
+                order.trail_active = true;
+                order.trail_extreme = Some(favourable);
+            } else {
+                order.trail_extreme = Some(extreme);
+            }
+            self.ratchet(index, time_ms);
+        }
+    }
+
+    fn check_trail(spec: &TrailSpec) -> Check {
+        let valid = spec.value.is_finite()
+            && spec.value > 0.0
+            && spec
+                .atr_period
+                .is_none_or(|p| (1..=MAX_ATR_PERIOD).contains(&p))
+            && spec
+                .activation_price
+                .is_none_or(|p| p.is_finite() && p > 0.0)
+            && spec.step.is_none_or(|s| s.is_finite() && s >= 0.0)
+            && !(spec.mode == TrailMode::Percent && spec.value >= 100.0);
+        if valid {
+            Ok(())
+        } else {
+            Err("invalid_trail")
+        }
     }
 
     /// Open, active OCO sibling of a bracket exit.
@@ -890,15 +1099,16 @@ impl Book {
         &mut self,
         parent: usize,
         role: OrderRole,
-        level: f64,
+        level: Option<f64>,
+        trail: Option<TrailSpec>,
         time_ms: i64,
         bar_index: usize,
     ) -> usize {
         let entry = &self.orders[parent];
         let filled = entry.filled_qty > 0.0;
         let (kind, price, trigger, suffix) = match role {
-            OrderRole::StopLoss => (OrderType::Stop, None, Some(level), "sl"),
-            _ => (OrderType::Limit, Some(level), None, "tp"),
+            OrderRole::StopLoss => (OrderType::Stop, None, level, "sl"),
+            _ => (OrderType::Limit, level, None, "tp"),
         };
         let child = Order {
             id: format!("{}:{suffix}", entry.id),
@@ -925,8 +1135,10 @@ impl Book {
             reduce_only: true,
             stop_loss: None,
             take_profit: None,
-            trail: None,
+            trail,
             trail_stop: None,
+            trail_extreme: None,
+            trail_active: false,
             triggered: false,
             active_from_bar: if filled { bar_index + 1 } else { usize::MAX },
             first_eval_date: None,
@@ -934,17 +1146,27 @@ impl Book {
             updated_ms: time_ms,
         };
         self.orders.push(child);
-        self.orders.len() - 1
+        let index = self.orders.len() - 1;
+        if filled {
+            // Attached to a live position: trail from the current market
+            let reference = self.orders[index]
+                .instrument
+                .and_then(|i| self.last_close[i])
+                .unwrap_or(f64::NAN);
+            self.init_trail(index, reference, time_ms);
+        }
+        index
     }
 
     /// After a fill: activate an entry's exits, cancel an exit's OCO sibling, and drop exits
     /// that no longer have a position to protect.
-    fn after_fill(&mut self, order: usize, bar_index: usize, time_ms: i64) {
+    fn after_fill(&mut self, order: usize, price: f64, bar_index: usize, time_ms: i64) {
         let id = self.orders[order].id.clone();
         match self.orders[order].role {
             OrderRole::Entry => {
                 let filled = self.orders[order].filled_qty;
-                for child in self.orders.iter_mut().filter(|o| {
+                let mut activated = Vec::new();
+                for (index, child) in self.orders.iter_mut().enumerate().filter(|(_, o)| {
                     o.parent.as_ref() == Some(&id) && o.is_open() && o.role != OrderRole::Entry
                 }) {
                     child.qty = filled;
@@ -952,7 +1174,12 @@ impl Book {
                         child.status = OrderStatus::Open;
                         child.active_from_bar = bar_index + 1;
                         child.updated_ms = time_ms;
+                        activated.push(index);
                     }
+                }
+                // Trailing exits start from the entry fill price
+                for index in activated {
+                    self.init_trail(index, price, time_ms);
                 }
             }
             OrderRole::StopLoss | OrderRole::TakeProfit => {
@@ -1016,13 +1243,29 @@ impl Book {
             self.reject_request(time_ms, &request, Some(id), "invalid_qty");
             return None;
         }
-        if let Err(reason) = Self::check_prices(request.kind, request.price, request.trigger) {
+        // A trail on a stop order without an attached stop loss trails the order itself;
+        // otherwise it trails the attached stop loss.
+        let own_trail = request.trail.is_some()
+            && request.kind == OrderType::Stop
+            && request.stop_loss.is_none();
+        let trigger_check = if own_trail {
+            request.trigger.or(Some(1.0))
+        } else {
+            request.trigger
+        };
+        if let Err(reason) = Self::check_prices(request.kind, request.price, trigger_check) {
             self.reject_request(time_ms, &request, Some(id), reason);
             return None;
         }
-        if request.trail.is_some() {
-            self.reject_request(time_ms, &request, Some(id), "unsupported_trail");
-            return None;
+        if let Some(trail) = &request.trail {
+            if let Err(reason) = Self::check_trail(trail) {
+                self.reject_request(time_ms, &request, Some(id), reason);
+                return None;
+            }
+            if request.kind == OrderType::StopLimit {
+                self.reject_request(time_ms, &request, Some(id), "unsupported_trail");
+                return None;
+            }
         }
         let Some(close) = self.last_close[instrument] else {
             self.reject_request(time_ms, &request, Some(id), "no_price");
@@ -1039,6 +1282,10 @@ impl Book {
             return None;
         }
         let (stop_loss, take_profit) = (request.stop_loss, request.take_profit);
+        let (own_trail, exit_trail) = match request.trail {
+            Some(trail) if own_trail => (Some(trail), None),
+            trail => (None, trail),
+        };
 
         let order = Order {
             id,
@@ -1063,8 +1310,10 @@ impl Book {
             reduce_only: request.reduce_only,
             stop_loss,
             take_profit,
-            trail: None,
+            trail: own_trail,
             trail_stop: None,
+            trail_extreme: None,
+            trail_active: false,
             triggered: false,
             active_from_bar: bar_index + 1,
             first_eval_date: None,
@@ -1072,16 +1321,34 @@ impl Book {
             updated_ms: time_ms,
         };
 
-        // Close fill model: execute now at the decision bar's close when possible
-        let immediate = order.marketable_at(close);
         self.orders.push(order);
         let index = self.orders.len() - 1;
-        if let Some(level) = stop_loss {
-            self.attach_exit(index, OrderRole::StopLoss, level, time_ms, bar_index);
+        if own_trail.is_some() {
+            self.init_trail(index, close, time_ms);
+        }
+        if stop_loss.is_some() || exit_trail.is_some() {
+            self.attach_exit(
+                index,
+                OrderRole::StopLoss,
+                stop_loss,
+                exit_trail,
+                time_ms,
+                bar_index,
+            );
         }
         if let Some(level) = take_profit {
-            self.attach_exit(index, OrderRole::TakeProfit, level, time_ms, bar_index);
+            self.attach_exit(
+                index,
+                OrderRole::TakeProfit,
+                Some(level),
+                None,
+                time_ms,
+                bar_index,
+            );
         }
+
+        // Close fill model: execute now at the decision bar's close when possible
+        let immediate = self.orders[index].marketable_at(close);
 
         match immediate {
             Some(reason) => self.try_fill(index, close, reason, time_ms, bar_index),
@@ -1109,7 +1376,7 @@ impl Book {
         let brackets = modify.stop_loss.is_some() || modify.take_profit.is_some();
         // A filled entry can still have its attached exits changed
         let index = self.open_order_index(&modify.id).or_else(|| {
-            brackets
+            (brackets || modify.trail.is_some())
                 .then(|| {
                     self.orders.iter().rposition(|o| {
                         o.id == modify.id && o.role == OrderRole::Entry && o.filled_qty > 0.0
@@ -1138,13 +1405,27 @@ impl Book {
             self.reject_op(time_ms, Some(modify.id), "invalid_qty");
             return;
         }
-        if let Err(reason) = Self::check_prices(order.kind, price, trigger) {
+        let trailing = order.trail.is_some() || modify.trail.is_some();
+        let trigger_check = if trailing && order.kind == OrderType::Stop {
+            trigger.or(Some(1.0))
+        } else {
+            trigger
+        };
+        if let Err(reason) = Self::check_prices(order.kind, price, trigger_check) {
             self.reject_op(time_ms, Some(modify.id), reason);
             return;
         }
-        if modify.trail.is_some() {
-            self.reject_op(time_ms, Some(modify.id), "unsupported_trail");
-            return;
+        if let Some(trail) = &modify.trail {
+            if let Err(reason) = Self::check_trail(trail) {
+                self.reject_op(time_ms, Some(modify.id), reason);
+                return;
+            }
+            if order.role == OrderRole::TakeProfit
+                || order.role != OrderRole::Entry && order.kind != OrderType::Stop
+            {
+                self.reject_op(time_ms, Some(modify.id), "unsupported_trail");
+                return;
+            }
         }
         if brackets {
             if order.role != OrderRole::Entry {
@@ -1188,12 +1469,57 @@ impl Book {
                     child.updated_ms = time_ms;
                 }
                 None => {
-                    self.attach_exit(index, role, level, time_ms, bar_index);
+                    self.attach_exit(index, role, Some(level), None, time_ms, bar_index);
                 }
             }
             match role {
                 OrderRole::StopLoss => self.orders[index].stop_loss = Some(level),
                 _ => self.orders[index].take_profit = Some(level),
+            }
+        }
+
+        if let Some(trail) = modify.trail {
+            // Trail the order itself (a stop exit, or a stop entry without an attached stop
+            // loss), otherwise the entry's attached stop loss
+            let order = &self.orders[index];
+            let own = order.is_open()
+                && order.kind == OrderType::Stop
+                && (order.role != OrderRole::Entry
+                    || order.trail.is_some()
+                    || (order.stop_loss.is_none()
+                        && self.find_child(&modify.id, OrderRole::StopLoss).is_none()));
+            let target = if own {
+                Some(index)
+            } else {
+                self.find_child(&modify.id, OrderRole::StopLoss)
+            };
+            match target {
+                Some(target) => {
+                    let order = &mut self.orders[target];
+                    let started = order.trail_active;
+                    order.trail = Some(trail);
+                    order.updated_ms = time_ms;
+                    let live = order.status == OrderStatus::Open;
+                    if started {
+                        self.ratchet(target, time_ms);
+                    } else if live {
+                        let reference = order
+                            .instrument
+                            .and_then(|i| self.last_close[i])
+                            .unwrap_or(f64::NAN);
+                        self.init_trail(target, reference, time_ms);
+                    }
+                }
+                None => {
+                    self.attach_exit(
+                        index,
+                        OrderRole::StopLoss,
+                        None,
+                        Some(trail),
+                        time_ms,
+                        bar_index,
+                    );
+                }
             }
         }
 
@@ -1268,7 +1594,7 @@ impl Book {
         };
         self.fills.push(fill.clone());
         self.events.push(Event::Fill(fill));
-        self.after_fill(intent.order, intent.bar_index, intent.time_ms);
+        self.after_fill(intent.order, intent.price, intent.bar_index, intent.time_ms);
         true
     }
 
@@ -1340,6 +1666,8 @@ mod tests {
             take_profit: None,
             trail: None,
             trail_stop: None,
+            trail_extreme: None,
+            trail_active: false,
             triggered: false,
             active_from_bar: 0,
             first_eval_date: None,

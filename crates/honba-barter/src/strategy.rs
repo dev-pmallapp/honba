@@ -188,14 +188,6 @@ impl DeciderStrategy {
             .collect()
     }
 
-    fn histories<'a>(&self, state: &'a HonbaEngineState) -> Vec<&'a [Bar]> {
-        state
-            .instruments
-            .instruments(&InstrumentFilter::None)
-            .map(|instrument| instrument.data.history.as_slice())
-            .collect()
-    }
-
     fn session_view(&self, time_ms: i64) -> SessionView {
         let date = DateTime::from_timestamp_millis(time_ms)
             .map(|time| {
@@ -338,8 +330,7 @@ impl AlgoStrategy for DeciderStrategy {
                     }
                     let time_ms = self.config.schedule[run.next_bar].0;
                     let bars = self.bars_at(state, time_ms);
-                    let histories = self.histories(state);
-                    let intents = run.book.begin_bar(run.next_bar, time_ms, &bars, &histories);
+                    let intents = run.book.begin_bar(run.next_bar, time_ms, &bars);
                     requests.extend(self.to_requests(state, &mut run.book, intents));
                     run.phase = Phase::AwaitOpenFills;
                 }

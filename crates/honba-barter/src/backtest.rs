@@ -258,6 +258,7 @@ fn setup_run(
         allow_short: prepared.config.allow_short,
         utc_offset: IST,
         stop_first: prepared.config.intrabar_priority == IntrabarPriority::StopFirst,
+        tick_sizes: vec![None; prepared.symbols.len()],
     });
     let strategy = DeciderStrategy::new(
         decider,

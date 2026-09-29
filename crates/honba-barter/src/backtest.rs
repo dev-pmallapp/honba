@@ -334,6 +334,7 @@ fn setup_run(
         allow_short: prepared.config.allow_short,
         margin: prepared.config.margin,
         liquidate_at_end: prepared.config.liquidate_at_end,
+        attached_exit_same_bar: prepared.config.attached_exit_same_bar,
         utc_offset: prepared.session.as_ref().map_or(IST, |s| s.offset),
         square_off_at: prepared
             .bars

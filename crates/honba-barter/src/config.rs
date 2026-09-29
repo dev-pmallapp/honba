@@ -24,6 +24,7 @@ use std::collections::BTreeMap;
 /// | `instruments`      | object    | `{}`        | Per-symbol [`InstrumentMeta`].                            |
 /// | `session`          | object    | `null`      | [`SessionConfig`]; `null` = always open.                  |
 /// | `trading_days_per_year` | int  | `250`       | Annualisation factor for sharpe / sortino / tear sheets.  |
+/// | `attached_exit_same_bar` | bool | `false`   | Attached exits can trigger on the entry's bar (stop first).|
 /// | `liquidate_at_end` | bool      | `false`     | Close all positions at the final bar's close.             |
 /// | `margin`           | object    | 1x / 100%   | [`MarginConfig`]: `mis_leverage`, `nrml_margin_pct`, `short_margin_pct`. |
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -41,6 +42,10 @@ pub struct BacktestConfig {
     /// tick validation.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub instruments: BTreeMap<String, InstrumentMeta>,
+    /// Let an entry's attached stop loss / take profit trigger on the bar the entry filled in
+    /// (intrabar entries: limit / stop / next_open fills), stop first. Default `false`: exits
+    /// are active from the next bar (optimistic about same-bar stop-outs).
+    pub attached_exit_same_bar: bool,
     /// Annualisation for sharpe / sortino and barter tear sheets (NSE: ~250 sessions).
     pub trading_days_per_year: u32,
     /// Close every open position at the final bar's close (reason `liquidate_end`,
@@ -84,6 +89,7 @@ impl Default for BacktestConfig {
             margin: MarginConfig::default(),
             liquidate_at_end: false,
             trading_days_per_year: 250,
+            attached_exit_same_bar: false,
             instruments: BTreeMap::new(),
             start_ms: None,
             fill_model: FillModel::Close,

@@ -52,6 +52,14 @@ fn approx_le(a: f64, b: f64) -> bool {
     a <= b + EPS * b.abs().max(1.0)
 }
 
+/// Sequence number of a fill id (`f<n>`).
+fn fill_seq(fill_id: &str) -> u64 {
+    fill_id
+        .strip_prefix('f')
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(u64::MAX)
+}
+
 /// Is `value` an integer multiple of `step` (within float noise).
 fn is_multiple(value: f64, step: f64) -> bool {
     if step.is_nan() || step <= 0.0 {
@@ -137,6 +145,8 @@ pub struct BookConfig {
     pub allow_short: bool,
     /// Close every position at the final bar's close.
     pub liquidate_at_end: bool,
+    /// Attached exits may trigger on the bar their entry filled in (stop first).
+    pub attached_exit_same_bar: bool,
     pub margin: MarginConfig,
     /// Exchange-local UTC offset (trading dates for `day` orders).
     pub utc_offset: FixedOffset,
@@ -453,6 +463,8 @@ pub struct Book {
     /// Every order below this index is closed.
     open_floor: usize,
     pending: HashMap<String, FillIntent>,
+    /// Execution outcomes waiting for earlier fills (by fill sequence).
+    reported: std::collections::BTreeMap<u64, (String, Result<(), String>)>,
     /// Batch-local projection of cash / positions including not yet confirmed intents.
     proj_cash: f64,
     proj_qty: Vec<f64>,
@@ -484,6 +496,7 @@ impl Book {
             id_index: HashMap::new(),
             open_floor: 0,
             pending: HashMap::new(),
+            reported: std::collections::BTreeMap::new(),
             events: Vec::new(),
             order_seq: 0,
             fill_seq: 0,
@@ -846,7 +859,13 @@ impl Book {
                         if let Some(intent) =
                             self.try_fill(index, price, reason, time_ms, bar_index)
                         {
+                            let entry = self.orders[index].role == OrderRole::Entry;
                             intents.push(intent);
+                            if entry && self.cfg.attached_exit_same_bar {
+                                intents.extend(
+                                    self.same_bar_exit(index, price, bar, bar_index, time_ms),
+                                );
+                            }
                         }
                     }
                     Match::Triggered => {
@@ -1055,6 +1074,68 @@ impl Book {
         } else {
             Err("invalid_trail")
         }
+    }
+
+    /// `attached_exit_same_bar`: after an entry filled at `entry` inside `bar`, its attached
+    /// exits may trigger on the rest of that bar. Stop first: if the bar's range reaches the
+    /// stop the stop fills (at the stop, or at the entry price if the entry is already
+    /// through it), otherwise the target may fill.
+    fn same_bar_exit(
+        &mut self,
+        parent: usize,
+        entry: f64,
+        bar: &Bar,
+        bar_index: usize,
+        time_ms: i64,
+    ) -> Option<FillIntent> {
+        let id = self.orders[parent].id.clone();
+        let long = self.orders[parent].side == ActionSide::Buy;
+        let qty = self
+            .pending
+            .values()
+            .filter(|p| p.order == parent)
+            .map(|p| p.qty)
+            .sum::<f64>();
+
+        let stop = self.find_child(&id, OrderRole::StopLoss).and_then(|child| {
+            let level = self.orders[child].trigger?;
+            let hit = if long {
+                bar.low <= level
+            } else {
+                bar.high >= level
+            };
+            let price = if long {
+                level.min(entry)
+            } else {
+                level.max(entry)
+            };
+            hit.then_some((child, price, self.orders[child].stop_reason()))
+        });
+        let target = || {
+            self.find_child(&id, OrderRole::TakeProfit)
+                .and_then(|child| {
+                    let level = self.orders[child].price?;
+                    let hit = if long {
+                        bar.high >= level
+                    } else {
+                        bar.low <= level
+                    };
+                    let price = if long {
+                        level.max(entry)
+                    } else {
+                        level.min(entry)
+                    };
+                    hit.then_some((child, price, FillReason::TakeProfit))
+                })
+        };
+        let (child, price, reason) = stop.or_else(target)?;
+
+        let order = &mut self.orders[child];
+        order.status = OrderStatus::Open;
+        order.active_from_bar = bar_index;
+        order.qty = qty;
+        order.updated_ms = time_ms;
+        self.try_fill(child, price, reason, time_ms, bar_index)
     }
 
     /// Open, active OCO sibling of a bracket exit.
@@ -2126,8 +2207,31 @@ impl Book {
         }
     }
 
+    /// Record barter's outcome for `fill_id` (`Err(reason)` = refused). Outcomes are applied
+    /// in fill-sequence order, whatever order barter reports them in, so the portfolio and
+    /// the event stream are deterministic.
+    pub fn report(&mut self, fill_id: &str, outcome: Result<(), String>) {
+        if self.pending.contains_key(fill_id) {
+            self.reported
+                .insert(fill_seq(fill_id), (fill_id.to_string(), outcome));
+        }
+        self.drain_reports();
+    }
+
+    fn drain_reports(&mut self) {
+        while let Some(next) = self.pending.keys().map(|id| fill_seq(id)).min() {
+            let Some((fill_id, outcome)) = self.reported.remove(&next) else {
+                break;
+            };
+            match outcome {
+                Ok(()) => self.confirm(&fill_id),
+                Err(reason) => self.fail(&fill_id, &reason),
+            };
+        }
+    }
+
     /// barter executed `fill_id`: apply it to the portfolio.
-    pub fn confirm(&mut self, fill_id: &str) -> bool {
+    fn confirm(&mut self, fill_id: &str) -> bool {
         let Some(intent) = self.pending.remove(fill_id) else {
             return false;
         };
@@ -2175,7 +2279,9 @@ impl Book {
         let Some(intent) = self.pending.remove(fill_id) else {
             return false;
         };
+        self.reported.remove(&fill_seq(fill_id));
         self.close_order(intent.order, OrderStatus::Rejected, reason, intent.time_ms);
+        self.drain_reports();
         true
     }
 }

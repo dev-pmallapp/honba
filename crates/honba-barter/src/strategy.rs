@@ -298,9 +298,11 @@ impl AlgoStrategy for DeciderStrategy {
         // Apply execution reports barter produced since the last call
         for report in &state.global.reports[run.cursor.min(state.global.reports.len())..] {
             match &report.outcome {
-                ExecutionOutcome::Filled { .. } => run.book.confirm(&report.fill_id),
-                ExecutionOutcome::Failed { reason } => run.book.fail(&report.fill_id, reason),
-            };
+                ExecutionOutcome::Filled { .. } => run.book.report(&report.fill_id, Ok(())),
+                ExecutionOutcome::Failed { reason } => {
+                    run.book.report(&report.fill_id, Err(reason.clone()))
+                }
+            }
         }
         run.cursor = state.global.reports.len();
 

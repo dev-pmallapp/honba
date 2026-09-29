@@ -291,3 +291,73 @@ fn modifying_exits_of_a_closed_position_is_rejected() {
     assert!(report.orders.iter().all(|o| o.id != "o1:sl"));
     assert!(seen[3].open_orders.is_empty());
 }
+
+fn same_bar(enabled: bool, bar: (f64, f64, f64, f64)) -> Vec<(String, f64, FillReason)> {
+    let bars = daily(&[
+        (100.0, 100.0, 100.0, 100.0),
+        bar,
+        (100.0, 100.0, 100.0, 100.0),
+    ]);
+    let cfg = BacktestConfig {
+        attached_exit_same_bar: enabled,
+        ..config(&["SBIN"])
+    };
+    let (report, seen) = run(
+        cfg,
+        "SBIN",
+        bars,
+        [(
+            0,
+            vec![OrderRequest::market("SBIN", ActionSide::Buy, 10.0)
+                .limit(99.0)
+                .with_id("E")
+                .stop_loss(95.0)
+                .take_profit(105.0)
+                .into()],
+        )],
+    );
+    // exactly one terminal event per order
+    for order in &report.orders {
+        let terminal = seen
+            .iter()
+            .flat_map(|s| &s.events)
+            .filter(|e| match e {
+                Event::Fill(f) => f.id == order.id,
+                Event::Cancel { id, .. } | Event::Expire { id, .. } => id == &order.id,
+                _ => false,
+            })
+            .count();
+        assert!(terminal <= 1, "{} has {terminal} terminal events", order.id);
+    }
+    fills(&seen[1].events)
+        .iter()
+        .map(|f| (f.id.clone(), f.price, f.reason))
+        .collect()
+}
+
+#[test]
+fn attached_exits_on_the_entry_bar_when_enabled() {
+    // Entry limit 99 fills intrabar; the bar also reaches the stop 95
+    let bar = (100.0, 101.0, 94.0, 96.0);
+    assert_eq!(
+        same_bar(false, bar),
+        [("E".into(), 99.0, FillReason::Limit)]
+    );
+    assert_eq!(
+        same_bar(true, bar),
+        [
+            ("E".into(), 99.0, FillReason::Limit),
+            ("E:sl".into(), 95.0, FillReason::StopLoss)
+        ]
+    );
+    // Both stop and target inside the entry bar: stop first
+    assert_eq!(
+        same_bar(true, (100.0, 106.0, 94.0, 100.0))[1],
+        ("E:sl".into(), 95.0, FillReason::StopLoss)
+    );
+    // Only the target
+    assert_eq!(
+        same_bar(true, (100.0, 106.0, 98.0, 104.0))[1],
+        ("E:tp".into(), 105.0, FillReason::TakeProfit)
+    );
+}

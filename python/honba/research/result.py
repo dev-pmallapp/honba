@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from functools import cached_property
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -14,6 +15,7 @@ from honba.strategy.types import IST, Fill, Order, Position, Reject, RoundTrip
 from .config import BacktestConfig
 from .engine import BacktestReport
 from .metrics import Metrics, compute_metrics, drawdown_series
+from .montecarlo import MonteCarloResult, monte_carlo_trades
 
 __all__ = ["BacktestResult"]
 
@@ -39,6 +41,7 @@ class BacktestResult:
     params: dict[str, Any] = field(default_factory=dict)
     logs: list[tuple[int, str]] = field(default_factory=list)
     strategy: str = ""
+    order_groups: dict[str, str] = field(default_factory=dict)
 
     @property
     def raw(self) -> Any:
@@ -127,7 +130,10 @@ class BacktestResult:
         realised_pnl (gross), product, tag, reason.
         """
         rows = [_fill_row(f) for f in self.report.fills]
-        return _frame(rows, "time_ms")
+        frame = _frame(rows, "time_ms")
+        if self.order_groups and len(frame):
+            frame["group"] = [self._group_of(o) for o in frame.order_id]
+        return frame
 
     @property
     def trades(self) -> pd.DataFrame:
@@ -158,13 +164,71 @@ class BacktestResult:
             }
             for t in self.round_trips
         ]
-        return pd.DataFrame(rows)
+        frame = pd.DataFrame(rows)
+        if self.order_groups and len(frame):
+            frame["group"] = self._trip_groups()
+        return frame
 
     @property
     def orders(self) -> pd.DataFrame:
         """Every accepted order with its final state."""
         rows = [_order_row(o) for o in self.report.orders]
-        return pd.DataFrame(rows)
+        frame = pd.DataFrame(rows)
+        if self.order_groups and len(frame):
+            frame["group"] = [self._group_of(o) for o in frame["id"]]
+        return frame
+
+    def _group_of(self, order_id: str) -> str | None:
+        """Group of an order; attached exits (``<id>:sl`` / ``<id>:tp``) inherit it."""
+        return self.order_groups.get(order_id) or self.order_groups.get(order_id.split(":")[0])
+
+    def _trip_groups(self) -> list[str | None]:
+        """Group of each round trip: that of its first entry fill."""
+        first: dict[tuple[str, int], str | None] = {}
+        for f in self.report.fills:
+            first.setdefault((f.symbol, f.time_ms), self._group_of(f.order_id))
+        return [first.get((t.symbol, t.entry_time_ms)) for t in self.round_trips]
+
+    @property
+    def groups(self) -> pd.DataFrame:
+        """Per basket / group (orders placed with ``group=``) round-trip results.
+
+        Indexed by group (ungrouped trades under ``"-"``): ``trades``, ``wins``,
+        ``win_rate``, ``gross_pnl``, ``costs``, ``pnl``, ``symbols``. Empty when no order
+        carried a group.
+        """
+        cols = ["trades", "wins", "win_rate", "gross_pnl", "costs", "pnl", "symbols"]
+        if not self.order_groups:
+            return pd.DataFrame(columns=cols).rename_axis("group")
+        rows: dict[str, dict[str, Any]] = {}
+        for trip, grp in zip(self.round_trips, self._trip_groups(), strict=True):
+            row = rows.setdefault(
+                grp or "-",
+                {"trades": 0, "wins": 0, "gross_pnl": 0.0, "costs": 0.0, "pnl": 0.0, "sy": set()},
+            )
+            row["trades"] += 1
+            row["wins"] += trip.pnl > 0
+            row["gross_pnl"] += trip.gross_pnl
+            row["costs"] += trip.costs
+            row["pnl"] += trip.pnl
+            row["sy"].add(trip.symbol)
+        for row in rows.values():
+            row["win_rate"] = row["wins"] / row["trades"] if row["trades"] else None
+            row["symbols"] = ",".join(sorted(row.pop("sy")))
+        frame = pd.DataFrame.from_dict(rows, orient="index", columns=cols)
+        return frame.rename_axis("group").sort_index()
+
+    @property
+    def log_frame(self) -> pd.DataFrame:
+        """``Strategy.log`` lines as a DataFrame: ``time`` (IST bar time), ``message``."""
+        if not self.logs:
+            return pd.DataFrame(columns=["time", "message"])
+        return pd.DataFrame(
+            {
+                "time": _time_index([t for t, _ in self.logs]),
+                "message": [m for _, m in self.logs],
+            }
+        )
 
     @property
     def rejected(self) -> pd.DataFrame:
@@ -186,6 +250,88 @@ class BacktestResult:
     def instruments(self) -> dict[str, dict[str, Any]]:
         """Per-symbol engine metrics."""
         return dict(self.report.instruments)
+
+    def monte_carlo(
+        self,
+        n: int = 1000,
+        method: str = "shuffle",
+        *,
+        block: int | None = None,
+        ruin: float = 0.5,
+        seed: int | None = None,
+        keep_paths: bool = False,
+    ) -> MonteCarloResult:
+        """Monte Carlo over the net round-trip PnLs (see :mod:`honba.research.montecarlo`).
+
+        ``method`` is ``shuffle`` (reorder), ``resample`` (bootstrap) or ``block`` (moving-block
+        bootstrap of ``block`` trades); ``ruin`` the loss fraction of ``config.capital`` that
+        counts as ruin. Returns drawdown / return / ruin distributions and percentiles.
+        """
+        return monte_carlo_trades(
+            [t.pnl for t in self.round_trips],
+            self.config.capital,
+            n=n,
+            method=method,  # type: ignore[arg-type]
+            block=block,
+            ruin=ruin,
+            seed=seed,
+            keep_paths=keep_paths,
+        )
+
+    def benchmark_metrics(self, benchmark: Any) -> dict[str, Any]:
+        """Alpha, beta, correlation, tracking error, information ratio vs ``benchmark``.
+
+        ``benchmark`` is a price Series indexed by time (naive = IST) or a frame with
+        ``close``; see :func:`honba.research.report.benchmark_metrics`.
+        """
+        from .report import benchmark_metrics
+
+        return benchmark_metrics(self, benchmark)
+
+    def to_dict(self, *, benchmark: Any = None, include_fills: bool = False) -> dict[str, Any]:
+        """JSON-friendly report (schema ``honba.backtest/1``, see :mod:`honba.research.report`)."""
+        from .report import report_dict
+
+        return report_dict(self, benchmark=benchmark, include_fills=include_fills)
+
+    def to_json(
+        self,
+        path: str | Path | None = None,
+        *,
+        benchmark: Any = None,
+        include_fills: bool = False,
+        indent: int | None = None,
+    ) -> str:
+        """The :meth:`to_dict` report as JSON (NaN -> null), also written to ``path``."""
+        from .report import to_json
+
+        return to_json(self, path, benchmark=benchmark, include_fills=include_fills, indent=indent)
+
+    def tearsheet(
+        self,
+        path: str | Path | None = None,
+        *,
+        benchmark: Any = None,
+        benchmark_name: str = "Benchmark",
+        title: str | None = None,
+        charts: str = "auto",
+    ) -> str:
+        """Self-contained HTML tearsheet; written to ``path`` when given, returned as a string.
+
+        Equity (with ``benchmark`` rebased to the capital), drawdown, monthly-returns heatmap,
+        risk / trade metrics, benchmark-relative metrics, groups, trade list and log. ``charts``
+        is ``"auto"`` (Plotly when installed, else inline SVG), ``"plotly"`` or ``"svg"``.
+        """
+        from .report import write_tearsheet
+
+        return write_tearsheet(
+            self,
+            path,
+            benchmark=benchmark,
+            benchmark_name=benchmark_name,
+            title=title,
+            charts=charts,
+        )
 
     def metric(self, name: str, default: Any = None) -> Any:
         """One value by name: SDK :attr:`metrics` first, then the engine summary."""

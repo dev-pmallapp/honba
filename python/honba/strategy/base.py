@@ -20,8 +20,11 @@ hook) returns. Nothing here knows which engine executes the orders.
 
 from __future__ import annotations
 
+import inspect
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from .actions import (
@@ -52,7 +55,7 @@ from .types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from datetime import datetime
 
 __all__ = ["OrderHandle", "Strategy"]
@@ -166,6 +169,8 @@ class Strategy(ABC):
         self._logs: list[tuple[int, str]] = []
         self._pending_rejects: list[Reject] = []
         self._seq = 0
+        self._groups: dict[str, str] = {}
+        self._group: str | None = None
 
     # -- declared parameters -----------------------------------------------------------------
 
@@ -199,6 +204,16 @@ class Strategy(ABC):
 
     def on_cancel(self, cancel: Cancel) -> None:
         """An order was cancelled or expired (``cancel.kind`` tells which)."""
+
+    def filters(self) -> Sequence[Callable[..., bool]]:
+        """Entry filters: callables that must all return True for a new entry to be sent.
+
+        Override to return e.g. ``[self.trend_up, self.not_expiry_day]``. A filter takes no
+        arguments or ``(symbol, side)``. Only orders that open or add to a position are gated;
+        exits and reductions always pass, and a reversal is trimmed to a plain exit. Blocked
+        entries return ``None`` and leave a log line naming the filter.
+        """
+        return ()
 
     # -- state -------------------------------------------------------------------------------
 
@@ -285,8 +300,27 @@ class Strategy(ABC):
         ]
 
     def log(self, message: str) -> None:
-        """Record a line tagged with the bar time (kept in ``BacktestResult.logs``)."""
+        """Record a line tagged with the bar time (``BacktestResult.logs`` / ``log_frame``)."""
         self._logs.append((self._ctx.time_ms if self._ctx else 0, str(message)))
+
+    @contextmanager
+    def group(self, name: str) -> Iterator[None]:
+        """Tag every order placed inside the block with basket / group ``name``.
+
+        ::
+
+            with self.group("pair-HDFC-ICICI"):
+                self.buy(10, "HDFCBANK")
+                self.sell(12, "ICICIBANK")
+
+        An explicit ``group=`` on an order wins. Results aggregate by group
+        (``BacktestResult.groups``) and carry it on fills, orders and trades.
+        """
+        previous, self._group = self._group, str(name)
+        try:
+            yield
+        finally:
+            self._group = previous
 
     # -- orders ------------------------------------------------------------------------------
 
@@ -315,6 +349,7 @@ class Strategy(ABC):
         trail: Trail | None = None,
         reduce_only: bool = False,
         id: str | None = None,
+        group: str | None = None,
     ) -> OrderHandle | None:
         """Place an order and return its handle.
 
@@ -327,7 +362,9 @@ class Strategy(ABC):
         ``stop_loss`` / ``take_profit`` attach OCO exits that go live when the entry fills;
         ``trail`` (a :class:`Trail`) makes the attached stop trail the price, or on a
         stop order without ``stop_loss`` trails its own trigger. Prices are rounded to the
-        tick and ``qty`` down to whole lots.
+        tick and ``qty`` down to whole lots. ``group`` tags the order (and its attached exits)
+        with a basket name for reporting; see :meth:`group`. Entries are gated by
+        :meth:`filters`.
         """
         if side not in ("buy", "sell"):
             raise ValueError("side must be 'buy' or 'sell'")
@@ -342,6 +379,10 @@ class Strategy(ABC):
         if lots <= 0:
             self.log(f"skipped {side} {sym}: qty {qty:g} is below one lot ({inst.lot_size:g})")
             return None
+        if not reduce_only:
+            lots = self._apply_filters(sym, side, lots)
+            if lots <= 0:
+                return None
         order_id = id or self._next_id()
         action = PlaceOrder(
             order_id,
@@ -359,7 +400,11 @@ class Strategy(ABC):
             trail,
             reduce_only,
         )
-        return self._submit(action, sym)
+        handle = self._submit(action, sym)
+        tag_group = group if group is not None else self._group
+        if handle is not None and tag_group is not None:
+            self._groups[order_id] = str(tag_group)
+        return handle
 
     def target(
         self,
@@ -476,6 +521,37 @@ class Strategy(ABC):
         if kind != inferred and not (kind == "stop" and trail is not None):
             raise ValueError(f"kind={kind!r} does not match the prices given (limit/stop)")
         return kind
+
+    def _apply_filters(self, sym: str, side: str, lots: float) -> float:
+        """Quantity that may be sent once entry filters ran (0 = blocked)."""
+        checks = self.filters()
+        if not checks:
+            return lots
+        current = self._positions[sym].qty + self._queued_net.get(sym, 0.0)
+        signed = lots if side == "buy" else -lots
+        if abs(current) > _LOT_EPS and current * signed < 0:
+            if lots <= abs(current) + _LOT_EPS:
+                return lots  # pure exit / reduction
+            closing = abs(current)  # reversal: the part beyond flat is an entry
+        else:
+            closing = 0.0
+        for check in checks:
+            if not self._call_filter(check, sym, side):
+                name = getattr(check, "__name__", type(check).__name__)
+                if closing:
+                    self.log(f"filter {name} blocked the reversal of {sym}: exit only")
+                    return closing
+                self.log(f"filter {name} blocked {side} {lots:g} {sym}")
+                return 0.0
+        return lots
+
+    @staticmethod
+    def _call_filter(check: Callable[..., bool], sym: str, side: str) -> bool:
+        try:
+            takes_args = len(inspect.signature(check).parameters) > 0
+        except (TypeError, ValueError):
+            takes_args = False
+        return bool(check(sym, side) if takes_args else check())
 
     def _submit(self, action: PlaceOrder, sym: str) -> OrderHandle | None:
         if self._ctx is not None and self._ctx.warmup:

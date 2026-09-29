@@ -69,6 +69,9 @@ keyring = [
 mcp = [
     "mcp>=1.2",
 ]
+report = [
+    "plotly>=5",
+]
 
 [project.scripts]
 honba-mcp = "honba.mcp.server:main"

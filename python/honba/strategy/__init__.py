@@ -7,6 +7,7 @@ from .capabilities import EngineCapabilities, UnsupportedFeature
 from .market import Instrument, TradingSession
 from .mtf import Resampler, Timeframe
 from .params import Param
+from .portfolio import PortfolioStrategy
 from .roundtrip import RoundTripTracker, round_trips_from_fills
 from .runner import StrategyRunner
 from .series import BarBuffer, Bars
@@ -59,6 +60,7 @@ __all__ = [
     "OrderHandle",
     "Param",
     "PlaceOrder",
+    "PortfolioStrategy",
     "Position",
     "Reject",
     "RejectReason",

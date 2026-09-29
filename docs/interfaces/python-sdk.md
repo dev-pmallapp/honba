@@ -6,7 +6,7 @@ package with `pip install -e .` and build the engine once with `maturin develop`
 `[tool.maturin]`, module `honba._core`). See `feature-parity.md` for the feature matrix.
 
 ```python
-import honba as hb          # Strategy, Param, Trail, backtest, sweep, ta, ...
+import honba as hb          # Strategy, PortfolioStrategy, Param, Trail, backtest, sweep, optimize, walk_forward, ta, ...
 ```
 
 Layers (import-linter contracts in `pyproject.toml`):
@@ -205,6 +205,117 @@ grid.attrs["n_trials"]; grid.attrs["results"]     # trial count for the DSR audi
 anything runs. Strategy callbacks are Python and hold the GIL, so threads (and the Rust
 `run_sweep`) do not help: `jobs > 1` runs combinations in separate spawn processes, which needs
 a module-level strategy class and an engine given by name.
+
+## Research depth
+
+Optional dependencies: `pip install 'honba[ml]'` (Optuna, for `optimize` / `walk_forward`) and
+`pip install 'honba[report]'` (Plotly, for tearsheet charts; inline SVG otherwise). Both are
+imported lazily with a clear error.
+
+### Entry filters, groups, logs
+
+```python
+class Breakout(hb.Strategy):
+    def filters(self):                           # all must pass for an entry to be sent
+        return [self.trend_up, self.liquid]
+
+    def trend_up(self): return self.history().close[-1] > hb.ta.sma(self.history().close, 50)
+    def liquid(self, symbol, side): return self.history(symbol).volume[-1] > 1e5  # (symbol, side) optional
+
+    def on_bar(self, ctx):
+        with self.group("pair-HDFC-ICICI"):      # basket tag for every order in the block
+            self.buy(10, "HDFCBANK"); self.sell(12, "ICICIBANK")
+        self.buy(5, "SBIN", group="momentum")    # explicit group wins
+        self.log("rebalanced")                   # tagged with the bar time
+```
+
+Filters gate orders that open or add to a position; exits and reductions always pass and a
+reversal is trimmed to the exit. A blocked entry returns `None` and logs `filter <name>
+blocked ...`. Groups land on `res.fills` / `res.orders` / `res.trades` (`group` column;
+attached `:sl` / `:tp` exits inherit it, a trade takes its entry's group) and `res.groups`
+aggregates round trips per group (`trades wins win_rate gross_pnl costs pnl symbols`;
+ungrouped under `-`). `res.log_frame` is the log as a DataFrame (`time` IST, `message`).
+
+### Portfolio strategies
+
+```python
+class Momentum(hb.PortfolioStrategy):
+    universe = ("RELIANCE", "TCS", "INFY", "HDFCBANK")    # empty = every symbol of the run
+    rebalance_every = "month"                             # "bar" | "day" | "week" | "month" | N bars | None
+    top = hb.Param(2, low=1, high=4)
+
+    def on_rebalance(self, ctx):
+        ranked = sorted(self.tradable(), key=lambda s: self.history(s).close[-1] / self.history(s).close[0])
+        self.state["last"] = ranked                       # shared across symbols: one instance
+        self.rebalance({s: 0.95 / self.top for s in ranked[-self.top:]}, tolerance=0.02)
+```
+
+`rebalance(weights, *, tolerance=0, close_others=True, max_gross=1.0, group="rebalance",
+**target_kwargs)` turns signed target weights (fractions of equity at the latest close) into
+`target()` orders, reductions first so they free cash at the same close; unlisted positions
+are closed. `members()` is the universe within the run, `tradable()` the members with a
+fresh bar, `weights()` the current weights. The schedule skips warm-up bars; weeks start on
+Monday, months on the first bar of the IST month.
+
+### Optimisation and walk-forward
+
+```python
+opt = hb.optimize(Breakout, data, cfg,
+                  space=None,                  # every bounded Param; or ["lookback"], or {"lookback": (10, 40), "mode": ["a", "b"]}
+                  objective="sharpe",          # sortino | calmar | net_pnl | any Metrics field | callable(result) -> float
+                  n_trials=100, sampler="tpe", seed=7,       # "random" | "grid" | an optuna sampler
+                  train=0.7,                   # or a split date; the test run warms up on the train bars
+                  constraint=lambda p: p["fast"] < p["slow"])
+opt.best_params, opt.best_value, opt.best, opt.test, opt.test_value, opt.trials
+opt.n_trials                                   # distinct configurations backtested (the DSR's N)
+opt.deflated_sharpe                            # Rust honba-overfit via the adapter; numpy fallback
+opt.pbo(n_splits=8).pbo                        # CSCV over the daily returns of every trial
+
+wf = hb.walk_forward(Breakout, data, cfg, train_bars=500, test_bars=100, step=None, anchored=False,
+                     n_trials=40, seed=7)
+wf.folds          # fold windows, param_<name>, is_value, oos_value, oos_net_pnl, n_trials
+wf.equity         # stitched out-of-sample equity (each fold compounds on the previous)
+wf.metrics, wf.efficiency, wf.in_sample, wf.out_of_sample
+```
+
+Trials run sequentially (strategy callbacks hold the GIL); repeated suggestions are backtested
+once. `direction` defaults to maximise (minimise for `max_drawdown`-like metrics). Walk-forward
+test windows replay their train window as warm-up, so no test bar is seen during its fold's
+optimisation. `honba.research.overfit` exposes the statistics directly: `dsr(sr, n_trials,
+var_trials, n_obs, skew, kurtosis)`, `deflated_sharpe(returns, n_trials=, trial_sharpes=)`,
+`pbo(is_perf, oos_perf)`, `cscv_pbo(returns_matrix, n_splits=8)`, `overfit_backend()`. The Rust
+code is resolved by name (`honba.research._barter_adapter:OverfitCore`), so the module stays
+engine-neutral.
+
+### Monte Carlo on trades
+
+```python
+mc = res.monte_carlo(n=5000, method="shuffle", seed=1, ruin=0.5)   # "resample" | "block" (block=)
+mc.ruin_probability            # share of paths that lost `ruin` of the starting capital
+mc.percentiles()               # p5..p95 of total_return, max_drawdown, final_equity
+mc.drawdown_probability(0.2); mc.original; mc.to_frame(); mc.summary()
+```
+
+Pure numpy over the net round-trip PnLs (additive equity paths from `config.capital`).
+`shuffle` keeps the final PnL and varies the path; `resample` bootstraps trades; `block`
+bootstraps runs of consecutive trades (streaks).
+
+### Reports
+
+```python
+res.tearsheet("report.html", benchmark=nifty_close, benchmark_name="NIFTY 50")   # charts="auto" | "plotly" | "svg"
+res.to_json("report.json", benchmark=nifty_close, include_fills=True)           # schema honba.backtest/1
+res.benchmark_metrics(nifty_close)   # alpha beta correlation tracking_error information_ratio up/down_capture ...
+```
+
+The tearsheet is one self-contained HTML file (KPI tiles, equity with the benchmark rebased to
+the capital, drawdown, monthly-returns heatmap, risk and trade metrics, benchmark metrics,
+groups, trade list, log; light and dark). With Plotly the library is inlined (no CDN); without
+it charts are inline SVG with hover tooltips. `to_json` / `to_dict` give the same content for
+web2 and MCP: `schema strategy engine params config period summary costs metrics equity
+monthly_returns trades logs [groups benchmark fills]`, NaN as `null`, times ISO 8601 IST,
+durations in seconds. The benchmark is a price Series (naive index = IST) or a frame with
+`close`; metrics use the sessions both cover.
 
 ## Engines
 

@@ -39,7 +39,7 @@ from honba.strategy.types import (
 from .config import BacktestConfig, MarginConfig
 from .engine import BacktestReport, BacktestRequest, BarHandler, ReportSummary
 
-__all__ = ["BarterEngine"]
+__all__ = ["BarterEngine", "OverfitCore"]
 
 _CAPABILITIES = EngineCapabilities(
     name="barter",
@@ -449,3 +449,34 @@ class BarterEngine:
 
         raw = _core.run_backtest(json.dumps(config), candles, handler)
         return report_from_wire(json.loads(raw) if isinstance(raw, (str, bytes)) else dict(raw))
+
+
+class OverfitCore:
+    """Deflated Sharpe / PBO from the Rust ``honba-overfit`` crate (``honba.research.overfit``).
+
+    Resolved by name from the neutral ``overfit`` module, which falls back to Python when the
+    extension is not built (``_load_core`` raises ``RuntimeError``).
+    """
+
+    name = "core"
+
+    def __init__(self) -> None:
+        self._core = _load_core()
+
+    def dsr(
+        self,
+        observed_sharpe: float,
+        n_trials: int,
+        var_trials: float,
+        n_obs: int,
+        skew: float,
+        kurtosis: float,
+    ) -> float:
+        """``_core.calculate_dsr``."""
+        return float(
+            self._core.calculate_dsr(observed_sharpe, n_trials, var_trials, n_obs, skew, kurtosis)
+        )
+
+    def pbo(self, is_perf: list[float], oos_perf: list[float]) -> float:
+        """``_core.calculate_pbo``."""
+        return float(self._core.calculate_pbo(list(is_perf), list(oos_perf)))

@@ -105,24 +105,32 @@ features = ["pyo3/extension-module"]
 # ---------------------------------------------------------------------------
 # Architectural boundaries - enforced in CI, not by good intentions.
 #
-# The barter-rs engine (compiled extension ``honba._core``) is reached from
-# Python through exactly one module, ``honba.research._barter_adapter``. The
-# research layer otherwise speaks DataFrames, so the engine can change without
-# touching strategies or analysis code. The Indian dataset is kept in our own
-# Parquet schema.
+# The SDK is backend-agnostic: strategies and results speak SDK-owned types
+# (``honba.strategy.types``) and engines plug in behind ``honba.research.engine``. The
+# barter-rs engine (compiled extension ``honba._core``) is reached through exactly one
+# module, ``honba.research._barter_adapter``. import-linter only sees ``.py`` modules, so it
+# cannot express "only the adapter imports honba._core" directly (the extension resolves to the
+# ``honba`` root package, which no contract can forbid); ``tests/test_engine_boundary.py`` scans
+# the sources for ``_core`` instead, and the contracts below keep every neutral layer from
+# importing an engine module.
 #
-# Run: lint-imports
+# Run (from ``python/``): lint-imports --config ../pyproject.toml
 # ---------------------------------------------------------------------------
 [tool.importlinter]
 root_package = "honba"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Only research._barter_adapter may import the barter engine (honba._core)"
+name = "Neutral layers never import an engine implementation"
 type = "forbidden"
 source_modules = ["honba"]
-forbidden_modules = ["honba._core"]
-ignore_imports = ["honba.research._barter_adapter -> honba._core"]
+forbidden_modules = ["honba.research._barter_adapter", "honba.research.simple_engine"]
+
+[[tool.importlinter.contracts]]
+name = "Strategy layer is engine-neutral (does not import honba.research)"
+type = "forbidden"
+source_modules = ["honba.strategy"]
+forbidden_modules = ["honba.research"]
 
 [[tool.importlinter.contracts]]
 name = "Research layer is engine-free (no nautilus_trader anywhere)"

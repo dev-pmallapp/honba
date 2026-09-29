@@ -20,3 +20,9 @@ Honba embeds a high-performance JSON-RPC Model Context Protocol (MCP) server, al
    - Performs Bayesian or Genetic hyperparameter search across designated ranges.
 6. **`honba_generate_report`**:
    - Outputs interactive HTML/PDF tearsheets with equity curves and risk diagnostics.
+
+---
+
+## Implementation status
+
+The SDK ships the server as `honba.mcp` (`honba-mcp`); the implemented tool names are `import_data`, `list_instruments`, `list_strategies`, `write_strategy`, `run_backtest`, `get_report`, `run_sweep` and `overfit_audit` (a hook for the DSR / PBO backend). See the "MCP server" section of [`python-sdk.md`](python-sdk.md). The names above are the target design.

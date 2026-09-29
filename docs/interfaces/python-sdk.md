@@ -346,6 +346,36 @@ for q in hb.split_order(qty, self.instrument().freeze_qty, self.instrument().lot
     self.buy(qty=q)                             # when the engine has no native order splitting
 ```
 
+## MCP server (`honba.mcp`)
+
+`pip install 'honba[mcp]'`, then `honba-mcp` (or `python -m honba.mcp`) serves stdio; add
+`--home DIR` or `$HONBA_HOME` (default `~/.honba`) to choose the sandbox. Both the official `mcp`
+2.x (`MCPServer`) and 1.x (`FastMCP`) SDKs work; it is imported lazily. All tool logic is plain
+Python in `honba.mcp.tools.HonbaTools`, usable (and tested) without the SDK.
+
+| Tool | Does |
+|---|---|
+| `import_data(symbol, timeframe, source, path, start, end)` | CSV / Parquet from `imports/` or Dhan history into the `CandleStore` (`data/`); validated |
+| `list_instruments(query, segment, limit)` | search `instruments.csv` (Dhan scrip master) and list stored datasets |
+| `write_strategy(name, code)` / `list_strategies()` | validate and save a `honba.Strategy` file in `strategies/` |
+| `run_backtest(strategy, symbols, timeframe, ...)` | backtest on stored candles; returns `run_id` and the summary |
+| `get_report(run_id)` | metrics, summary and trades as JSON (persisted in `reports/`) |
+| `run_sweep(strategy, symbols, timeframe, grid, ...)` | parameter grid; returns the best rows and `n_trials` |
+| `overfit_audit(run_id)` | DSR / PBO of a sweep through a backend hook (below) |
+
+The workspace is the sandbox: agents import files only from `imports/` (absolute paths and `..`
+are refused), strategies are loaded only from `strategies/`, and every saved or loaded strategy
+passes a static guard (`honba.mcp.sandbox`): imports limited to `honba`, numpy, pandas and pure
+stdlib modules, no `eval` / `exec` / `open` / `getattr` / dunder access / pandas or numpy file I/O,
+exactly one `Strategy` subclass, `honba.data` unavailable. This stops accidents and casual abuse;
+it is not a security boundary against a determined adversary (strategy code runs in the server
+process), so run the server in a container for untrusted agents.
+
+Overfit hook: `overfit_audit` calls the backend given to `honba.mcp.register_overfit_backend(fn)`
+(`fn(sweep_frame) -> dict`; the frame has `attrs["n_trials"]` and `attrs["results"]`), else
+`honba.research.overfit_audit` / `honba.overfit_audit` if the SDK gains one; until then it returns
+`{"available": false, "n_trials": N}`.
+
 ## Development
 
 ```bash

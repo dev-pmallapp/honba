@@ -70,6 +70,9 @@ mcp = [
     "mcp>=1.2",
 ]
 
+[project.scripts]
+honba-mcp = "honba.mcp.server:main"
+
 [tool.pyright]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"

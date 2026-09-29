@@ -75,7 +75,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | J33 | Live / paper trading parity (same strategy code) | none | Engine (barter live) + `honba-dhan` | P2 | Same `Strategy` class runs on a live runner: barter engine + Dhan execution client + Dhan websocket data. Daily token expiry / re-login. |
 | J34 | Notifications (Telegram/Discord/Slack) | none | Out (P2) | P2 | Live only. |
 | J35 | ML pipeline (`record_features`, `ml_predict`, export) | none | SDK | P2 | Feature/label recording hook in strategy; fits with `docs/research/llm-ml-enhancement.md`. |
-| J36 | MCP server for AI agents | draft (stub) | SDK (`honba.mcp`) | P1 | Tools: import data, write/run strategy, report, optimise, overfit audit. |
+| J36 | MCP server for AI agents | partial (`honba.mcp` implemented: import, list, write/run strategy, report, sweep; overfit audit is a hook awaiting the DSR/PBO backend) | SDK (`honba.mcp`) | P1 | Tools: import data, write/run strategy, report, optimise, overfit audit. |
 | J37 | Web dashboard / CLI parity | draft (CLI stub) | Out for SDK | P2 | `honba.cli` wraps the SDK; web2 consumes report JSON. |
 
 ### 1.2 OpenAlgo
@@ -110,7 +110,7 @@ cash, positions or must be identical in live), **Bridge** = PyO3 `_core` contrac
 | O26 | Indian costs breakdown (STT, GST, stamp, exchange, SEBI) | done | Engine | P0 | See 1.3. |
 | O27 | Broker abstraction (36 brokers) | none | Out | - | honba targets Dhan first; the execution-client boundary is barter's `ExecutionClient`. |
 | O28 | Secure credential storage (OS keyring), daily session expiry | draft | `honba-dhan` | P2 | Keyring storage exists; add expiry/re-login. |
-| O29 | MCP server / AI agent | draft (stub) | SDK | P1 | Same as J36. |
+| O29 | MCP server / AI agent | partial (see J36) | SDK | P1 | Same as J36. |
 
 ### 1.3 Indian-market mechanics that cut across rows
 

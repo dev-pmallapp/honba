@@ -11,15 +11,22 @@ philosophy. Components named from Japanese candlestick and market tradition.
 
 ## What
 
-honba is a desktop-first, dark-mode research workbench for Indian equities,
-futures & options (F&O), commodities (MCX), and digital assets. It combines:
+honba is a desktop-first, themed GUI research workbench for Indian equities,
+futures & options (F&O), MF, Universes, commodities (MCX), and digital assets. 
+It combines:
 
 - **Nautilus Trader's** Rust-backed, event-driven simulation engine (tick-level
   fidelity, multi-venue, full option chain + Greeks support) as the execution
   and backtesting kernel.
+- **Barter-rs** An alternative Backend for engine.
 - **Jesse AI's** progressive validation discipline — hypothesis → statistical
   screening → backtest → Monte Carlo → optimization → paper trade → live — as
   the research workflow.
+- **OpenAlgo Designer** Gui based algo design tool, which will convert it to 
+  a python based strategy and run with Engine
+- **Python Major** interaction with engine, browser/desktop app. All strategies
+  can be written in either python on gui based tool which will internally 
+  converts to python
 - **East Asian naming** for every internal component: **Soba** (相場, market
   data hub), **Sakata** (酒田, strategy engine), **Kumo** (雲, risk layer),
   **Nagare** (流れ, streaming pipeline), and 16 others from Ichimoku, candlestick
@@ -54,11 +61,11 @@ Three gaps in Indian quantitative tooling that honba closes:
 
 ```
 ┌─ Shibui (渋い) ──── Frontend UI ───────────────────────────────────┐
-│   HTMX + Tailwind dark-mode + Lightweight Charts + Alpine.js        │
+│   HTMX + Tailwind dark-mode + Lightweight Charts + Alpine.js       │
 │   MPA: /stock/TCS | /options/NIFTY | /backtest/{id} | /news        │
-└─────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────┘
                                ▲ HTML fragments + JSON
-┌─ (FastAPI) ──────── API & Server Layer ────────────────────────────┐
+┌─ (FastAPI) ──────── API & Server Layer ─────────────────────────────┐
 │   REST endpoints + WebSocket streams + Colibri LLM proxy            │
 └─────────────────────────────────────────────────────────────────────┘
                                ▲ in-process
@@ -70,15 +77,15 @@ Three gaps in Indian quantitative tooling that honba closes:
 │   Bunseki (分析): Factor analysis, performance metrics              │
 └─────────────────────────────────────────────────────────────────────┘
                                ▲ Instrument / Bar / OrderEvent
-┌─ Nautilus Trader ── Core Execution Engine ──────────────────────────┐
-│   Rust kernel, event-driven, single-threaded (LMAX actor model)    │
-│   Multi-venue: NSE + BSE + MCX simultaneously                      │
+┌─ Core Execution Engine- Nautilus/Barter-rs──────────────────────────┐
+│   Rust kernel, event-driven, single-threaded (LMAX actor model)     │
+│   Multi-venue: NSE + BSE + MCX simultaneously                       │
 │   Full option chain + Greeks, CustomData Arrow bridge,              │
 │   ParquetDataCatalog, 12 fill models, fixed-point Price/Quantity    │
 └─────────────────────────────────────────────────────────────────────┘
                                ▲ clean bars & CustomData events
 ┌─ Renko (練行足) ── Data Normalization Layer ────────────────────────┐
-│   Bhavcopy CSV → Bar, Option Chain JSON → QuoteTick + Greeks       │
+│   Bhavcopy CSV → Bar, Option Chain JSON → QuoteTick + Greeks        │
 │   Corporate action adjustment, deduplication, validation            │
 └─────────────────────────────────────────────────────────────────────┘
                                ▲ raw HTML / CSV / JSON

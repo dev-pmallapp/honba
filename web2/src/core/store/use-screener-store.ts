@@ -66,11 +66,31 @@ export interface ScreenerState {
 }
 
 const getStoredColumns = (): ColumnDef[] => {
+  const columnMap = new Map(ALL_COLUMNS.map((c) => [c.id, c]));
   try {
-    const raw = localStorage.getItem('honba_screener_columns_v3');
+    const raw = localStorage.getItem('honba_screener_columns_v4') || localStorage.getItem('honba_screener_columns_v3');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const merged: ColumnDef[] = [];
+        for (const item of parsed) {
+          const base = columnMap.get(item.id);
+          if (base) {
+            merged.push({
+              ...base,
+              visible: typeof item.visible === 'boolean' ? item.visible : base.visible,
+            });
+          }
+        }
+        // Include any new columns from ALL_COLUMNS
+        const seen = new Set(merged.map((c) => c.id));
+        for (const col of ALL_COLUMNS) {
+          if (!seen.has(col.id)) {
+            merged.push(col);
+          }
+        }
+        if (merged.length > 0) return merged;
+      }
     }
   } catch {}
   return [...ALL_COLUMNS];
@@ -193,7 +213,8 @@ export const useScreenerStore = create<ScreenerState>((set, get) => {
 
     setColumns: (columns: ColumnDef[]) => {
       try {
-        localStorage.setItem('honba_screener_columns_v2', JSON.stringify(columns));
+        const toStore = columns.map(({ id, visible }) => ({ id, visible }));
+        localStorage.setItem('honba_screener_columns_v4', JSON.stringify(toStore));
       } catch {}
       set({ columns });
     },

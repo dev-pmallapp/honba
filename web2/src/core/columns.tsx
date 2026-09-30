@@ -517,13 +517,14 @@ function renderRatingBadge(rating: string) {
       : 'rating-sell'
     : 'rating-neutral';
 
-  const formattedRating = rating.replace('Strong ', '');
+  const formattedRating =
+    rating === 'Strong Buy' ? 'Strong buy' : rating === 'Strong Sell' ? 'Strong sell' : rating;
 
   return (
-    <div className={`tv-rating-badge ${ratingClass}`}>
+    <span className={`tv-analyst-badge ${ratingClass}`}>
       <span className="tv-rating-arrow">{arrow}</span>
-      <span className="tv-rating-text">{formattedRating}</span>
-    </div>
+      <span>{formattedRating}</span>
+    </span>
   );
 }
 
